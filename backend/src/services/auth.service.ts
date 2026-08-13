@@ -45,7 +45,7 @@ export class AuthService {
     const token = await new SignJWT({
       sub: user.id,
       employee_id: user.employee_id,
-      rc_user_id: user.rocketchat_user_id || null,
+      zulip_user_id: user.zulip_user_id !== undefined && user.zulip_user_id !== null ? Number(user.zulip_user_id) : null,
       roles: user.role_keys,
     })
       .setProtectedHeader({ alg: 'RS256' })

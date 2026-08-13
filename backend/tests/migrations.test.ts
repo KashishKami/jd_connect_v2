@@ -33,5 +33,18 @@ describe('Postgres Database Migrations Integration Test', () => {
     expect(tables).toContain('break_requests');
     expect(tables).toContain('break_audit_logs');
     expect(tables).toContain('audit_logs');
+
+    const colRes = await pool.query<{ column_name: string; data_type: string }>(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'employees'
+    `);
+    const colMap = new Map(colRes.rows.map((r) => [r.column_name, r.data_type]));
+
+    expect(colMap.has('zulip_user_id')).toBe(true);
+    expect(colMap.get('zulip_user_id')).toBe('integer');
+    expect(colMap.has('rocketchat_user_id')).toBe(false);
+    expect(colMap.has('zulip_provisioned')).toBe(true);
+    expect(colMap.has('rc_provisioned')).toBe(false);
   });
 });

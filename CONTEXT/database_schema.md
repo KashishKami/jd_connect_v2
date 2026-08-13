@@ -1,54 +1,45 @@
 # Database Schema: JD Connect
 
-This document is the **authoritative source** for all database schemas — both Postgres (employee/attendance/HR data) and MongoDB (Rocket.Chat chat data). All migrations, repository queries, and type definitions must match this document. Any deviation must be recorded in `decision_log.md`.
+This document is the **authoritative source** for all database schemas — both JD Connect's Postgres (employee/attendance/HR data) and Zulip's Postgres (chat data, read-only reference). All migrations, repository queries, and type definitions must match this document. Any deviation must be recorded in `decision_log.md`. MongoDB has been removed entirely — see Decision 12.
 
 ---
 
-## 1. Architecture: Two Databases, One Ecosystem
+## 1. Architecture: Two Postgres Databases, One Technology
 
-``POSTGRES — JD Connect Schema (owned by Backend API)
-  users ──────────────────────────────────────────────────────────────┐
-    │                                                                  │
-    └── employees (auth_user_id FK)                                    │
-          │                                                            │
-          ├── attendance_records (employee_id FK)                      │
-          │     └── attendance_corrections (employee_id FK)            │
-          │     └── attendance_audit_logs (employee_id FK)             │
-          │                                                            │
-          ├── break_records (employee_id FK)                           │
-          │     └── break_requests (employee_id FK)                    │
-          │     └── break_audit_logs (employee_id FK)                  │
-          │                                                            │
-          └── employee_sessions (user_id FK)                          │
-                                                                        │
-  roles ──────────────────────────────────────────────────────────────┤
-  departments                                                          │
-  centres                                                              │
-  shifts                                                               │
-  break_types                                                          │
-  break_policies                                                       │
-  audit_logs (actor_user_id FK) ──────────────────────────────────────┘
+```
+POSTGRES - JD Connect Schema (owned by Backend API)
+  users --------------------------------------------------------------+
+    |                                                                  |
+    +-- employees (auth_user_id FK)                                    |
+          |                                                            |
+          +-- attendance_records (employee_id FK)                      |
+          |     +-- attendance_corrections (employee_id FK)            |
+          |     +-- attendance_audit_logs (employee_id FK)             |
+          |                                                            |
+          +-- break_records (employee_id FK)                           |
+          |     +-- break_requests (employee_id FK)                    |
+          |     +-- break_audit_logs (employee_id FK)                  |
+          |                                                            |
+          +-- employee_sessions (user_id FK)                           |
+                                                                       |
+  roles ---------------------------------------------------------------+
+  departments                                                          |
+  centres                                                              |
+  shifts                                                               |
+  break_types                                                          |
+  break_policies                                                       |
+  audit_logs (actor_user_id FK) ---------------------------------------+
 
-POSTGRES — Zulip Schema (owned by Zulip — never touched by Backend API directly)
-  zerver_userprofile   ← Zulip user identities
-  zerver_stream        ← Streams (channels)
-  zerver_message       ← All messages
-  zerver_subscription  ← User-to-stream memberships
+POSTGRES - Zulip Schema (owned by Zulip - never touched by Backend API directly)
+  zerver_userprofile   <-- Zulip user identities
+  zerver_stream        <-- Streams (channels), e.g. #attendance, #general
+  zerver_message       <-- All messages
+  zerver_subscription  <-- User-to-stream memberships
   (+ all other Zulip Django-managed tables)
   NOTE: MongoDB has been removed from the stack entirely. See Decision 12.
 
 CROSS-SYSTEM BRIDGE:
-  Postgres employees.zulip_user_id (INTEGER) = Zulip zerver_userprofile.id��─────────────────────────────────┘
-
-MONGODB (owned by Rocket.Chat — never touched by Backend API directly)
-  users       ← RC's own user records (chat identity)
-  rooms       ← channels, DMs
-  messages    ← all chat messages
-  subscriptions
-  (+ all other RC internal collections)
-
-CROSS-SYSTEM BRIDGE:
-  Postgres employees.rocketchat_user_id = MongoDB users._id
+  Postgres employees.zulip_user_id (INTEGER) = Zulip zerver_userprofile.id
 ```
 
 ---
@@ -200,7 +191,7 @@ CREATE TABLE shifts (
 
 ### `employees` Table
 
-The core HR record. Linked to `users` via `auth_user_id`, and to Rocket.Chat via `rocketchat_user_id`.
+The core HR record. Linked to `users` via `auth_user_id`, and to Zulip via `zulip_user_id`.
 
 ```sql
 CREATE TABLE employees (
@@ -258,7 +249,7 @@ CREATE INDEX idx_sessions_user ON employee_sessions(user_id);
 
 ### `attendance_records` Table
 
-One row per employee per work day. Clock-in and clock-out timestamps stored here. Never infer from Rocket.Chat presence.
+One row per employee per work day. Clock-in and clock-out timestamps stored here. Never infer from Zulip presence.
 
 ```sql
 CREATE TABLE attendance_records (
@@ -284,10 +275,10 @@ CREATE INDEX idx_attendance_date ON attendance_records(work_date);
 **Auto-compute on clock-out (service layer, not DB trigger):**
 - `hours_worked = ROUND((clock_out_at - clock_in_at) / 3600, 2)`
 - `status` and `is_late` are determined by two factors: **clock-in time (EST)** and **hours worked**:
-  - Clock-in ≤ 09:15 AM EST **AND** hours_worked ≥ 6 → `status = 'present'`, `is_late = false`
-  - Clock-in between 09:15 AM and 09:30 AM EST **AND** hours_worked ≥ 6 → `status = 'late'`, `is_late = true`
-  - Clock-in after 09:30 AM EST **OR** hours_worked < 6 → `status = 'half_day'`, `is_late = false`
-  - No clock-in at all by end of day → `status = 'absent'` (set by a nightly scheduler, not on clock-out)
+  - Clock-in <= 09:15 AM EST **AND** hours_worked >= 6 -> `status = 'present'`, `is_late = false`
+  - Clock-in between 09:15 AM and 09:30 AM EST **AND** hours_worked >= 6 -> `status = 'late'`, `is_late = true`
+  - Clock-in after 09:30 AM EST **OR** hours_worked < 6 -> `status = 'half_day'`, `is_late = false`
+  - No clock-in at all by end of day -> `status = 'absent'` (set by a nightly scheduler, not on clock-out)
 - Shift start reference: **09:00 AM EST**. Grace window: +15 min = 09:15 AM EST. Late window: 09:15–09:30 AM EST. Half-day cutoff: after 09:30 AM EST.
 
 ---
@@ -479,18 +470,18 @@ CREATE TABLE audit_logs (
 
 > **IMPORTANT:** The Backend API never queries Zulip's Postgres database directly. All interactions with Zulip data go through the **Zulip REST API**. This section is provided for reference only — so developers understand what lives where in Zulip's internal data model.
 
-> Zulip uses Django ORM migrations. The schema is not static documentation but is managed by Zulip's own codebase. Do not write SQL migrations against Zulip's database.
+> Zulip uses Django ORM migrations. Do not write SQL migrations against Zulip's database. Its schema is managed entirely by Zulip's own codebase.
 
 ### Key Zulip Tables (Django model names)
 
 | Django Model / Table | Purpose |
 |---|---|
-| `zerver_userprofile` | Zulip user identities. `id` here (integer) = `employees.zulip_user_id` in Postgres. |
-| `zerver_stream` | Streams (channels), e.g., `#attendance`, `#general`. |
-| `zerver_message` | All messages. Contains `sender_id` (Zulip user ID). |
+| `zerver_userprofile` | Zulip user identities. `id` (integer) here = `employees.zulip_user_id` in JD Connect Postgres. |
+| `zerver_stream` | Streams (channels), e.g. `#attendance`, `#general`. |
+| `zerver_message` | All messages. Contains `sender_id` (Zulip user ID integer). |
 | `zerver_subscription` | User-to-stream membership and notification preferences. |
 
-### Relevant Zulip User Shape (for SSO mapping)
+### Relevant Zulip User Shape (REST API response — for SSO mapping)
 
 ```json
 {
@@ -503,7 +494,7 @@ CREATE TABLE audit_logs (
 }
 ```
 
-The `user_id` integer from this response is what gets stored in `employees.zulip_user_id` in JD Connect's Postgres.
+The `user_id` integer from this response is stored in `employees.zulip_user_id` in JD Connect's Postgres.
 
 ### Zulip Admin REST API Endpoints Used by Backend API
 
@@ -514,29 +505,29 @@ The `user_id` integer from this response is what gets stored in `employees.zulip
 | `GET` | `/api/v1/users/{user_id}` | Fetch Zulip user details |
 | `DELETE` | `/api/v1/users/{user_id}` | Deactivate a Zulip user |
 
-Authentication: `Authorization: Basic base64(bot_email:bot_api_key)` using a Zulip admin bot account.
+Authentication: `Authorization: Basic base64(bot_email:bot_api_key)` using a dedicated Zulip admin bot account created via the Zulip admin panel.
 
 ---
 
 ## 4. Entity Relationship Summary
 
 ```
-users (1) ──────── (1) employees
-                        │
-                 ┌──────┼──────┐
-                 │      │      │
+users (1) --------- (1) employees
+                        |
+                 +------+------+
+                 |      |      |
             attendance  breaks  sessions
             records     records
-                 │      │
+                 |      |
             corrections requests
 ```
 
-- `employees.auth_user_id` → `users.id` (auth identity)
-- `employees.zulip_user_id` → Zulip `zerver_userprofile.id` (chat identity — integer)
-- `employees.manager_id` → `employees.id` (self-referential hierarchy)
-- `employees.team_leader_id` → `employees.id` (self-referential hierarchy)
-- `attendance_records.employee_id` → `employees.id`
-- `break_records.employee_id` → `employees.id`
+- `employees.auth_user_id` -> `users.id` (auth identity)
+- `employees.zulip_user_id` -> Zulip `zerver_userprofile.id` (chat identity — integer)
+- `employees.manager_id` -> `employees.id` (self-referential hierarchy)
+- `employees.team_leader_id` -> `employees.id` (self-referential hierarchy)
+- `attendance_records.employee_id` -> `employees.id`
+- `break_records.employee_id` -> `employees.id`
 
 ---
 

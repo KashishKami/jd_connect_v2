@@ -9,7 +9,7 @@ export class EmployeeRepository {
     const res = await pool.query<EmployeeResponse>(
       `INSERT INTO employees (
          auth_user_id, full_name, email, mobile, department_id, role_id,
-         centre_id, shift_id, team_leader_id, manager_id, designation, rc_provisioned
+         centre_id, shift_id, team_leader_id, manager_id, designation, zulip_provisioned
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false)
        RETURNING *`,
@@ -30,10 +30,10 @@ export class EmployeeRepository {
     return res.rows[0];
   }
 
-  async findByRocketChatId(rcUserId: string): Promise<EmployeeResponse | null> {
+  async findByZulipUserId(zulipUserId: number): Promise<EmployeeResponse | null> {
     const res = await pool.query<EmployeeResponse>(
-      'SELECT * FROM employees WHERE rocketchat_user_id = $1',
-      [rcUserId]
+      'SELECT * FROM employees WHERE zulip_user_id = $1',
+      [zulipUserId]
     );
     return res.rows[0] || null;
   }

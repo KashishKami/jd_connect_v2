@@ -20,7 +20,7 @@ describe('Auth Middleware Unit & Scoping Tests', () => {
     validToken = await new SignJWT({
       sub: 'user-uuid-100',
       employee_id: 'emp-uuid-100',
-      rc_user_id: 'RC_100',
+      zulip_user_id: 100,
       roles: ['employee'],
     })
       .setProtectedHeader({ alg: 'RS256' })
@@ -31,7 +31,7 @@ describe('Auth Middleware Unit & Scoping Tests', () => {
     expiredToken = await new SignJWT({
       sub: 'user-uuid-100',
       employee_id: 'emp-uuid-100',
-      rc_user_id: 'RC_100',
+      zulip_user_id: 100,
       roles: ['employee'],
     })
       .setProtectedHeader({ alg: 'RS256' })
@@ -90,7 +90,7 @@ describe('Auth Middleware Unit & Scoping Tests', () => {
     expect(next).toHaveBeenCalled();
     expect(req.employee).toBeDefined();
     expect(req.employee?.id).toBe('emp-uuid-100');
-    expect(req.employee?.rc_user_id).toBe('RC_100');
+    expect(req.employee?.zulip_user_id).toBe(100);
     expect(req.employee?.roles).toEqual(['employee']);
   });
 
@@ -99,7 +99,7 @@ describe('Auth Middleware Unit & Scoping Tests', () => {
     req.employee = {
       id: 'admin-emp-id',
       auth_user_id: 'admin-user-id',
-      rc_user_id: 'RC_admin',
+      zulip_user_id: 1,
       roles: ['super_admin'],
     };
 
@@ -115,7 +115,7 @@ describe('Auth Middleware Unit & Scoping Tests', () => {
     req.employee = {
       id: 'emp-id',
       auth_user_id: 'user-id',
-      rc_user_id: 'RC_emp',
+      zulip_user_id: 2,
       roles: ['employee'],
     };
 

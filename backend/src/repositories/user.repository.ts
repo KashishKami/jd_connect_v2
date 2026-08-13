@@ -26,12 +26,12 @@ export class UserRepository {
       password_hash: string;
       is_active: boolean;
       employee_id: string;
-      rocketchat_user_id: string | null;
+      zulip_user_id: number | null;
       employment_status: string;
       role_key: string;
     }>(
       `SELECT u.id, u.email, u.password_hash, u.is_active,
-              e.id as employee_id, e.rocketchat_user_id, e.employment_status,
+              e.id as employee_id, e.zulip_user_id, e.employment_status,
               r.key as role_key
        FROM users u
        LEFT JOIN employees e ON e.auth_user_id = u.id
@@ -51,7 +51,7 @@ export class UserRepository {
       password_hash: first.password_hash,
       is_active: first.is_active,
       employee_id: first.employee_id,
-      rocketchat_user_id: first.rocketchat_user_id,
+      zulip_user_id: first.zulip_user_id !== null && first.zulip_user_id !== undefined ? Number(first.zulip_user_id) : null,
       employment_status: first.employment_status || 'active',
       role_keys: roleKeys.length > 0 ? roleKeys : ['employee'],
     };

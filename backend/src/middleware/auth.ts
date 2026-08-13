@@ -6,7 +6,7 @@ import pool from '../lib/db';
 export interface AuthenticatedEmployee {
   id: string;
   auth_user_id: string;
-  rc_user_id: string;
+  zulip_user_id?: number | null;
   roles: string[];
 }
 
@@ -46,7 +46,7 @@ export async function authenticateJwt(req: Request, res: Response, next: NextFun
     req.employee = {
       id: (payload.employee_id as string) || (payload.sub as string),
       auth_user_id: payload.sub as string,
-      rc_user_id: payload.rc_user_id as string,
+      zulip_user_id: payload.zulip_user_id !== undefined && payload.zulip_user_id !== null ? Number(payload.zulip_user_id) : null,
       roles: (payload.roles as string[]) || [],
     };
 

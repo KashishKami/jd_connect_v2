@@ -122,7 +122,7 @@ export async function runSeed() {
     const shiftId = shiftRes.rows[0]?.id;
 
     await client.query(
-      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, rc_provisioned)
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned)
        VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', true)
        ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3`,
       [adminUserId, adminEmail, superAdminRoleId, deptId, centreId, shiftId]

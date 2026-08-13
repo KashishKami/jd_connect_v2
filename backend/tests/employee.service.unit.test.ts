@@ -17,7 +17,7 @@ describe('EmployeeService Unit Tests', () => {
         employee_code: 'JD0001',
         full_name: 'Test Agent',
         email: 'test@company.com',
-        rc_provisioned: false,
+        zulip_provisioned: false,
       }),
     } as unknown as EmployeeRepository;
 
@@ -32,7 +32,7 @@ describe('EmployeeService Unit Tests', () => {
     expect(mockUserRepo.findByEmail).toHaveBeenCalledWith('test@company.com');
     expect(mockUserRepo.createUser).toHaveBeenCalled();
     expect(mockEmpRepo.createEmployee).toHaveBeenCalled();
-    expect(result.rc_provisioned).toBe(false);
+    expect(result.zulip_provisioned).toBe(false);
     expect(result.employee_code).toBe('JD0001');
   });
 

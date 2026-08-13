@@ -1,4 +1,5 @@
 packages:
   - 'backend'
-  - 'rc-app'
+  - 'attendance-app'
+  - 'zulip-bot'
   - 'hr-dashboard'

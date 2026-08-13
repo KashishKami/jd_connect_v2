@@ -15,7 +15,7 @@ export interface AuthUserDetail {
   password_hash: string;
   is_active: boolean;
   employee_id: string;
-  rocketchat_user_id?: string | null;
+  zulip_user_id?: number | null;
   employment_status: string;
   role_keys: string[];
 }

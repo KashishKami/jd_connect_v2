@@ -25,8 +25,8 @@ export interface EmployeeResponse {
   centre_id?: string | null;
   shift_id?: string | null;
   designation?: string | null;
-  rc_provisioned: boolean;
-  rocketchat_user_id?: string | null;
+  zulip_provisioned: boolean;
+  zulip_user_id?: number | null;
   employment_status: string;
   created_at: string;
   updated_at: string;

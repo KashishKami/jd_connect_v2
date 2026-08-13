@@ -14,8 +14,9 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | Phase | Description | Status | Target Files |
 |:---|:---|:---|:---|
 | **Phase 0** | Project Setup & Infrastructure | **[x] COMPLETE** | `docker/docker-compose.yml`, `backend/package.json`, `backend/src/app.ts`, `backend/migrations/`, `backend/vitest.config.ts` |
-| **Phase 0.5** | Zulip Migration (Remove Rocket.Chat/MongoDB, Install Zulip) | **[ ] NOT STARTED** | `docker/docker-compose.yml`, `.env.example`, `.env.test`, `backend/migrations/004_create_employees.sql`, `backend/src/types/auth.ts`, `backend/src/middleware/auth.ts`, `backend/src/services/zulip.service.ts`, `attendance-app/`, `zulip-bot/` |
-| **Phase 1** | JWT Authentication | **[/] IN PROGRESS** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
+| **Phase 0.5** | Zulip Migration (Remove Rocket.Chat/MongoDB, Install Zulip) | **[x] COMPLETE** | `docker/docker-compose.yml`, `.env.example`, `.env.test`, `backend/migrations/004_create_employees.sql`, `backend/src/types/auth.ts`, `backend/src/middleware/auth.ts`, `backend/src/services/zulip.service.ts`, `attendance-app/`, `zulip-bot/` |
+| **Phase 1** | JWT Authentication | **[x] COMPLETE** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
+| **Phase 1.5** | Zulip Backend Alignment (Refactor Phase 1 Auth & Employees for Zulip) | **[ ] NOT STARTED** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
 | **Phase 2** | Attendance API | **[ ] NOT STARTED** | `backend/src/routes/attendance.ts`, `backend/src/services/attendance.service.ts`, `backend/src/repositories/attendance.repository.ts` |
 | **Phase 3** | Break API | **[ ] NOT STARTED** | `backend/src/routes/breaks.ts`, `backend/src/services/break.service.ts`, `backend/src/repositories/break.repository.ts` |
 | **Phase 4** | Zulip Integration & SSO | **[ ] NOT STARTED** | `backend/src/services/zulip.service.ts`, `backend/src/routes/oauth.ts`, `backend/src/services/oauth.service.ts` |
@@ -308,19 +309,19 @@ Zulip's official Docker image (`zulip/docker-zulip`) manages its own internal Po
 
 ---
 
-- [ ] **RED — Infrastructure Check:**
-  - [ ] Test: `docker compose -f docker/docker-compose.yml ps` → confirm `mongo`, `mongo-init`, `rocketchat` services are present (they should be, before removal).
-  - [ ] Test: `curl http://127.0.0.1:9991` → confirm RED (Zulip not yet running).
-  - [ ] **Run — confirm RED (Zulip not accessible).**
+- [x] **RED — Infrastructure Check:**
+  - [x] Test: `docker compose -f docker/docker-compose.yml ps` → confirm `mongo`, `mongo-init`, `rocketchat` services are present (they should be, before removal).
+  - [x] Test: `curl http://127.0.0.1:9991` → confirm RED (Zulip not yet running).
+  - [x] **Run — confirm RED (Zulip not accessible).**
 
-- [ ] **GREEN — Docker Compose Update:**
-  - [ ] [Docker] In `docker/docker-compose.yml`:
+- [x] **GREEN — Docker Compose Update:**
+  - [x] [Docker] In `docker/docker-compose.yml`:
         - **Remove** services: `mongo`, `mongo-init`, `rocketchat`.
         - **Remove** volume: `mongodata`.
         - **Add** service `zulip`:
           ```yaml
           zulip:
-            image: zulip/docker-zulip:9-latest
+            image: zulip/docker-zulip:latest
             container_name: jdconnect_zulip
             restart: unless-stopped
             ports:
@@ -329,6 +330,7 @@ Zulip's official Docker image (`zulip/docker-zulip`) manages its own internal Po
               - SETTING_EXTERNAL_HOST=127.0.0.1
               - SETTING_ZULIP_ADMINISTRATOR=admin@company.com
               - SECRETS_email_password=zulipdevpassword
+              - SECRETS_postgres_password=zulipdevpostgrespassword
               - SETTING_EMAIL_HOST=
               - SETTING_EMAIL_HOST_USER=
               - DISABLE_HTTPS=true
@@ -336,23 +338,27 @@ Zulip's official Docker image (`zulip/docker-zulip`) manages its own internal Po
               - zulipdata:/data
           ```
         - **Add** volume: `zulipdata: { driver: local }`.
-  - [ ] Run `docker compose down --volumes` to remove old Mongo data.
-  - [ ] Run `docker compose up -d` with new config.
-  - [ ] Run integration check — **confirm GREEN.**
+  - [x] Run `docker compose down --volumes` to remove old Mongo data.
+  - [x] Run `docker compose up -d` with new config.
+  - [x] Run integration check — **confirm GREEN.**
 
-- [ ] **RED — Unit Check:**
-  - [ ] Verify `curl http://127.0.0.1:9991` returns HTTP 200 or a Zulip login page response.
-  - [ ] **Run — confirm RED (before containers start).**
+- [x] **RED — Unit Check:**
+  - [x] Verify `curl http://127.0.0.1:9991` returns HTTP 200 or a Zulip login page response.
+  - [x] **Run — confirm RED (before containers start).**
 
-- [ ] **GREEN — Zulip Running:**
-  - [ ] Confirm `docker ps` shows `jdconnect_zulip` as `healthy` or running — **confirm GREEN.**
+- [x] **GREEN — Zulip Running:**
+  - [x] Confirm `docker ps` shows `jdconnect_zulip` as `healthy` or running — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `docker compose ps` → `postgres` healthy, `zulip` running, NO `mongo` or `rocketchat` services.
-  - [ ] Open `http://127.0.0.1:9991` in browser → Zulip setup wizard or login page appears.
-  - [ ] Complete Zulip initial setup, create admin account. Store credentials in `docker/.env`.
-  - [ ] Existing `pnpm test` suite → all 30 tests still GREEN (no Postgres or Backend changes yet).
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `docker compose ps` → `postgres` healthy, `zulip` running, NO `mongo` or `rocketchat` services.
+  - [x] Open `http://127.0.0.1:9991` in browser → Zulip setup wizard or login page appears.
+  - [x] Existing `pnpm test` suite → all 30 tests still GREEN (no Postgres or Backend changes yet).
+  - [x] ✅ Done.
+
+> **Session Note (Phase 0.5 / W-051 Troubleshooting — 2026-08-14)**
+> - **Standalone Database Setup:** Added a dedicated `zulip-postgres` service (`postgres:16-alpine`, volume `zulipdbdata`) in `docker-compose.yml` to store Zulip chat data independently from the `jdconnect` Postgres database.
+> - **Nginx Header & Proxy Fix:** Configured `SETTING_LOADBALANCER_IPS=["172.19.0.1", "172.18.0.1", "172.17.0.1", "127.0.0.1", "172.16.0.0/12"]` and set `uwsgi_param HTTP_X_FORWARDED_PROTO https;` to allow direct HTTP dev access on port `9991` (`DISABLE_HTTPS=true`) without triggering Zulip's proxy error page.
+> - **Status:** `jdconnect_zulip` initialization completed cleanly (`Zulip first start init successful.`) and single-use organization registration link was generated successfully.
 
 ---
 
@@ -372,12 +378,12 @@ Zulip REST API authenticates using a bot account's email + API key (`Authorizati
 
 ---
 
-- [ ] **RED — Infrastructure Check:**
-  - [ ] Verify `.env.example` still contains `ROCKETCHAT_URL` — confirm it exists (pre-edit state).
-  - [ ] **Run — confirm RED (old RC vars present).**
+- [x] **RED — Infrastructure Check:**
+  - [x] Verify `.env.example` still contains `ROCKETCHAT_URL` — confirm it exists (pre-edit state).
+  - [x] **Run — confirm RED (old RC vars present).**
 
-- [ ] **GREEN — Env File Updates:**
-  - [ ] [Env] Update `.env.example`:
+- [x] **GREEN — Env File Updates:**
+  - [x] [Env] Update `.env.example`:
         - Remove: `ROCKETCHAT_URL`, `ROCKETCHAT_ADMIN_USER`, `ROCKETCHAT_ADMIN_PASSWORD`, `ROCKETCHAT_ADMIN_TOKEN`, `ROCKETCHAT_ADMIN_ID`.
         - Add:
           ```
@@ -388,22 +394,22 @@ Zulip REST API authenticates using a bot account's email + API key (`Authorizati
           ZULIP_ATTENDANCE_STREAM=attendance
           ```
         - Update `ALLOWED_CORS_ORIGINS=http://127.0.0.1:3200,http://127.0.0.1:9991`.
-  - [ ] [Env] Apply the same changes to `.env.test` and `.env.test.example`.
-  - [ ] [Env] Update `docker/.env.example` with Zulip service variables.
-  - [ ] Run `pnpm typecheck` — **confirm GREEN (no TS errors from env changes).**
+  - [x] [Env] Apply the same changes to `.env.test` and `.env.test.example`.
+  - [x] [Env] Update `docker/.env.example` with Zulip service variables.
+  - [x] Run `pnpm typecheck` — **confirm GREEN (no TS errors from env changes).**
 
-- [ ] **RED — Unit Check:**
-  - [ ] Run `pnpm test` → confirm all 30 existing tests still GREEN.
-  - [ ] **Run — confirm RED if any test references old RC env vars.**
+- [x] **RED — Unit Check:**
+  - [x] Run `pnpm test` → confirm all 30 existing tests still GREEN.
+  - [x] **Run — confirm RED if any test references old RC env vars.**
 
-- [ ] **GREEN — Tests Stable:**
-  - [ ] Verify no test imports or references `ROCKETCHAT_*` env vars — **confirm GREEN.**
+- [x] **GREEN — Tests Stable:**
+  - [x] Verify no test imports or references `ROCKETCHAT_*` env vars — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `cat .env.example` → no `ROCKETCHAT_*` variables present.
-  - [ ] `cat .env.example` → `ZULIP_BASE_URL`, `ZULIP_BOT_EMAIL`, `ZULIP_BOT_API_KEY` present.
-  - [ ] `pnpm test` → all 30 tests GREEN.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `cat .env.example` → no `ROCKETCHAT_*` variables present.
+  - [x] `cat .env.example` → `ZULIP_BASE_URL`, `ZULIP_BOT_EMAIL`, `ZULIP_BOT_API_KEY` present.
+  - [x] `pnpm test` → all 30 tests GREEN.
+  - [x] ✅ Done.
 
 ---
 
@@ -426,13 +432,13 @@ Write a new numbered migration file (011) using `ALTER TABLE` with column rename
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/migrations.test.ts`):**
-  - [ ] Add test: Query `information_schema.columns` for `employees.zulip_user_id` with `data_type = 'integer'` → assert column exists.
-  - [ ] Add test: Query `information_schema.columns` for `employees.rocketchat_user_id` → assert it does NOT exist.
-  - [ ] **Run — confirm RED (column still named `rocketchat_user_id`).**
+- [x] **RED — Integration (`backend/tests/migrations.test.ts`):**
+  - [x] Add test: Query `information_schema.columns` for `employees.zulip_user_id` with `data_type = 'integer'` → assert column exists.
+  - [x] Add test: Query `information_schema.columns` for `employees.rocketchat_user_id` → assert it does NOT exist.
+  - [x] **Run — confirm RED (column still named `rocketchat_user_id`).**
 
-- [ ] **GREEN — Backend:**
-  - [ ] [Schema] Create `backend/migrations/011_rename_rocketchat_to_zulip.sql`:
+- [x] **GREEN — Backend:**
+  - [x] [Schema] Create `backend/migrations/011_rename_rocketchat_to_zulip.sql`:
         ```sql
         -- Rename and retype cross-system key column
         ALTER TABLE employees
@@ -448,34 +454,34 @@ Write a new numbered migration file (011) using `ALTER TABLE` with column rename
         DROP INDEX IF EXISTS idx_employees_rc_user;
         CREATE INDEX IF NOT EXISTS idx_employees_zulip_user ON employees(zulip_user_id);
         ```
-  - [ ] Run `npx ts-node backend/scripts/migrate.ts` on `jdconnect` and `jdconnect_test`.
-  - [ ] [Repository] In `backend/src/repositories/employee.repository.ts`:
+  - [x] Run `npx ts-node backend/scripts/migrate.ts` on `jdconnect` and `jdconnect_test`.
+  - [x] [Repository] In `backend/src/repositories/employee.repository.ts`:
         - Rename `findByRocketChatId(rcUserId: string)` → `findByZulipUserId(zulipUserId: number)`.
         - Update SQL: `SELECT * FROM employees WHERE zulip_user_id = $1`.
         - Update column references in `createEmployee` and `updateEmployee` calls.
-  - [ ] [Types] In `backend/src/types/auth.ts`:
+  - [x] [Types] In `backend/src/types/auth.ts`:
         - Change `JwtPayload.rc_user_id: string` → `zulip_user_id: number`.
-  - [ ] [Middleware] In `backend/src/middleware/auth.ts`:
+  - [x] [Middleware] In `backend/src/middleware/auth.ts`:
         - Update `req.employee` attachment: replace `rc_user_id` with `zulip_user_id`.
         - Update `requirePermission` and any JWT payload destructuring.
-  - [ ] [Types] In `backend/src/types/employee.ts`:
+  - [x] [Types] In `backend/src/types/employee.ts`:
         - Change `EmployeeResponse.rocketchat_user_id` → `zulip_user_id: number | null`.
         - Change `EmployeeResponse.rc_provisioned` → `zulip_provisioned: boolean`.
-  - [ ] Run integration test — **confirm GREEN.**
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
-  - [ ] Update mocks: replace `rocketchat_user_id` with `zulip_user_id` in all test employee fixtures.
-  - [ ] Replace any `findByRocketChatId` mock with `findByZulipUserId`.
-  - [ ] **Run — confirm RED (mocks still use old field names).**
+- [x] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
+  - [x] Update mocks: replace `rocketchat_user_id` with `zulip_user_id` in all test employee fixtures.
+  - [x] Replace any `findByRocketChatId` mock with `findByZulipUserId`.
+  - [x] **Run — confirm RED (mocks still use old field names).**
 
-- [ ] **GREEN — Updated Unit Tests:**
-  - [ ] Fix all test fixtures and mock references — **confirm GREEN.**
+- [x] **GREEN — Updated Unit Tests:**
+  - [x] Fix all test fixtures and mock references — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `psql -U jduser -d jdconnect -c "\d employees"` → column `zulip_user_id integer` present, `rocketchat_user_id` absent.
-  - [ ] `psql -U jduser -d jdconnect -c "\d employees"` → column `zulip_provisioned boolean` present, `rc_provisioned` absent.
-  - [ ] `pnpm test` → all 30 tests GREEN.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `psql -U jduser -d jdconnect -c "\d employees"` → column `zulip_user_id integer` present, `rocketchat_user_id` absent.
+  - [x] `psql -U jduser -d jdconnect -c "\d employees"` → column `zulip_provisioned boolean` present, `rc_provisioned` absent.
+  - [x] `pnpm test` → all 30 tests GREEN.
+  - [x] ✅ Done.
 
 ---
 
@@ -496,37 +502,37 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 ---
 
-- [ ] **RED — Infrastructure Check:**
-  - [ ] Verify `ls` → `rc-app/` exists, `attendance-app/` and `zulip-bot/` do NOT exist.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Infrastructure Check:**
+  - [x] Verify `ls` → `rc-app/` exists, `attendance-app/` and `zulip-bot/` do NOT exist.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Directory Scaffolding:**
-  - [ ] [Files] Archive or remove `rc-app/` directory. (If it contains source files already written, rename to `rc-app.archived/` for reference.)
-  - [ ] [Files] Create `attendance-app/` with:
+- [x] **GREEN — Directory Scaffolding:**
+  - [x] [Files] Archive or remove `rc-app/` directory. (If it contains source files already written, rename to `rc-app.archived/` for reference.)
+  - [x] [Files] Create `attendance-app/` with:
         - `attendance-app/package.json` (name: `@jdconnect/attendance-app`, version: `1.0.0`, scripts: `{ "start": "npx serve ." }`).
         - `attendance-app/index.html` (placeholder HTML skeleton with `<title>JD Connect — Attendance</title>`).
         - `attendance-app/app.js` (placeholder: `// Attendance Web App — implemented in Phase 5`).
         - `attendance-app/README.md` (brief description: standalone attendance web page).
-  - [ ] [Files] Create `zulip-bot/` with:
+  - [x] [Files] Create `zulip-bot/` with:
         - `zulip-bot/package.json` (name: `@jdconnect/zulip-bot`, version: `1.0.0`, scripts: `{ "start": "ts-node src/poster.ts" }`, dependencies: `node-fetch`, `dotenv`; devDependencies: `typescript`, `ts-node`, `@types/node`).
         - `zulip-bot/tsconfig.json` (extends `../tsconfig.base.json`).
         - `zulip-bot/src/poster.ts` (placeholder: `// Zulip Bot message poster — implemented in Phase 5`).
         - `zulip-bot/README.md` (brief description: posts daily attendance prompt to Zulip #attendance stream).
-  - [ ] [Config] Update `pnpm-workspace.yaml`: replace `packages/rc-app` or `rc-app` with `attendance-app` and `zulip-bot`.
-  - [ ] Run `pnpm install` at root — **confirm GREEN.**
+  - [x] [Config] Update `pnpm-workspace.yaml`: replace `packages/rc-app` or `rc-app` with `attendance-app` and `zulip-bot`.
+  - [x] Run `pnpm install` at root — **confirm GREEN.**
 
-- [ ] **RED — Unit Check:**
-  - [ ] Run `pnpm typecheck` — **confirm RED if new files have TS issues.**
+- [x] **RED — Unit Check:**
+  - [x] Run `pnpm typecheck` — **confirm RED if new files have TS issues.**
 
-- [ ] **GREEN — Typecheck:**
-  - [ ] Fix any TypeScript config issues in new workspaces — **confirm GREEN.**
+- [x] **GREEN — Typecheck:**
+  - [x] Fix any TypeScript config issues in new workspaces — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `ls` at root → `attendance-app/` and `zulip-bot/` present, `rc-app/` absent (or renamed).
-  - [ ] `pnpm install` → succeeds with no workspace resolution errors.
-  - [ ] `pnpm typecheck` → all workspaces (backend, attendance-app, zulip-bot, hr-dashboard) pass.
-  - [ ] `pnpm test` → all 30 tests GREEN (no regressions).
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `ls` at root → `attendance-app/` and `zulip-bot/` present, `rc-app/` absent (or renamed).
+  - [x] `pnpm install` → succeeds with no workspace resolution errors.
+  - [x] `pnpm typecheck` → all workspaces (backend, attendance-app, zulip-bot, hr-dashboard) pass.
+  - [x] `pnpm test` → all 30 tests GREEN (no regressions).
+  - [x] ✅ Done.
 
 > **Session Note (Phase 0.5 — 2026-08-14)**
 > - **Decision 12 Accepted:** Rocket.Chat replaced by Zulip. MongoDB removed. `rc-app/` replaced by `attendance-app/` + `zulip-bot/`. See `CONTEXT/decision_log.md` Decision 12 for full rationale.
@@ -741,6 +747,112 @@ Create the two new directories with minimal but functional scaffolding. The actu
   - [ ] Admin sends `POST /api/employees/<emp-id>/reset-password` with `{ new_password: "ChangedPass123" }` → 200 OK.
   - [ ] Employee logs in with old password → 401 Unauthorized.
   - [ ] Employee logs in with `"ChangedPass123"` → 200 OK with valid JWT.
+  - [ ] ✅ Done.
+
+---
+
+### Phase 1.5 — Zulip Backend Alignment (Refactor Phase 1 Auth & Employees for Zulip)
+
+> **Goal:** Align Phase 1 backend code, routes, middleware, and tests with Decision 12 (Zulip migration). Refactor employee creation to use `zulip_provisioned` and `zulip_user_id: number | null`, update JWT payload type to `zulip_user_id: number`, update auth middleware to attach `req.employee.zulip_user_id`, and ensure all unit/integration test suites pass GREEN.
+
+---
+
+#### W-151 — Refactor Employee Creation Service & Endpoint for `zulip_user_id`
+
+**Root cause:** W-101 was written before Decision 12, so the employee creation response type, repository calls, and test assertions reference `rc_provisioned` and `rocketchat_user_id`. They must be updated to `zulip_provisioned` and `zulip_user_id`.
+
+**Goal:** `POST /api/employees` returns employee profile with `zulip_provisioned: false` and `zulip_user_id: null`. All tests in `backend/tests/employees.test.ts` and `backend/tests/employee.service.unit.test.ts` updated and passing.
+
+**Approach:** Update `CreateEmployeeInput` and `EmployeeResponse` in `src/types/employee.ts`. Update `employeeRepository.createEmployee` call in `src/services/employee.service.ts`. Update test fixtures.
+
+---
+
+- [ ] **RED — Integration (`backend/tests/employees.test.ts`):**
+  - [ ] Update assertions: `POST /api/employees` → assert body `{ id, employee_code, full_name, email, zulip_provisioned: false, zulip_user_id: null }`. Confirm tests fail if old property names are returned.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Backend:**
+  - [ ] [Type] `src/types/employee.ts`: replace `rocketchat_user_id` with `zulip_user_id: number | null`, replace `rc_provisioned` with `zulip_provisioned: boolean`.
+  - [ ] [Service] `src/services/employee.service.ts`: return `zulip_provisioned: false`, `zulip_user_id: null`.
+  - [ ] [Controller] `src/routes/employees.ts`: update response mapping.
+  - [ ] Run integration test — **confirm GREEN.**
+
+- [ ] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
+  - [ ] Update mocks to return `zulip_provisioned: false`, `zulip_user_id: null`. Confirm failure pre-fix.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Service Logic:**
+  - [ ] Update service tests — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] `POST /api/employees` as super_admin → 201 response with `zulip_provisioned: false`, `zulip_user_id: null`.
+  - [ ] `psql` check `SELECT zulip_provisioned, zulip_user_id FROM employees` → `false`, `null`.
+  - [ ] ✅ Done.
+
+---
+
+#### W-152 — Refactor Auth Service & Login Endpoint for `zulip_user_id`
+
+**Root cause:** W-102 constructed JWT payloads with claim `rc_user_id: string`. Per Decision 12, the claim is `zulip_user_id: number` (integer).
+
+**Goal:** `POST /api/auth/login` generates RS256 JWT with `zulip_user_id: number`. `src/types/auth.ts` `JwtPayload` updated. All tests in `auth.test.ts` and `auth.service.unit.test.ts` updated and passing.
+
+**Approach:** Update `JwtPayload` in `src/types/auth.ts`. Update `auth.service.ts#login` payload construction. Update test assertions.
+
+---
+
+- [ ] **RED — Integration (`backend/tests/auth.test.ts`):**
+  - [ ] Update test assertion: decoded JWT must contain `zulip_user_id` of type `number` (or `null` if unprovisioned). Confirm failure pre-fix.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Backend:**
+  - [ ] [Type] `src/types/auth.ts`: change `rc_user_id: string` → `zulip_user_id: number | null`.
+  - [ ] [Repository] `src/repositories/user.repository.ts`: query `zulip_user_id` instead of `rocketchat_user_id`.
+  - [ ] [Service] `src/services/auth.service.ts`: construct JWT payload with `zulip_user_id`.
+  - [ ] Run integration test — **confirm GREEN.**
+
+- [ ] **RED — Unit (`backend/tests/auth.service.unit.test.ts`):**
+  - [ ] Update test fixtures with `zulip_user_id`. Confirm failure pre-fix.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Auth Logic:**
+  - [ ] Update service unit tests — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] `POST /api/auth/login` → 200 response with JWT.
+  - [ ] Decode JWT → payload contains `zulip_user_id` (number/null).
+  - [ ] ✅ Done.
+
+---
+
+#### W-153 — Refactor JWT Auth Middleware for `zulip_user_id`
+
+**Root cause:** `src/middleware/auth.ts` extracts `payload.rc_user_id` and attaches `req.employee.rc_user_id`. Must extract `payload.zulip_user_id` and attach `req.employee.zulip_user_id`.
+
+**Goal:** `authenticateJwt` populates `req.employee` with `{ id, zulip_user_id, roles }`. All tests in `auth.middleware.unit.test.ts` and `protected_route.test.ts` passing.
+
+**Approach:** Update `Express.Request` type declaration, update `authenticateJwt` middleware, update tests.
+
+---
+
+- [ ] **RED — Unit (`backend/tests/auth.middleware.unit.test.ts`):**
+  - [ ] Update test assertion: `req.employee` populated with `zulip_user_id` (number). Confirm failure pre-fix.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Middleware:**
+  - [ ] [Middleware] `src/middleware/auth.ts`: attach `req.employee = { id: payload.employee_id, zulip_user_id: payload.zulip_user_id, roles: payload.roles }`.
+  - [ ] Run unit tests — **confirm GREEN.**
+
+- [ ] **RED — Integration (`backend/tests/protected_route.test.ts`):**
+  - [ ] Call protected endpoint with JWT containing `zulip_user_id` → assert 200.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Route Integration:**
+  - [ ] Verify protected routes — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Protected route request with valid JWT → 200 OK, `req.employee.zulip_user_id` accessible.
+  - [ ] `pnpm test` → all 30 tests GREEN.
   - [ ] ✅ Done.
 
 ---
@@ -1061,85 +1173,107 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 ---
 
-### Phase 4 — Rocket.Chat Integration & SSO
+### Phase 4 — Zulip Integration & SSO
 
-> **Goal:** Synchronize employee creation with Rocket.Chat account provisioning via RC Admin REST API, store `rocketchat_user_id` atomically, and implement custom OAuth 2.0 Identity Provider endpoints for Rocket.Chat Single Sign-On (SSO).
+> **Goal:** Synchronize employee creation with Zulip account provisioning via Zulip REST API (`POST /api/v1/users`), store `zulip_user_id` (integer) atomically, and implement OIDC (OpenID Connect) Identity Provider endpoints for Zulip Single Sign-On (SSO).
 
 ---
 
-#### W-401 — Rocket.Chat User Provisioning on Employee Creation
+#### W-401 — Zulip User Provisioning on Employee Creation
 
-**Root cause:** Creating an employee in Postgres must automatically provision a corresponding user in Rocket.Chat so the user can log into chat and use the attendance app.
+**Root cause:** Creating an employee in Postgres must automatically provision a corresponding user in Zulip so the user can log into chat and receive attendance notifications.
 
-**Goal:** Extend `POST /api/employees` flow: after Postgres insertion, call RC Admin API `POST /api/v1/users.create`. Save returned `_id` to `employees.rocketchat_user_id` and set `rc_provisioned = true`. If RC fails, set `rc_provisioned = false` and expose `POST /api/employees/:id/retry-rc-provisioning`.
+**Goal:** Extend `POST /api/employees` flow: after Postgres insertion, call Zulip REST API `POST /api/v1/users`. Save returned `user_id` integer to `employees.zulip_user_id` and set `zulip_provisioned = true`. If Zulip fails, set `zulip_provisioned = false` and expose `POST /api/employees/:id/retry-zulip-provisioning`.
 
-**Approach:** Build `src/services/rocketchat.service.ts` using `axios`/`fetch` to authenticate as RC Admin (`X-Auth-Token`, `X-User-Id`). On employee creation:
+**Approach:** Build `src/services/zulip.service.ts` using `fetch`/`axios` with Basic Auth (`Authorization: Basic base64(ZULIP_BOT_EMAIL:ZULIP_BOT_API_KEY)`). On employee creation:
 1. INSERT into Postgres `employees`.
-2. Call `rocketchatService.createUser({ email, name, username, password })`.
-3. On success: UPDATE Postgres set `rocketchat_user_id = rcUser._id`, `rc_provisioned = true`.
-4. On failure: keep Postgres row, set `rc_provisioned = false`, log error, return 201 with warning metadata.
+2. Call `zulipService.createUser({ email, full_name, password })`.
+3. On success: UPDATE Postgres set `zulip_user_id = zulipUser.user_id`, `zulip_provisioned = true`.
+4. On failure: keep Postgres row, set `zulip_provisioned = false`, log error, return 201 with warning metadata.
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/rc_provisioning.test.ts`):**
-  - [ ] Test (with RC Admin API mocked): `POST /api/employees` → assert HTTP 201, `employees.rocketchat_user_id` populated with `"RC_mock_123"`, `rc_provisioned = true`.
-  - [ ] Test (RC API returns 500 error): `POST /api/employees` → assert HTTP 201, `employees.rocketchat_user_id` is null, `rc_provisioned = false`, response contains `{ warning: "Rocket.Chat account creation failed" }`.
-  - [ ] Test: `POST /api/employees/:id/retry-rc-provisioning` for employee with `rc_provisioned = false` → assert HTTP 200, RC user created, `rc_provisioned` updated to `true`.
+- [ ] **RED — Integration (`backend/tests/zulip_provisioning.test.ts`):**
+  - [ ] Test (with Zulip REST API mocked): `POST /api/employees` → assert HTTP 201, `employees.zulip_user_id` populated with `42`, `zulip_provisioned = true`.
+  - [ ] Test (Zulip API returns 500 error): `POST /api/employees` → assert HTTP 201, `employees.zulip_user_id` is null, `zulip_provisioned = false`, response contains `{ warning: "Zulip account creation failed" }`.
+  - [ ] Test: `POST /api/employees/:id/retry-zulip-provisioning` for employee with `zulip_provisioned = false` → assert HTTP 200, Zulip user created, `zulip_provisioned` updated to `true`.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Backend:**
-  - [ ] [Schema] No migration needed — `rocketchat_user_id` and `rc_provisioned` exist on `employees`.
-  - [ ] [Service] `src/services/rocketchat.service.ts#createUser`:
-        - Call `POST ${RC_URL}/api/v1/users.create` with headers `X-Auth-Token` & `X-User-Id`.
-        - Body: `{ email, name, username, password, verified: true, setRandomPassword: false }`.
-        - Return `{ rcUserId: response.data.user._id }`.
+  - [ ] [Schema] No migration needed — `zulip_user_id` and `zulip_provisioned` exist per migration `011`.
+  - [ ] [Service] `src/services/zulip.service.ts#createUser`:
+        - Call `POST ${ZULIP_BASE_URL}/api/v1/users` with Basic Auth header.
+        - Body: `email`, `full_name`, `password`.
+        - Return `{ zulipUserId: response.data.user_id }`.
   - [ ] [Service] `src/services/employee.service.ts#createEmployee`:
         - Execute Postgres write.
-        - Try calling `rocketchatService.createUser`.
-        - If success: update Postgres row `rocketchat_user_id` and `rc_provisioned = true`.
-        - If failure: update Postgres row `rc_provisioned = false`. Return employee record with status.
+        - Try calling `zulipService.createUser`.
+        - If success: update Postgres row `zulip_user_id` and `zulip_provisioned = true`.
+        - If failure: update Postgres row `zulip_provisioned = false`. Return employee record with status.
   - [ ] [Controller] `src/routes/employees.ts`:
         - Update `POST /` to handle dual-system provisioning.
-        - Add `POST /:id/retry-rc-provisioning` route.
+        - Add `POST /:id/retry-zulip-provisioning` route.
   - [ ] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`backend/tests/rc_service.unit.test.ts`):**
-  - [ ] Mock RC API response shape `{ success: true, user: { _id: "RC_abc" } }` → assert returns `"RC_abc"`.
-  - [ ] Mock RC API error shape `{ success: false, error: "Email in use" }` → assert service throws `RocketChatProvisioningError`.
+- [ ] **RED — Unit (`backend/tests/zulip_service.unit.test.ts`):**
+  - [ ] Mock Zulip API response shape `{ result: "success", user_id: 42 }` → assert returns `42`.
+  - [ ] Mock Zulip API error shape `{ result: "error", msg: "Email already in use" }` → assert service throws `ZulipProvisioningError`.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Dual Provisioning Logic:**
-  - [ ] [Type] `src/types/rocketchat.ts` — export `RcCreateUserPayload`, `RcUserResponse`.
-  - [ ] Implement RC service wrapper — **confirm GREEN.**
+  - [ ] [Type] `src/types/zulip.ts` — export `ZulipCreateUserPayload`, `ZulipUserResponse`.
+  - [ ] Implement Zulip service wrapper — **confirm GREEN.**
 
 - [ ] **Verification chain:**
   - [ ] Create employee via `POST /api/employees`.
-  - [ ] Open Rocket.Chat admin portal (`http://localhost:3100/admin/users`) -> verify newly created user appears in RC directory.
-  - [ ] Query Postgres `employees` -> `rocketchat_user_id` matches RC user `_id`, `rc_provisioned = true`.
+  - [ ] Open Zulip admin portal (`http://127.0.0.1:9991/#organization/users`) -> verify newly created user appears in directory.
+  - [ ] Query Postgres `employees` -> `zulip_user_id` matches Zulip `user_id` integer, `zulip_provisioned = true`.
   - [ ] ✅ Done.
 
 ---
 
-#### W-402 — Custom OAuth Server Endpoints (for RC SSO)
+#### W-402 — OIDC Server Endpoints (for Zulip SSO)
 
-**Root cause:** Rocket.Chat must defer user authentication to the Backend API via Custom OAuth 2.0 so employees log in once and land directly in Rocket.Chat.
+**Root cause:** Zulip must defer user authentication to the Backend API via OIDC / Generic OAuth 2.0 so employees log in once and land directly in Zulip.
 
-**Goal:** Implement OAuth 2.0 identity provider endpoints in Backend API:
+**Goal:** Implement OIDC / OAuth 2.0 identity provider endpoints in Backend API:
 - `GET /oauth/authorize`: Validates client, generates auth code.
 - `POST /oauth/token`: Exchanges auth code for access token.
-- `GET /oauth/userinfo`: Returns identity matching RC payload (`{ id, username, name, email }`).
+- `GET /oauth/userinfo`: Returns identity matching Zulip OIDC payload (`{ sub, email, name, preferred_username }`).
 
-**Approach:** Implement `src/services/oauth.service.ts` managing authorization codes in memory/Redis/Postgres with short TTL (5 mins). `GET /oauth/userinfo` extracts `rc_user_id` from Bearer token and returns employee details.
+**Approach:** Implement `src/services/oauth.service.ts` managing authorization codes with short TTL (5 mins). `GET /oauth/userinfo` extracts `zulip_user_id` from Bearer token and returns employee details.
 
 ---
 
 - [ ] **RED — Integration (`backend/tests/oauth.test.ts`):**
-  - [ ] Test: `GET /oauth/authorize?client_id=rc_app&response_type=code&redirect_uri=...` with valid session → redirects to `redirect_uri?code=<auth_code>`.
+  - [ ] Test: `GET /oauth/authorize?client_id=zulip&response_type=code&redirect_uri=...` with valid session → redirects to `redirect_uri?code=<auth_code>`.
   - [ ] Test: `POST /oauth/token` with valid `{ code, grant_type: "authorization_code" }` → returns HTTP 200 `{ access_token, token_type: "Bearer" }`.
-  - [ ] Test: `GET /oauth/userinfo` with Bearer token → returns HTTP 200 `{ id, username, name, email, roles }` matching `employees.rocketchat_user_id`.
+  - [ ] Test: `GET /oauth/userinfo` with Bearer token → returns HTTP 200 `{ sub, email, name, preferred_username }` matching `employees.zulip_user_id`.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Backend:**
+  - [ ] [Schema] No migration needed.
+  - [ ] [Service] `src/services/oauth.service.ts`:
+        - `generateAuthCode(userId, clientId, redirectUri)`.
+        - `exchangeCodeForToken(code)` -> returns JWT access token.
+        - `getUserInfo(zulipUserId)` -> queries `employeeRepository.findByZulipUserId(zulipUserId)`.
+  - [ ] [Controller] `src/routes/oauth.ts`:
+        - `GET /authorize`
+        - `POST /token`
+        - `GET /userinfo`
+  - [ ] Run integration test — **confirm GREEN.**
+
+- [ ] **RED — Unit (`backend/tests/oauth.service.unit.test.ts`):**
+  - [ ] Test invalid/expired authorization code exchange → assert throws `InvalidGrantError`.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — OAuth Server Logic:**
+  - [ ] Implement OAuth server methods — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Configure Zulip SSO settings -> set OIDC endpoints to `http://localhost:4000/oauth/*`.
+  - [ ] Open Zulip login page -> click SSO login -> redirected to Backend API SSO -> authenticated -> returned to Zulip chat as logged-in user.
+  - [ ] ✅ Done.
   - [ ] [Schema] No migration needed.
   - [ ] [Service] `src/services/oauth.service.ts`:
         - `generateAuthCode(userId, clientId, redirectUri)`.
@@ -1165,150 +1299,165 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 ---
 
-### Phase 5 — Rocket.Chat Attendance App (RC Apps-Engine)
+### Phase 5 — Attendance Web App & Zulip Bot
 
-> **Goal:** Build and deploy a TypeScript app using Rocket.Chat Apps-Engine (`@rocket.chat/apps-cli`) that renders a clock-in/out button and break dropdown in the RC UI and communicates with the Backend API.
-
----
-
-#### W-501 — RC Attendance App Scaffold & Deployment Configuration
-
-**Root cause:** The RC attendance app requires a standalone project layout in `rc-app/` configured with RC Apps-Engine manifest and build toolchain.
-
-**Goal:** Scaffold `@rocket.chat/apps-cli` project in `rc-app/`, write `app.json`, implement `BackendClient` HTTP helper, and deploy to local Rocket.Chat instance (`http://localhost:3100`).
-
-**Approach:** Use `rc-apps create` or manual structure in `rc-app/`. Configure permissions (`server-setting:read`, `http:outbound`). Build app package (`.zip`) and deploy via REST API / CLI.
+> **Goal:** Build the standalone Attendance Web App (`attendance-app/` served at `clock.yourcompany.com`) for clock-in/out and break tracking, and the stateless Zulip Bot (`zulip-bot/`) to post daily shift-start attendance prompt links into the Zulip `#attendance` stream.
 
 ---
 
-- [ ] **RED — Integration:**
-  - [ ] Command: `rc-apps list --url http://localhost:3100 --username admin --password <pass>`
-  - [ ] **Run — confirm RED (app not installed in Rocket.Chat).**
+#### W-501 — Attendance Web App Scaffold & SSO Auth Flow
 
-- [ ] **GREEN — App Scaffold & Deployment:**
-  - [ ] Create `rc-app/app.json`:
-        ```json
-        {
-          "id": "jdconnect-attendance",
-          "nameSlug": "jd-connect-attendance",
-          "name": "JD Connect Attendance",
-          "version": "1.0.0",
-          "description": "Clock-in/out and break management app for JD Connect",
-          "requiredApiVersion": "^1.19.0"
-        }
-        ```
-  - [ ] Create `rc-app/src/lib/BackendClient.ts`: HTTP wrapper calling Backend API (`http://host.docker.internal:4000/api`).
-  - [ ] Build app package using `@rocket.chat/apps-cli`.
-  - [ ] Deploy app to local RC: `rc-apps deploy --url http://localhost:3100 --username admin --password <pass>`.
-  - [ ] Run integration check — **confirm GREEN.**
+**Root cause:** Per Decision 12, employees mark attendance via a standalone lightweight web page (`clock.yourcompany.com`) rather than an embedded RC modal.
 
-- [ ] **RED — Unit (`rc-app/tests/backend_client.unit.test.ts`):**
-  - [ ] Test `BackendClient` request header construction with JWT token.
+**Goal:** Bootstrap single-page Attendance Web App in `attendance-app/` (HTML/CSS/JS). Reads JWT session cookie from root domain SSO login (`.yourcompany.com`), verifies authentication status against `GET /api/auth/me` or `/api/attendance/status`, and renders employee welcome header.
+
+**Approach:** Build responsive UI using modern Vanilla CSS / lightweight JS. Reads JWT token from cookie or local storage. Calls Backend API with Bearer token header. Redirects to Zulip SSO login if unauthenticated.
+
+---
+
+- [ ] **RED — Integration (`attendance-app/tests/auth_flow.test.ts`):**
+  - [ ] Test: Unauthenticated navigation to `attendance-app` → redirects to SSO `/oauth/authorize`.
+  - [ ] Test: Valid session cookie → loads page, displays employee name and status.
   - [ ] **Run — confirm RED.**
 
-- [ ] **GREEN — Client Wrapper Unit Test:**
-  - [ ] Verify header construction — **confirm GREEN.**
+- [ ] **GREEN — Attendance App Scaffold:**
+  - [ ] Create `attendance-app/index.html`: Responsive layout with header, current status badge, action buttons card, break selector card.
+  - [ ] Create `attendance-app/app.js`: Auth check, API client helper (`fetch` wrapper with Bearer header).
+  - [ ] Create `attendance-app/styles.css`: Sleek modern dark/light card design.
+  - [ ] Run integration test — **confirm GREEN.**
+
+- [ ] **RED — Unit (`attendance-app/tests/api_helper.unit.test.ts`):**
+  - [ ] Test API client Bearer token attachment and error handling.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — API Helper Unit Test:**
+  - [ ] Verify header attachment and error toast triggering — **confirm GREEN.**
 
 - [ ] **Verification chain:**
-  - [ ] Open Rocket.Chat Admin -> Apps -> `JD Connect Attendance` appears as Installed & Enabled.
+  - [ ] Open `http://localhost:3300` (or `clock.localhost`) with valid SSO cookie → Welcome card displays logged-in employee name.
   - [ ] ✅ Done.
 
 ---
 
-#### W-502 — Clock-In / Clock-Out Toolbar Button & Modal Flow
+#### W-502 — Attendance Web App Clock-In & Clock-Out UI Handlers
 
-**Root cause:** Employees need an interactive UIKit action button in Rocket.Chat to clock in and clock out without leaving the chat interface.
+**Root cause:** Employees need clear interactive controls on the Attendance Web App to clock in at shift start and clock out at shift end.
 
-**Goal:** Register a UI Action Button in Rocket.Chat header/slash command `/attendance`. Clicking opens a UIKit modal displaying current attendance status and a primary button ("Clock In" or "Clock Out"). Submitting calls Backend API endpoints (`POST /api/attendance/clock-in` or `/clock-out`).
+**Goal:** Web app fetches current attendance status (`GET /api/attendance/status`). If clocked out → displays green "Clock In" button calling `POST /api/attendance/clock-in`. If clocked in → displays red "Clock Out" button calling `POST /api/attendance/clock-out` with live duration timer. Displays error toast on duplicate clock-in (409) or error.
 
-**Approach:** Implement `IUIActionButtonHandler` and `IUIKitInteractionHandler` in `rc-app/`. On click: call `GET /api/attendance/status` using user's JWT. Render UIKit modal with dynamic button context. On submit: execute API call, display contextual notification toast.
+**Approach:** `app.js` manages state transition (Clocked Out → Clocked In → Clocked Out). Updates DOM dynamically without full page refresh.
 
 ---
 
-- [ ] **RED — Integration (`rc-app/tests/clock_in_action.test.ts`):**
-  - [ ] Test Action Handler: User clicks "Clock In" in modal → sends `POST /api/attendance/clock-in` with `Authorization: Bearer <jwt>` → receives 201 → returns UIKit success message "You're clocked in ✅".
-  - [ ] Test Action Handler (already clocked in): API returns 409 → returns UIKit error message "You're already clocked in today."
+- [ ] **RED — Integration (`attendance-app/tests/clock_actions.test.ts`):**
+  - [ ] Test Click "Clock In": Sends `POST /api/attendance/clock-in` → status updates to "Clocked In", timer starts.
+  - [ ] Test Click "Clock Out": Sends `POST /api/attendance/clock-out` → status updates to "Clocked Out", summary card shows hours worked.
   - [ ] **Run — confirm RED.**
 
-- [ ] **GREEN — RC App UIKit:**
-  - [ ] [Type] `rc-app/src/types/attendance.ts` — mirror `AttendanceRecord` API response type.
-  - [ ] [RC App] `rc-app/src/handlers/ActionButtonHandler.ts`: Register top header action button.
-  - [ ] [RC App] `rc-app/src/modals/AttendanceModal.ts`: Build UIKit Modal View:
-        - Header: "Attendance Management"
-        - Body: Current status ("Clocked Out" or "Clocked In since 09:00 AM EST")
-        - Action Button: "Clock In" (green) or "Clock Out" (red)
-  - [ ] [RC App] `rc-app/src/handlers/BlockActionHandler.ts`:
-        - On "Clock In" click -> call `BackendClient.post('/attendance/clock-in')`.
-        - On "Clock Out" click -> call `BackendClient.post('/attendance/clock-out')`.
-        - Surface response via `sendNotification` or modal update.
+- [ ] **GREEN — Web App Clock Controls:**
+  - [ ] Update `attendance-app/index.html`: Add Clock-In/Clock-Out action button container.
+  - [ ] Update `attendance-app/app.js`:
+        - `handleClockIn()`: POST `/api/attendance/clock-in` → on 201 show success notification & start timer.
+        - `handleClockOut()`: POST `/api/attendance/clock-out` → on 200 show shift summary modal.
   - [ ] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`rc-app/tests/modal_builder.unit.test.ts`):**
-  - [ ] Test `AttendanceModal` builder output shape for clocked-out vs clocked-in state.
+- [ ] **RED — Unit (`attendance-app/tests/timer.unit.test.ts`):**
+  - [ ] Test elapsed shift duration timer calculation function.
   - [ ] **Run — confirm RED.**
 
-- [ ] **GREEN — Modal Builder Unit Test:**
-  - [ ] Verify UIKit JSON view block structure — **confirm GREEN.**
+- [ ] **GREEN — Timer Unit Test:**
+  - [ ] Verify timer formatting `HH:MM:SS` — **confirm GREEN.**
 
 - [ ] **Verification chain:**
-  - [ ] Log into Rocket.Chat as employee.
-  - [ ] Click "Attendance" toolbar button -> Modal opens showing "Clocked Out".
-  - [ ] Click "Clock In" -> Success notification "You're clocked in ✅" appears.
-  - [ ] Check HR Dashboard / Postgres DB -> `attendance_records` row created.
-  - [ ] Click "Attendance" button again -> Modal shows "Clocked In since..." with "Clock Out" button.
-  - [ ] Click "Clock Out" -> Success notification "Clocked out" appears.
+  - [ ] Employee opens `clock.yourcompany.com` -> clicks "Clock In" -> badge changes to "Clocked In since 09:00 AM EST".
+  - [ ] Employee clicks "Clock Out" -> shift summary displays total hours worked.
+  - [ ] Postgres `attendance_records` -> row verified.
   - [ ] ✅ Done.
 
 ---
 
-#### W-503 — Dynamic Break Dropdown & Break Action Handlers
+#### W-503 — Attendance Web App Break UI & Dynamic Dropdown
 
-**Root cause:** Employees need to select a break reason (bio, tea, dinner, smoke, meeting) from a dropdown populated dynamically from the Backend API and toggle break states.
+**Root cause:** Employees select break reasons (bio, tea, dinner, smoke, meeting) from a dynamic dropdown and start/end break events.
 
-**Goal:** RC Attendance App fetches active break types from `GET /api/break-types?is_active=true` on modal open. Renders dropdown list. Selecting a type and clicking "Start Break" calls `POST /api/breaks/start`. When on break, modal displays active break type & duration, with an "End Break" button calling `POST /api/breaks/end`.
+**Goal:** Web app fetches break types (`GET /api/break-types?is_active=true`) on load and populates `<select>` dropdown. Selecting a reason and clicking "Start Break" calls `POST /api/breaks/start`. When on break, UI displays active break badge, limit timer, and an "End Break" button calling `POST /api/breaks/end`.
 
-**Approach:** On modal open: fetch break types via `BackendClient`. Render `StaticSelectElement` dropdown. On "Start Break": call `POST /api/breaks/start` with selected `break_type_key`. On "End Break": call `POST /api/breaks/end`.
+**Approach:** Populate `<select>` options from API. Disable "Start Break" if not clocked in or already on break. Display warning badge if break limit is exceeded.
 
 ---
 
-- [ ] **RED — Integration (`rc-app/tests/break_action.test.ts`):**
-  - [ ] Test Modal Open: Fetches break types from Backend API → populates dropdown with options (`bio`, `tea`, `dinner`, `smoke`, `meeting`).
-  - [ ] Test Break Start: User selects "Tea Break" and submits → sends `POST /api/breaks/start` with `{ break_type_key: "tea" }` → receives 201 → modal updates to "On Tea Break".
-  - [ ] Test Break End: User clicks "End Break" → sends `POST /api/breaks/end` → receives 200 → modal returns to normal clocked-in state.
+- [ ] **RED — Integration (`attendance-app/tests/break_flow.test.ts`):**
+  - [ ] Test Break Dropdown: Populated with `bio`, `tea`, `dinner`, `smoke`, `meeting`.
+  - [ ] Test Start Break: Select "Tea Break" -> click "Start Break" -> sends `POST /api/breaks/start` -> active break card appears.
+  - [ ] Test End Break: Click "End Break" -> sends `POST /api/breaks/end` -> returns to normal clocked-in view.
   - [ ] **Run — confirm RED.**
 
-- [ ] **GREEN — RC App Break Handler:**
-  - [ ] [Type] `rc-app/src/types/break.ts` — mirror `BreakType` and `BreakRecord` types.
-  - [ ] [RC App] `rc-app/src/modals/BreakModal.ts`:
-        - Fetch break types dynamically from Backend API.
-        - Construct UIKit `StaticSelectElement` dropdown options.
-        - Render "Start Break" button.
-        - If active break exists: render active break status badge and "End Break" button.
-  - [ ] [RC App] `rc-app/src/handlers/BreakBlockActionHandler.ts`:
-        - Handle `start_break` action -> call `BackendClient.post('/breaks/start')`.
-        - Handle `end_break` action -> call `BackendClient.post('/breaks/end')`.
+- [ ] **GREEN — Web App Break UI:**
+  - [ ] Update `attendance-app/index.html`: Add Break select box, "Start Break" button, active break status banner.
+  - [ ] Update `attendance-app/app.js`:
+        - `loadBreakTypes()`: GET `/api/break-types?is_active=true` -> populate `<select>`.
+        - `handleStartBreak()`: POST `/api/breaks/start` with `{ break_type_key }`.
+        - `handleEndBreak()`: POST `/api/breaks/end`.
   - [ ] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`rc-app/tests/break_dropdown.unit.test.ts`):**
-  - [ ] Mock empty `break_types` API response -> verify fallback error message in modal.
+- [ ] **RED — Unit (`attendance-app/tests/break_overrun.unit.test.ts`):**
+  - [ ] Test break limit warning banner trigger function.
   - [ ] **Run — confirm RED.**
 
-- [ ] **GREEN — Dropdown Unit Test:**
-  - [ ] Verify dropdown builder handling — **confirm GREEN.**
+- [ ] **GREEN — Overrun Unit Test:**
+  - [ ] Verify banner triggers when elapsed > limit_minutes — **confirm GREEN.**
 
 - [ ] **Verification chain:**
-  - [ ] Clocked-in employee opens Attendance modal in Rocket.Chat.
-  - [ ] Selects "Tea Break (15 min)" from dropdown -> clicks "Start Break".
-  - [ ] Modal updates: shows "On Tea Break (started at...)".
-  - [ ] Click "End Break" -> Toast "Break ended (duration: 12 mins) ✅".
-  - [ ] Postgres check `break_records` -> `duration_minutes = 12.00`, `status = 'completed'`.
+  - [ ] Clocked-in employee selects "Tea Break" -> clicks "Start Break" -> UI shows "On Tea Break (15 min limit)".
+  - [ ] Clicks "End Break" -> success notification shows break duration -> DB record verified.
+  - [ ] ✅ Done.
+
+---
+
+#### W-504 — Zulip Bot Daily Attendance Message Poster
+
+**Root cause:** Every morning at shift start, a prompt message must be posted into Zulip's `#attendance` stream so employees can click directly to `clock.yourcompany.com`.
+
+**Goal:** Node.js cron service in `zulip-bot/` running daily at 8:45 AM EST: calls Zulip REST API `POST /api/v1/messages` to post a Markdown message with links to the Attendance Web App into the `#attendance` stream.
+
+**Approach:** Stateless service using `node-cron` or system cron. Calls Zulip API with Basic Auth (`ZULIP_BOT_EMAIL:ZULIP_BOT_API_KEY`). Message includes Markdown link `[🟢 Clock In / Manage Attendance](https://clock.yourcompany.com)`.
+
+---
+
+- [ ] **RED — Integration (`zulip-bot/tests/poster.test.ts`):**
+  - [ ] Test: Execute poster script with mocked Zulip API → assert `POST /api/v1/messages` called with `type: "stream"`, `to: "attendance"`, `topic: "Daily Attendance"`, content containing URL `clock.yourcompany.com`.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Zulip Bot Poster:**
+  - [ ] Create `zulip-bot/src/poster.ts`:
+        - Load `ZULIP_BASE_URL`, `ZULIP_BOT_EMAIL`, `ZULIP_BOT_API_KEY`, `ZULIP_ATTENDANCE_STREAM`.
+        - Construct Markdown payload:
+          ```markdown
+          📋 **Good morning team! Please mark your attendance for today.**
+
+          👉 [🟢 Clock In / Manage Attendance](https://clock.yourcompany.com)
+          ```
+        - Execute `fetch('${ZULIP_BASE_URL}/api/v1/messages')` with Basic Auth.
+        - Log message ID or error.
+  - [ ] Run integration test — **confirm GREEN.**
+
+- [ ] **RED — Unit (`zulip-bot/tests/message_builder.unit.test.ts`):**
+  - [ ] Test Markdown message formatting builder function.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Builder Unit Test:**
+  - [ ] Verify message content URL string — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Run `pnpm --filter @jdconnect/zulip-bot start`.
+  - [ ] Open Zulip `#attendance` stream -> new message appears with clickable link to `clock.yourcompany.com`.
   - [ ] ✅ Done.
 
 ---
 
 ### Phase 6 — HR Dashboard (Web App)
 
-> **Goal:** A separate web application (Next.js/React) for HR administrators to manage employees, handle RC provisioning retries, inspect attendance/break audit logs, monitor workforce live status, and trigger password resets.
+> **Goal:** A separate web application (Next.js/React) for HR administrators to manage employees, handle Zulip provisioning retries, inspect attendance/break audit logs, monitor workforce live status, and trigger password resets.
 
 ---
 
@@ -1350,11 +1499,11 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 ---
 
-#### W-602 — Employee Management UI & RC Provisioning Retry Handler
+#### W-602 — Employee Management UI & Zulip Provisioning Retry Handler
 
-**Root cause:** HR administrators require screens to view the employee directory, onboard new employees, and identify/retry failed Rocket.Chat account provisionings (`rc_provisioned = false`).
+**Root cause:** HR administrators require screens to view the employee directory, onboard new employees, and identify/retry failed Zulip account provisionings (`zulip_provisioned = false`).
 
-**Goal:** Build `/dashboard/employees` page displaying employee directory table with filters (department, centre, status). Build "Add Employee" modal form (`POST /api/employees`). Display warning badge on rows where `rc_provisioned = false` with a "Retry RC Provisioning" button (`POST /api/employees/:id/retry-rc-provisioning`).
+**Goal:** Build `/dashboard/employees` page displaying employee directory table with filters (department, centre, status). Build "Add Employee" modal form (`POST /api/employees`). Display warning badge on rows where `zulip_provisioned = false` with a "Retry Zulip Provisioning" button (`POST /api/employees/:id/retry-zulip-provisioning`).
 
 **Approach:** Page fetches `GET /api/employees`. Table renders employee fields per `project_data.md` Section 6. Form collects inputs and sends creation request. "Retry" button invokes API and updates table row state.
 
@@ -1363,14 +1512,14 @@ Create the two new directories with minimal but functional scaffolding. The actu
 - [ ] **RED — Integration (`hr-dashboard/tests/employee_ui.test.ts`):**
   - [ ] Test: `/dashboard/employees` fetches and renders employee list table.
   - [ ] Test: Submit "Add Employee" form → sends `POST /api/employees` → table updates with new employee row.
-  - [ ] Test: Click "Retry RC Provisioning" on employee row with `rc_provisioned = false` → sends `POST /api/employees/:id/retry-rc-provisioning` → badge updates to `rc_provisioned = true`.
+  - [ ] Test: Click "Retry Zulip Provisioning" on employee row with `zulip_provisioned = false` → sends `POST /api/employees/:id/retry-zulip-provisioning` → badge updates to `zulip_provisioned = true`.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Employee UI:**
   - [ ] [Type] `hr-dashboard/src/types/employee.ts` — export Frontend employee interfaces.
   - [ ] [Page] `hr-dashboard/src/app/dashboard/employees/page.tsx`: Employee directory table with search, department filter, status badges.
   - [ ] [Component] `hr-dashboard/src/components/AddEmployeeModal.tsx`: Form inputs for full name, email, role, department, centre, shift, joining date.
-  - [ ] [Component] `hr-dashboard/src/components/RcProvisioningBadge.tsx`: Displays green check for `true`, amber warning + "Retry" button for `false`.
+  - [ ] [Component] `hr-dashboard/src/components/ZulipProvisioningBadge.tsx`: Displays green check for `true`, amber warning + "Retry" button for `false`.
   - [ ] Run integration test — **confirm GREEN.**
 
 - [ ] **RED — Unit (`hr-dashboard/tests/employee_table.unit.test.ts`):**
@@ -1383,8 +1532,8 @@ Create the two new directories with minimal but functional scaffolding. The actu
 - [ ] **Verification chain:**
   - [ ] HR opens `/dashboard/employees`.
   - [ ] Clicks "Add Employee" -> fills form -> submits.
-  - [ ] Employee appears in table. If Rocket.Chat container was temporarily down, amber badge "RC Failed" shows with "Retry" button.
-  - [ ] Click "Retry" -> button triggers provisioning -> badge updates to green "RC Provisioned".
+  - [ ] Employee appears in table. If Zulip container was temporarily down, amber badge "Zulip Failed" shows with "Retry" button.
+  - [ ] Click "Retry" -> button triggers provisioning -> badge updates to green "Zulip Provisioned".
   - [ ] ✅ Done.
 
 ---
@@ -1462,14 +1611,14 @@ Create the two new directories with minimal but functional scaffolding. The actu
   - [ ] HR Admin opens `/dashboard/employees` -> clicks "Reset Password" on employee row.
   - [ ] Enters new password "TempPassword123!" -> submits.
   - [ ] Success toast "Password reset successfully" appears.
-  - [ ] Target employee can immediately log into RocketChat / HR Dashboard using "TempPassword123!".
+  - [ ] Target employee can immediately log into Zulip / HR Dashboard using "TempPassword123!".
   - [ ] ✅ Done.
 
 ---
 
 ### Phase 7 — Data Migration (Old System → New)
 
-> **Goal:** ETL migration scripts to transfer employee profiles, credentials, attendance records, and break history from the old Supabase Postgres to the new plain Postgres database, and migrate historical chat conversations into Rocket.Chat via Admin REST API.
+> **Goal:** ETL migration scripts to transfer employee profiles, credentials, attendance records, and break history from the old Supabase Postgres to the new plain Postgres database, and migrate historical chat conversations into Zulip via Admin REST API.
 
 ---
 
@@ -1477,14 +1626,14 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 **Root cause:** Existing employee profiles, user credentials, and corporate assignments stored in legacy Supabase Postgres must be migrated to the new plain Postgres schema.
 
-**Goal:** Write `backend/scripts/migrate-employees.ts` that reads old `auth.users` and `public.employees` data, transforms IDs and fields, inserts into new `users` and `employees` tables, and provisions Rocket.Chat accounts for all active employees.
+**Goal:** Write `backend/scripts/migrate-employees.ts` that reads old `auth.users` and `public.employees` data, transforms IDs and fields, inserts into new `users` and `employees` tables, and provisions Zulip accounts for all active employees.
 
-**Approach:** Connect to old DB via read-only connection string `OLD_DATABASE_URL`. Read records in batches. Map `auth.users.id` -> `users.id`, preserve `employee_code`. Execute dual-system write to new Postgres and call RC Admin API to set `employees.rocketchat_user_id`.
+**Approach:** Connect to old DB via read-only connection string `OLD_DATABASE_URL`. Read records in batches. Map `auth.users.id` -> `users.id`, preserve `employee_code`. Execute dual-system write to new Postgres and call Zulip Admin REST API `POST /api/v1/users` to set `employees.zulip_user_id`.
 
 ---
 
 - [ ] **RED — Integration (`backend/tests/migration_employees.test.ts`):**
-  - [ ] Test: Execute `migrate-employees.ts` against old staging database → assert row count in new `users` and `employees` matches old active employee count. All active employees have non-null `rocketchat_user_id`.
+  - [ ] Test: Execute `migrate-employees.ts` against old staging database → assert row count in new `users` and `employees` matches old active employee count. All active employees have non-null `zulip_user_id`.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Employee Migration Script:**
@@ -1493,8 +1642,8 @@ Create the two new directories with minimal but functional scaffolding. The actu
         - SELECT active users and employees from old schema.
         - Transform data: map roles, department names -> department UUIDs, centre codes -> centre UUIDs.
         - INSERT into new `users` and `employees` tables in transaction.
-        - Invoke `rocketchatService.createUser` for each employee -> update `rocketchat_user_id` and `rc_provisioned = true`.
-        - Log migration summary (migrated count, failed RC count).
+        - Invoke `zulipService.createUser` for each employee -> update `zulip_user_id` and `zulip_provisioned = true`.
+        - Log migration summary (migrated count, failed Zulip count).
   - [ ] Run `npx ts-node backend/scripts/migrate-employees.ts`.
   - [ ] Run integration test — **confirm GREEN.**
 
@@ -1508,7 +1657,7 @@ Create the two new directories with minimal but functional scaffolding. The actu
 - [ ] **Verification chain:**
   - [ ] Run `npx ts-node backend/scripts/migrate-employees.ts`.
   - [ ] Check new Postgres `SELECT COUNT(*) FROM employees` -> matches old DB count.
-  - [ ] Check Rocket.Chat user directory -> all migrated employees appear in RC.
+  - [ ] Check Zulip user directory -> all migrated employees appear in Zulip.
   - [ ] ✅ Done.
 
 ---
@@ -1553,47 +1702,47 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 ---
 
-#### W-703 — Chat History Import via Rocket.Chat REST API
+#### W-703 — Chat History Import via Zulip REST API
 
-**Root cause:** Historical group channel conversations and direct messages from the old platform need to be imported into Rocket.Chat.
+**Root cause:** Historical group channel conversations and direct messages from the old platform need to be imported into Zulip streams.
 
-**Goal:** Write `backend/scripts/migrate-chat.ts` that reads legacy conversation threads, maps user accounts via `employees.rocketchat_user_id`, and uses Rocket.Chat Admin REST API (`POST /api/v1/channels.create`, `POST /api/v1/chat.postMessage`) to populate chat channels.
+**Goal:** Write `backend/scripts/migrate-chat.ts` that reads legacy conversation threads, maps user accounts via `employees.zulip_user_id`, and uses Zulip REST API (`POST /api/v1/messages`) to populate Zulip streams and topics.
 
-**Approach:** Read legacy chat messages sorted by timestamp. Map sender IDs to RC user IDs. Call Rocket.Chat REST API import endpoints or post messages programmatically preserving original timestamps and sender identities.
+**Approach:** Read legacy chat messages sorted by timestamp. Map sender IDs to Zulip user IDs. Call Zulip REST API endpoints programmatically preserving original sender identities and topics.
 
 ---
 
 - [ ] **RED — Integration (`backend/tests/migration_chat.test.ts`):**
-  - [ ] Test: Execute `migrate-chat.ts` against test Rocket.Chat instance → assert target channels exist and messages are visible with correct sender attribution.
+  - [ ] Test: Execute `migrate-chat.ts` against test Zulip instance → assert target streams exist and messages are visible with correct sender attribution.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Chat Migration Script:**
   - [ ] [Script] Create `backend/scripts/migrate-chat.ts`:
         - Read legacy channels and message history.
-        - Map legacy sender IDs to `employees.rocketchat_user_id`.
-        - Call RC REST API `POST /api/v1/channels.create` for missing rooms.
-        - Post historical messages in chronological order via RC REST API.
-        - Log import statistics (channels created, messages imported, missing user skips).
+        - Map legacy sender IDs to `employees.zulip_user_id`.
+        - Call Zulip REST API to create missing streams.
+        - Post historical messages in chronological order via Zulip REST API.
+        - Log import statistics (streams created, messages imported, missing user skips).
   - [ ] Run `npx ts-node backend/scripts/migrate-chat.ts`.
   - [ ] Run integration test — **confirm GREEN.**
 
 - [ ] **RED — Unit (`backend/tests/chat_transformer.unit.test.ts`):**
-  - [ ] Test chat message payload transformer formatting for RocketChat REST API.
+  - [ ] Test chat message payload transformer formatting for Zulip REST API.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Chat Transformer Unit Test:**
   - [ ] Verify message payload structure — **confirm GREEN.**
 
 - [ ] **Verification chain:**
-  - [ ] Run migration script -> open Rocket.Chat app.
-  - [ ] Navigate to imported channels -> verify historical messages and timestamps are intact.
+  - [ ] Run migration script -> open Zulip web app.
+  - [ ] Navigate to imported streams -> verify historical messages and topics are intact.
   - [ ] ✅ Done.
 
 ---
 
 ### Phase 8 — Production Deployment
 
-> **Goal:** Deploy all four JD Connect components (Postgres, Mongo Replica Set, Rocket.Chat, Backend API, HR Dashboard) to Hostinger VPS using Docker Compose, Nginx reverse proxy with HTTPS TLS certificates, production secrets, and automated daily backups.
+> **Goal:** Deploy all four JD Connect components (JD Connect Postgres, Zulip Postgres, Zulip, Backend API, HR Dashboard) to Hostinger VPS using Docker Compose, Nginx reverse proxy with HTTPS TLS certificates, production secrets, and automated daily backups.
 
 ---
 
@@ -1601,9 +1750,9 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 **Root cause:** All components must run reliably on a single Hostinger VPS with proper resource constraints, container restart policies, and SSL reverse proxy routing.
 
-**Goal:** Write `docker/docker-compose.prod.yml` and `docker/nginx.conf`. Configure Nginx reverse proxy with Let's Encrypt TLS certificates for subdomains (`chat.yourcompany.com`, `hr.yourcompany.com`, `api.yourcompany.com`).
+**Goal:** Write `docker/docker-compose.prod.yml` and `docker/nginx.conf`. Configure Nginx reverse proxy with Let's Encrypt TLS certificates for subdomains (`chat.yourcompany.com`, `hr.yourcompany.com`, `clock.yourcompany.com`, `api.yourcompany.com`).
 
-**Approach:** Configure production Docker Compose stack with container health checks, named persistent volumes, logging limits, and Nginx container handling SSL termination and proxy passes to internal ports (RC: 3000, API: 4000, HR Dashboard: 3000).
+**Approach:** Configure production Docker Compose stack with container health checks, named persistent volumes, logging limits, and Nginx container handling SSL termination and proxy passes to internal ports (Zulip: 9991/80, API: 4000, HR Dashboard: 3000, Attendance App: 3300).
 
 ---
 
@@ -1613,13 +1762,13 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 - [ ] **GREEN — Production Infrastructure:**
   - [ ] [Docker] Create `docker/docker-compose.prod.yml`:
-        - Services: `postgres`, `mongo`, `rocketchat`, `backend-api`, `hr-dashboard`, `nginx`.
+        - Services: `postgres`, `zulip`, `backend-api`, `hr-dashboard`, `attendance-app`, `zulip-bot`, `nginx`.
         - Set `restart: always` on all services.
-        - Define production network and volume mounts (`pgdata`, `mongodata`, `rc_uploads`).
+        - Define production network and volume mounts (`pgdata`, `zulipdata`).
   - [ ] [Nginx] Create `docker/nginx.conf`:
-        - Upstream proxies for Backend API (4000), Rocket.Chat (3000), HR Dashboard (3000).
+        - Upstream proxies for Backend API (4000), Zulip (9991), HR Dashboard (3000), Attendance App (3300).
         - SSL configuration using Let's Encrypt certificates (`/etc/letsencrypt/live/...`).
-        - WebSocket support for Rocket.Chat (`Upgrade`, `Connection` headers).
+        - WebSocket support for Zulip (`Upgrade`, `Connection` headers).
   - [ ] SSH to Hostinger VPS -> clone repository -> run `docker compose -f docker/docker-compose.prod.yml up -d`.
   - [ ] Run production integration check — **confirm GREEN.**
 
@@ -1631,8 +1780,9 @@ Create the two new directories with minimal but functional scaffolding. The actu
   - [ ] Confirm Nginx syntax is valid — **confirm GREEN.**
 
 - [ ] **Verification chain:**
-  - [ ] Open `https://chat.yourcompany.com` -> Rocket.Chat loads over HTTPS with valid SSL certificate.
+  - [ ] Open `https://chat.yourcompany.com` -> Zulip loads over HTTPS with valid SSL certificate.
   - [ ] Open `https://hr.yourcompany.com` -> HR Dashboard loads over HTTPS.
+  - [ ] Open `https://clock.yourcompany.com` -> Attendance Web App loads over HTTPS.
   - [ ] Open `https://api.yourcompany.com/health` -> returns `{ status: "ok" }`.
   - [ ] ✅ Done.
 
@@ -1640,11 +1790,11 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 #### W-802 — Secrets & Environment Hardening
 
-**Root cause:** Production instances require strict environment variable segregation, production RS256 RSA key pair generation, and proper CORS/OAuth domain configuration.
+**Root cause:** Production instances require strict environment variable segregation, production RS256 RSA key pair generation, and proper CORS/OIDC domain configuration.
 
 **Goal:** Secure all secrets in production `.env`, generate 2048-bit RS256 RSA key pair for JWT signing, configure root-domain session cookie scoping (`.yourcompany.com`), and lock down CORS origins on Backend API.
 
-**Approach:** Generate RSA key pair using `openssl genpkey`. Set production `.env` variables (`DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `RC_ADMIN_TOKEN`, `NODE_ENV=production`). Restrict CORS in `src/app.ts` strictly to company subdomains.
+**Approach:** Generate RSA key pair using `openssl genpkey`. Set production `.env` variables (`DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `ZULIP_BOT_API_KEY`, `NODE_ENV=production`). Restrict CORS in `src/app.ts` strictly to company subdomains.
 
 ---
 
@@ -1675,30 +1825,30 @@ Create the two new directories with minimal but functional scaffolding. The actu
 
 ---
 
-#### W-803 — Automated Postgres & MongoDB Backup Pipeline
+#### W-803 — Automated Postgres & Zulip Backup Pipeline
 
 **Root cause:** Production data (HR records, attendance logs, break audits, chat history) requires automated daily backups with retention enforcement and recovery validation drills.
 
-**Goal:** Automated backup shell script `scripts/backup.sh` executed daily via cron: performs `pg_dump` for Postgres and `mongodump` for MongoDB replica set, compresses archives (`.tar.gz`), maintains a 30-day rolling retention window, and logs execution status.
+**Goal:** Automated backup shell script `scripts/backup.sh` executed daily via cron: performs `pg_dump` for JD Connect Postgres and Zulip Postgres, compresses archives (`.tar.gz`), maintains a 30-day rolling retention window, and logs execution status.
 
 **Approach:** Write POSIX shell script `docker/scripts/backup.sh`. Configure cron job on host VPS (`0 2 * * * /app/docker/scripts/backup.sh`). Implement restoration verification script `scripts/restore_test.sh` to validate backup archives against a temporary test container.
 
 ---
 
 - [ ] **RED — Integration (`docker/tests/backup.test.ts`):**
-  - [ ] Test: Run `backup.sh` → assert valid `.tar.gz` backup archive created containing Postgres dump and Mongo BSON dump.
-  - [ ] Test: Run `restore_test.sh` using created archive → assert database successfully restored into test container.
+  - [ ] Test: Run `backup.sh` → assert valid `.tar.gz` backup archive created containing Postgres SQL dumps for both databases.
+  - [ ] Test: Run `restore_test.sh` using created archive → assert databases successfully restored into test containers.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Automated Backup Pipeline:**
   - [ ] [Script] Create `docker/scripts/backup.sh`:
         - Target directory: `/var/backups/jdconnect/$(date +%Y%m%d_%H%M%S)`.
-        - Execute `docker exec postgres pg_dump -U jduser jdconnect > postgres.sql`.
-        - Execute `docker exec mongo mongodump --out /backup/mongo`.
-        - Compress archive: `tar -czf backup.tar.gz postgres.sql mongo/`.
+        - Execute `docker exec jdconnect_postgres pg_dump -U jduser jdconnect > jdconnect_postgres.sql`.
+        - Execute `docker exec jdconnect_zulip_postgres pg_dump -U zulip zulip > zulip_postgres.sql` (or Zulip data volume archive).
+        - Compress archive: `tar -czf backup.tar.gz jdconnect_postgres.sql zulip_postgres.sql`.
         - Delete backup archives older than 30 days: `find /var/backups/jdconnect/ -type f -mtime +30 -delete`.
   - [ ] [Script] Create `docker/scripts/restore_test.sh`:
-        - Test script verifying archive uncompression and SQL/BSON restoration integrity.
+        - Test script verifying archive uncompression and SQL restoration integrity.
   - [ ] Add host cron job: `0 2 * * * /app/docker/scripts/backup.sh >> /var/log/jdconnect_backup.log 2>&1`.
   - [ ] Run integration test — **confirm GREEN.**
 

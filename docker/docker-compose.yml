@@ -24,71 +24,97 @@ services:
       retries: 5
 
   # ==========================================
-  # 2. MongoDB Replica Set Container (Rocket.Chat Data)
+  # 2. PostgreSQL Database Container (Zulip DB)
   # ==========================================
-  mongo:
-    image: mongo:7
-    container_name: jdconnect_mongo
+  zulip-postgres:
+    image: postgres:16-alpine
+    container_name: jdconnect_zulip_postgres
     restart: unless-stopped
-    command: --replSet rs0 --bind_ip_all
-    ports:
-      - "27017:27017"
+    environment:
+      POSTGRES_DB: zulip
+      POSTGRES_USER: zulip
+      POSTGRES_PASSWORD: zulipdevpostgrespassword
     volumes:
-      - mongodata:/data/db
+      - zulipdbdata:/var/lib/postgresql/data
     networks:
       - jdconnect_network
     healthcheck:
-      test: ["CMD-SHELL", "echo 'db.runCommand(\"ping\").ok' | mongosh localhost:27017/test --quiet"]
+      test: ["CMD-SHELL", "pg_isready -U zulip -d zulip"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   # ==========================================
-  # 3. MongoDB Replica Set Initialization Helper
+  # 3. Redis Cache Container (for Zulip rate limiting & sessions)
   # ==========================================
-  mongo-init:
-    image: mongo:7
-    container_name: jdconnect_mongo_init
-    restart: "no"
-    depends_on:
-      mongo:
-        condition: service_healthy
+  zulip-redis:
+    image: redis:7-alpine
+    container_name: jdconnect_zulip_redis
+    command: redis-server --requirepass zulipdevredispassword
+    restart: unless-stopped
     networks:
       - jdconnect_network
-    entrypoint: >
-      mongosh --host mongo:27017 --eval '
-        try {
-          rs.status();
-          console.log("Replica set already initialized.");
-        } catch (e) {
-          rs.initiate({
-            _id: "rs0",
-            members: [{ _id: 0, host: "mongo:27017" }]
-          });
-          console.log("Replica set rs0 successfully initialized.");
-        }
-      '
 
   # ==========================================
-  # 4. Rocket.Chat Container
+  # 4. Memcached Container (for Zulip caching)
   # ==========================================
-  rocketchat:
-    image: rocketchat/rocket.chat:latest
-    container_name: jdconnect_rocketchat
+  zulip-memcached:
+    image: memcached:alpine
+    container_name: jdconnect_zulip_memcached
     restart: unless-stopped
-    environment:
-      - MONGO_URL=mongodb://mongo:27017/rocketchat?replicaSet=rs0
-      - MONGO_OPLOG_URL=mongodb://mongo:27017/local?replicaSet=rs0
-      - ROOT_URL=http://127.0.0.1:3100
-      - PORT=3000
-      - DEPLOY_METHOD=docker-compose
+    networks:
+      - jdconnect_network
+
+  # ==========================================
+  # 5. RabbitMQ Container (for Zulip event queue)
+  # ==========================================
+  zulip-rabbitmq:
+    image: rabbitmq:3-alpine
+    container_name: jdconnect_zulip_rabbitmq
+    restart: unless-stopped
+    networks:
+      - jdconnect_network
+
+  # ==========================================
+  # 6. Zulip Chat Platform Container
+  # ==========================================
+  zulip:
+    image: zulip/docker-zulip:latest
+    container_name: jdconnect_zulip
+    restart: unless-stopped
     ports:
-      - "3100:3000"
+      - "9991:443"
+    environment:
+      - DB_HOST=zulip-postgres
+      - DB_USER=zulip
+      - DB_NAME=zulip
+      - SETTING_EXTERNAL_HOST=127.0.0.1:9991
+      - SETTING_ZULIP_ADMINISTRATOR=admin@company.com
+      - SETTING_POSTGRES_HOST=zulip-postgres
+      - SETTING_POSTGRES_USER=zulip
+      - SETTING_POSTGRES_DB=zulip
+      - SETTING_REDIS_HOST=zulip-redis
+      - SETTING_MEMCACHED_LOCATION=zulip-memcached:11211
+      - SETTING_RABBITMQ_HOST=zulip-rabbitmq
+      - SECRETS_email_password=zulipdevpassword
+      - SECRETS_postgres_password=zulipdevpostgrespassword
+      - SECRETS_redis_password=zulipdevredispassword
+      - SECRETS_secret_key=zulipdevsecretkey32charsminimum
+      - SETTING_EMAIL_HOST=
+      - SETTING_EMAIL_HOST_USER=
+      - CERTIFICATES=self-signed
+      - TRUST_GATEWAY_IP=True
     depends_on:
-      mongo-init:
-        condition: service_completed_successfully
-      postgres:
+      zulip-postgres:
         condition: service_healthy
+      zulip-redis:
+        condition: service_started
+      zulip-memcached:
+        condition: service_started
+      zulip-rabbitmq:
+        condition: service_started
+    volumes:
+      - zulipdata:/data
     networks:
       - jdconnect_network
 
@@ -99,5 +125,8 @@ networks:
 volumes:
   pgdata:
     driver: local
-  mongodata:
+  zulipdata:
     driver: local
+  zulipdbdata:
+    driver: local
+
