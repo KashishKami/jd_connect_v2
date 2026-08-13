@@ -151,7 +151,7 @@ To run the applications locally in development mode:
 | `pnpm lint` | Run ESLint check |
 | `pnpm typecheck` | Run TypeScript typecheck (`tsc --noEmit`) |
 | `pnpm test` | Run Vitest test suites using `.env.test` |
-| `pnpm ci:quality` | Run lint, typecheck, and test suite in sequence |
+| `pnpm ci:quality` | Run lint, typecheck, test suite, and build in sequence |
 | `pnpm docker:dev:up` | Start Docker containers (Postgres, Mongo, Rocket.Chat) |
 | `pnpm docker:dev:down` | Stop Docker containers |
 | `pnpm docker:logs` | Tail Docker container logs |

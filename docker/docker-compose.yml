@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # 1. PostgreSQL Database Container (Dev & Test DBs)
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: jdconnect_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: jdconnect
+      POSTGRES_USER: jduser
+      POSTGRES_PASSWORD: jdpassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - jdconnect_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jduser -d jdconnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # 2. MongoDB Replica Set Container (Rocket.Chat Data)
+  # ==========================================
+  mongo:
+    image: mongo:7
+    container_name: jdconnect_mongo
+    restart: unless-stopped
+    command: --replSet rs0 --bind_ip_all
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    networks:
+      - jdconnect_network
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'db.runCommand(\"ping\").ok' | mongosh localhost:27017/test --quiet"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # 3. MongoDB Replica Set Initialization Helper
+  # ==========================================
+  mongo-init:
+    image: mongo:7
+    container_name: jdconnect_mongo_init
+    restart: "no"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - jdconnect_network
+    entrypoint: >
+      mongosh --host mongo:27017 --eval '
+        try {
+          rs.status();
+          console.log("Replica set already initialized.");
+        } catch (e) {
+          rs.initiate({
+            _id: "rs0",
+            members: [{ _id: 0, host: "mongo:27017" }]
+          });
+          console.log("Replica set rs0 successfully initialized.");
+        }
+      '
+
+  # ==========================================
+  # 4. Rocket.Chat Container
+  # ==========================================
+  rocketchat:
+    image: rocket.chat:8.0.0
+    container_name: jdconnect_rocketchat
+    restart: unless-stopped
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/rocketchat?replicaSet=rs0
+      - MONGO_OPLOG_URL=mongodb://mongo:27017/local?replicaSet=rs0
+      - ROOT_URL=http://127.0.0.1:3100
+      - PORT=3000
+      - DEPLOY_METHOD=docker-compose
+    ports:
+      - "3100:3000"
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    networks:
+      - jdconnect_network
+
+networks:
+  jdconnect_network:
+    driver: bridge
+
+volumes:
+  pgdata:
+    driver: local
+  mongodata:
+    driver: local

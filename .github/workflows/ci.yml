@@ -7,70 +7,10 @@ on:
     branches: [ main, master, develop ]
 
 jobs:
-  lint:
-    name: 1. ESLint Check
+  quality:
+    name: CI Pipeline (Lint, Typecheck, Test, Build)
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run ESLint
-        run: pnpm lint
-
-  typecheck:
-    name: 2. TypeScript Typechecks
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run TypeScript Typechecks
-        run: pnpm typecheck
-
-  tests:
-    name: 3. Test Suites
-    runs-on: ubuntu-latest
-    needs: typecheck
     services:
       postgres:
         image: postgres:16-alpine
@@ -100,36 +40,34 @@ jobs:
         with:
           version: 9
 
-      - name: Install Dependencies
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Monorepo Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run Tests
+      - name: Step 1 — Run ESLint
+        run: pnpm lint
+
+      - name: Step 2 — Run TypeScript Typechecks
+        run: pnpm typecheck
+
+      - name: Step 3 — Run Test Suites
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://jduser:jdpassword@127.0.0.1:5432/jdconnect_test?schema=public
           JWT_SECRET: ci-test-secret-jwt-key-min-32-chars-long
         run: pnpm test
 
-  build:
-    name: 4. Production Build Verification
-    runs-on: ubuntu-latest
-    needs: tests
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build All Workspaces
+      - name: Step 4 — Build Monorepo Workspaces
         run: pnpm build

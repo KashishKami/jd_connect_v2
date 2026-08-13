@@ -80,32 +80,32 @@ This file is the **source of truth** for what is done, what is in progress, and 
 
 ---
 
-- [ ] **RED — Integration:**
-  - [ ] Command: `docker compose -f docker/docker-compose.yml exec postgres psql -U postgres -c "\l"`
-  - [ ] **Run — confirm RED (container not running yet).**
+- [x] **RED — Integration:**
+  - [x] Command: `docker compose -f docker/docker-compose.yml exec postgres psql -U postgres -c "\l"`
+  - [x] **Run — confirm RED (container not running yet).**
 
-- [ ] **GREEN — Docker Postgres:**
-  - [ ] Create `docker/docker-compose.yml` with service `postgres`:
+- [x] **GREEN — Docker Postgres:**
+  - [x] Create `docker/docker-compose.yml` with service `postgres`:
         - Image: `postgres:16-alpine`
         - Ports: `5432:5432`
         - Environment: `POSTGRES_DB=jdconnect`, `POSTGRES_USER=jduser`, `POSTGRES_PASSWORD=jdpassword`
         - Volume: `pgdata:/var/lib/postgresql/data`
         - Healthcheck: `pg_isready -U jduser -d jdconnect`
-  - [ ] Create `docker/.env.example` and `docker/.env`.
-  - [ ] Run `docker compose -f docker/docker-compose.yml up -d postgres`.
-  - [ ] Run integration check — **confirm GREEN.**
+  - [x] Create `docker/.env.example` and `docker/.env`.
+  - [x] Run `docker compose -f docker/docker-compose.yml up -d postgres`.
+  - [x] Run integration check — **confirm GREEN.**
 
-- [ ] **RED — Unit Check:**
-  - [ ] Test DB connection script against `localhost:5432`.
-  - [ ] **Run — confirm RED (before DB container start).**
+- [x] **RED — Unit Check:**
+  - [x] Test DB connection script against `localhost:5432`.
+  - [x] **Run — confirm RED (before DB container start).**
 
-- [ ] **GREEN — Connection Test:**
-  - [ ] Verify container is healthy via `docker ps` — **confirm GREEN.**
+- [x] **GREEN — Connection Test:**
+  - [x] Verify container is healthy via `docker ps` — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `docker compose ps` shows `postgres` status `healthy`.
-  - [ ] Connect via `psql -h localhost -U jduser -d jdconnect` → success.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `docker compose ps` shows `postgres` status `healthy`.
+  - [x] Connect via `psql -h localhost -U jduser -d jdconnect` → success.
+  - [x] ✅ Done.
 
 ---
 
@@ -119,30 +119,30 @@ This file is the **source of truth** for what is done, what is in progress, and 
 
 ---
 
-- [ ] **RED — Integration:**
-  - [ ] Test: `curl http://localhost:3100/api/v1/info`
-  - [ ] **Run — confirm RED (Rocket.Chat container not running).**
+- [x] **RED — Integration:**
+  - [x] Test: `curl http://localhost:3100/api/v1/info`
+  - [x] **Run — confirm RED (Rocket.Chat container not running).**
 
-- [ ] **GREEN — Rocket.Chat Stack:**
-  - [ ] Add `mongo` service (`mongo:7`, `--replSet rs0 --bind_ip_all`, volume `mongodata`).
-  - [ ] Add `mongo-init` helper service running:
+- [x] **GREEN — Rocket.Chat Stack:**
+  - [x] Add `mongo` service (`mongo:7`, `--replSet rs0 --bind_ip_all`, volume `mongodata`).
+  - [x] Add `mongo-init` helper service running:
         `rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongo:27017" }] })`.
-  - [ ] Add `rocketchat` service (`rocket.chat:8`, `MONGO_URL=mongodb://mongo:27017/rocketchat?replicaSet=rs0`, `PORT=3000`, published port `3100:3000`).
-  - [ ] Run `docker compose -f docker/docker-compose.yml up -d`.
-  - [ ] Run integration test (`curl http://localhost:3100/api/v1/info`) — **confirm GREEN.**
+  - [x] Add `rocketchat` service (`rocket.chat:8`, `MONGO_URL=mongodb://mongo:27017/rocketchat?replicaSet=rs0`, `PORT=3000`, published port `3100:3000`).
+  - [x] Run `docker compose -f docker/docker-compose.yml up -d`.
+  - [x] Run integration test (`curl http://localhost:3100/api/v1/info`) — **confirm GREEN.**
 
-- [ ] **RED — Unit Check:**
-  - [ ] Query Mongo replica set status `rs.status()` inside container.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit Check:**
+  - [x] Query Mongo replica set status `rs.status()` inside container.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Mongo Replica Set Verification:**
-  - [ ] Confirm `rs.status().ok === 1` in mongo container — **confirm GREEN.**
+- [x] **GREEN — Mongo Replica Set Verification:**
+  - [x] Confirm `rs.status().ok === 1` in mongo container — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Open `http://localhost:3100` in browser → Rocket.Chat setup wizard appears.
-  - [ ] Complete initial setup wizard, create admin account.
-  - [ ] Store Admin credentials in `docker/.env`.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Open `http://localhost:3100` in browser → Rocket.Chat setup wizard appears.
+  - [x] Complete initial setup wizard, create admin account.
+  - [x] Store Admin credentials in `docker/.env`.
+  - [x] ✅ Done.
 
 ---
 

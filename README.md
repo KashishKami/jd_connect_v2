@@ -39,6 +39,6 @@ pnpm typecheck
 # Run test suites
 pnpm test
 
-# Run full CI quality check (lint + typecheck + test)
+# Run full CI quality check (lint + typecheck + test + build)
 pnpm ci:quality
 ```

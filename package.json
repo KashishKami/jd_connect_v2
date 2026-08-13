@@ -10,7 +10,7 @@
     "typecheck": "pnpm --recursive run typecheck",
     "test": "pnpm --recursive run test",
     "build": "pnpm --recursive run build",
-    "ci:quality": "pnpm lint && pnpm typecheck && pnpm test",
+    "ci:quality": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "docker:dev:up": "docker compose -f docker/docker-compose.yml up -d",
     "docker:dev:down": "docker compose -f docker/docker-compose.yml down",
     "docker:test:up": "docker compose -f docker/docker-compose.yml up -d postgres mongo",
