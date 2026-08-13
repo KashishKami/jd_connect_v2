@@ -6,8 +6,7 @@ This document is the **authoritative source** for all database schemas — both 
 
 ## 1. Architecture: Two Databases, One Ecosystem
 
-```
-POSTGRES (owned by Backend API)
+``POSTGRES — JD Connect Schema (owned by Backend API)
   users ──────────────────────────────────────────────────────────────┐
     │                                                                  │
     └── employees (auth_user_id FK)                                    │
@@ -21,7 +20,7 @@ POSTGRES (owned by Backend API)
           │     └── break_audit_logs (employee_id FK)                  │
           │                                                            │
           └── employee_sessions (user_id FK)                          │
-                                                                       │
+                                                                        │
   roles ──────────────────────────────────────────────────────────────┤
   departments                                                          │
   centres                                                              │
@@ -29,6 +28,17 @@ POSTGRES (owned by Backend API)
   break_types                                                          │
   break_policies                                                       │
   audit_logs (actor_user_id FK) ──────────────────────────────────────┘
+
+POSTGRES — Zulip Schema (owned by Zulip — never touched by Backend API directly)
+  zerver_userprofile   ← Zulip user identities
+  zerver_stream        ← Streams (channels)
+  zerver_message       ← All messages
+  zerver_subscription  ← User-to-stream memberships
+  (+ all other Zulip Django-managed tables)
+  NOTE: MongoDB has been removed from the stack entirely. See Decision 12.
+
+CROSS-SYSTEM BRIDGE:
+  Postgres employees.zulip_user_id (INTEGER) = Zulip zerver_userprofile.id��─────────────────────────────────┘
 
 MONGODB (owned by Rocket.Chat — never touched by Backend API directly)
   users       ← RC's own user records (chat identity)
@@ -196,8 +206,8 @@ The core HR record. Linked to `users` via `auth_user_id`, and to Rocket.Chat via
 CREATE TABLE employees (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   auth_user_id          UUID UNIQUE REFERENCES users(id) ON DELETE SET NULL,
-  rocketchat_user_id    TEXT UNIQUE,          -- RC's internal _id. THE cross-system bridge.
-  rc_provisioned        BOOLEAN NOT NULL DEFAULT false, -- true once RC account confirmed created
+  zulip_user_id         INTEGER UNIQUE,         -- Zulip's internal user ID integer. THE cross-system bridge.
+  zulip_provisioned     BOOLEAN NOT NULL DEFAULT false, -- true once Zulip account confirmed created
   employee_code         TEXT UNIQUE NOT NULL
                           DEFAULT ('JD' || lpad(nextval('employee_code_seq')::text, 4, '0')),
   full_name             TEXT NOT NULL,
@@ -219,7 +229,7 @@ CREATE TABLE employees (
 
 CREATE SEQUENCE employee_code_seq START 1;
 CREATE INDEX idx_employees_auth_user ON employees(auth_user_id);
-CREATE INDEX idx_employees_rc_user ON employees(rocketchat_user_id);
+CREATE INDEX idx_employees_zulip_user ON employees(zulip_user_id);
 CREATE INDEX idx_employees_dept ON employees(department_id);
 CREATE INDEX idx_employees_manager ON employees(manager_id);
 CREATE INDEX idx_employees_tl ON employees(team_leader_id);
@@ -465,34 +475,46 @@ CREATE TABLE audit_logs (
 
 ---
 
-## 3. MongoDB Schema (Rocket.Chat — Read Only Reference)
+## 3. Zulip Postgres Schema (Read-Only Reference)
 
-> **IMPORTANT:** The Backend API never writes to MongoDB directly. All RC data is managed via the Rocket.Chat Admin REST API. This section is provided for reference only — so developers understand what lives where.
+> **IMPORTANT:** The Backend API never queries Zulip's Postgres database directly. All interactions with Zulip data go through the **Zulip REST API**. This section is provided for reference only — so developers understand what lives where in Zulip's internal data model.
 
-### Key Collections
+> Zulip uses Django ORM migrations. The schema is not static documentation but is managed by Zulip's own codebase. Do not write SQL migrations against Zulip's database.
 
-| Collection | Purpose |
+### Key Zulip Tables (Django model names)
+
+| Django Model / Table | Purpose |
 |---|---|
-| `users` | RC user identities. `_id` here = `employees.rocketchat_user_id` in Postgres. |
-| `rocketchat_room` | Channels, DMs, private groups. |
-| `rocketchat_message` | All messages. Contains `u._id` (sender's RC user id). |
-| `rocketchat_subscription` | User-to-room membership and unread counts. |
+| `zerver_userprofile` | Zulip user identities. `id` here (integer) = `employees.zulip_user_id` in Postgres. |
+| `zerver_stream` | Streams (channels), e.g., `#attendance`, `#general`. |
+| `zerver_message` | All messages. Contains `sender_id` (Zulip user ID). |
+| `zerver_subscription` | User-to-stream membership and notification preferences. |
 
-### Relevant RC User Document Shape (for SSO mapping)
+### Relevant Zulip User Shape (for SSO mapping)
 
 ```json
 {
-  "_id": "RC_abc123",
-  "username": "riya.sharma",
-  "name": "Riya Sharma",
-  "emails": [{ "address": "riya@company.com", "verified": true }],
-  "roles": ["user"],
-  "active": true,
-  "customFields": {}
+  "user_id": 42,
+  "email": "riya@company.com",
+  "full_name": "Riya Sharma",
+  "is_active": true,
+  "is_bot": false,
+  "role": 400
 }
 ```
 
-The `_id` field from this document is what gets stored in `employees.rocketchat_user_id` in Postgres.
+The `user_id` integer from this response is what gets stored in `employees.zulip_user_id` in JD Connect's Postgres.
+
+### Zulip Admin REST API Endpoints Used by Backend API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/users` | Create a new Zulip user (on employee creation) |
+| `PATCH` | `/api/v1/users/{user_id}` | Update user details or deactivate account |
+| `GET` | `/api/v1/users/{user_id}` | Fetch Zulip user details |
+| `DELETE` | `/api/v1/users/{user_id}` | Deactivate a Zulip user |
+
+Authentication: `Authorization: Basic base64(bot_email:bot_api_key)` using a Zulip admin bot account.
 
 ---
 
@@ -510,7 +532,7 @@ users (1) ──────── (1) employees
 ```
 
 - `employees.auth_user_id` → `users.id` (auth identity)
-- `employees.rocketchat_user_id` → MongoDB `users._id` (chat identity)
+- `employees.zulip_user_id` → Zulip `zerver_userprofile.id` (chat identity — integer)
 - `employees.manager_id` → `employees.id` (self-referential hierarchy)
 - `employees.team_leader_id` → `employees.id` (self-referential hierarchy)
 - `attendance_records.employee_id` → `employees.id`

@@ -14,11 +14,12 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | Phase | Description | Status | Target Files |
 |:---|:---|:---|:---|
 | **Phase 0** | Project Setup & Infrastructure | **[x] COMPLETE** | `docker/docker-compose.yml`, `backend/package.json`, `backend/src/app.ts`, `backend/migrations/`, `backend/vitest.config.ts` |
+| **Phase 0.5** | Zulip Migration (Remove Rocket.Chat/MongoDB, Install Zulip) | **[ ] NOT STARTED** | `docker/docker-compose.yml`, `.env.example`, `.env.test`, `backend/migrations/004_create_employees.sql`, `backend/src/types/auth.ts`, `backend/src/middleware/auth.ts`, `backend/src/services/zulip.service.ts`, `attendance-app/`, `zulip-bot/` |
 | **Phase 1** | JWT Authentication | **[/] IN PROGRESS** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
 | **Phase 2** | Attendance API | **[ ] NOT STARTED** | `backend/src/routes/attendance.ts`, `backend/src/services/attendance.service.ts`, `backend/src/repositories/attendance.repository.ts` |
 | **Phase 3** | Break API | **[ ] NOT STARTED** | `backend/src/routes/breaks.ts`, `backend/src/services/break.service.ts`, `backend/src/repositories/break.repository.ts` |
-| **Phase 4** | Rocket.Chat Integration & SSO | **[ ] NOT STARTED** | `backend/src/services/rocketchat.service.ts`, `backend/src/routes/oauth.ts`, `backend/src/services/oauth.service.ts` |
-| **Phase 5** | Rocket.Chat Attendance App (RC Apps-Engine) | **[ ] NOT STARTED** | `rc-app/app.json`, `rc-app/src/handlers/`, `rc-app/src/modals/`, `rc-app/src/types/` |
+| **Phase 4** | Zulip Integration & SSO | **[ ] NOT STARTED** | `backend/src/services/zulip.service.ts`, `backend/src/routes/oauth.ts`, `backend/src/services/oauth.service.ts` |
+| **Phase 5** | Attendance Web App & Zulip Bot | **[ ] NOT STARTED** | `attendance-app/index.html`, `attendance-app/app.js`, `zulip-bot/src/poster.ts` |
 | **Phase 6** | HR Dashboard (Web App) | **[ ] NOT STARTED** | `hr-dashboard/src/app/`, `hr-dashboard/src/components/`, `hr-dashboard/src/lib/api.ts` |
 | **Phase 7** | Data Migration (Old System → New) | **[ ] NOT STARTED** | `backend/scripts/migrate-employees.ts`, `backend/scripts/migrate-attendance.ts`, `backend/scripts/migrate-chat.ts` |
 | **Phase 8** | Production Deployment | **[ ] NOT STARTED** | `docker/docker-compose.prod.yml`, `docker/nginx.conf`, backup scripts |
@@ -280,6 +281,256 @@ This file is the **source of truth** for what is done, what is in progress, and 
 > - **Test Database Setup & Isolation (W-006)**: Configured `backend/vitest.config.ts` with `fileParallelism: false` and `tests/setup.ts` table truncation hooks (`TRUNCATE ... CASCADE`) to prevent race conditions and cross-test data pollution across parallel test suites.
 > - **Decision Log & CSR Architecture**: Documented Decision 11 in `CONTEXT/decision_log.md` comparing plain `pg` pool + SQL repositories vs Prisma ORM. Implemented W-101 (`POST /api/employees`) using strict Controller-Service-Repository architecture.
 > - **Quality Verification**: Verified full monorepo quality suite `pnpm ci:quality` (`lint` -> `typecheck` -> `test` -> `build`) passing 100% cleanly across all workspace packages with 18/18 passing tests.
+
+---
+
+### Phase 0.5 — Zulip Migration (Remove Rocket.Chat & MongoDB, Install Zulip)
+
+> **Goal:** Remove all Rocket.Chat and MongoDB infrastructure. Add Zulip container. Update all environment files. Rename `employees.rocketchat_user_id` → `employees.zulip_user_id` (INTEGER). Update JWT payload type. Scaffold the `attendance-app/` and `zulip-bot/` directories. Ensure all existing 30 passing tests remain GREEN throughout this migration.
+
+> **Decision reference:** Decision 12 in `CONTEXT/decision_log.md`. Read it in full before beginning this phase.
+
+---
+
+#### W-051 — Docker: Remove MongoDB & Rocket.Chat, Add Zulip Container
+
+**Root cause:**
+Decision 12 dropped Rocket.Chat and MongoDB from the architecture entirely. The `docker/docker-compose.yml` still contains the `mongo`, `mongo-init`, and `rocketchat` services and the `mongodata` volume, which must be removed. Zulip must be added in their place using Zulip's official Docker image.
+
+**Goal:**
+1. `docker/docker-compose.yml` contains only: `postgres`, `zulip` (and Zulip's own internally managed Postgres or the shared one — see Approach below).
+2. `mongodata` volume is removed.
+3. Zulip container is healthy and accessible at `http://127.0.0.1:9991`.
+4. All existing Postgres-dependent tests remain GREEN.
+
+**Approach:**
+Zulip's official Docker image (`zulip/docker-zulip`) manages its own internal Postgres and RabbitMQ containers internally via its `docker-compose.yml` pattern. For local dev, use Zulip's recommended `docker-zulip` compose setup running in isolation on port 9991. The JD Connect `docker-compose.yml` removes Mongo/RC services and adds a reference block pointing to the Zulip stack (or includes the Zulip service directly as a separate compose file). Zulip and JD Connect Postgres remain on separate networks — Zulip never sees JD Connect's Postgres.
+
+---
+
+- [ ] **RED — Infrastructure Check:**
+  - [ ] Test: `docker compose -f docker/docker-compose.yml ps` → confirm `mongo`, `mongo-init`, `rocketchat` services are present (they should be, before removal).
+  - [ ] Test: `curl http://127.0.0.1:9991` → confirm RED (Zulip not yet running).
+  - [ ] **Run — confirm RED (Zulip not accessible).**
+
+- [ ] **GREEN — Docker Compose Update:**
+  - [ ] [Docker] In `docker/docker-compose.yml`:
+        - **Remove** services: `mongo`, `mongo-init`, `rocketchat`.
+        - **Remove** volume: `mongodata`.
+        - **Add** service `zulip`:
+          ```yaml
+          zulip:
+            image: zulip/docker-zulip:9-latest
+            container_name: jdconnect_zulip
+            restart: unless-stopped
+            ports:
+              - "9991:80"
+            environment:
+              - SETTING_EXTERNAL_HOST=127.0.0.1
+              - SETTING_ZULIP_ADMINISTRATOR=admin@company.com
+              - SECRETS_email_password=zulipdevpassword
+              - SETTING_EMAIL_HOST=
+              - SETTING_EMAIL_HOST_USER=
+              - DISABLE_HTTPS=true
+            volumes:
+              - zulipdata:/data
+          ```
+        - **Add** volume: `zulipdata: { driver: local }`.
+  - [ ] Run `docker compose down --volumes` to remove old Mongo data.
+  - [ ] Run `docker compose up -d` with new config.
+  - [ ] Run integration check — **confirm GREEN.**
+
+- [ ] **RED — Unit Check:**
+  - [ ] Verify `curl http://127.0.0.1:9991` returns HTTP 200 or a Zulip login page response.
+  - [ ] **Run — confirm RED (before containers start).**
+
+- [ ] **GREEN — Zulip Running:**
+  - [ ] Confirm `docker ps` shows `jdconnect_zulip` as `healthy` or running — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] `docker compose ps` → `postgres` healthy, `zulip` running, NO `mongo` or `rocketchat` services.
+  - [ ] Open `http://127.0.0.1:9991` in browser → Zulip setup wizard or login page appears.
+  - [ ] Complete Zulip initial setup, create admin account. Store credentials in `docker/.env`.
+  - [ ] Existing `pnpm test` suite → all 30 tests still GREEN (no Postgres or Backend changes yet).
+  - [ ] ✅ Done.
+
+---
+
+#### W-052 — Environment Files: Replace ROCKETCHAT_* with ZULIP_*
+
+**Root cause:**
+All `.env.*` files still reference `ROCKETCHAT_URL`, `ROCKETCHAT_ADMIN_USER`, `ROCKETCHAT_ADMIN_PASSWORD`, `ROCKETCHAT_ADMIN_TOKEN`, and `ROCKETCHAT_ADMIN_ID`. These must be replaced with Zulip equivalents (`ZULIP_BASE_URL`, `ZULIP_BOT_EMAIL`, `ZULIP_BOT_API_KEY`) and the `ALLOWED_CORS_ORIGINS` updated to drop the RC port.
+
+**Goal:**
+1. `.env.example` has `ZULIP_*` variables and no `ROCKETCHAT_*` variables.
+2. `.env.test` and `.env.test.example` are updated correspondingly.
+3. `docker/.env.example` is updated.
+4. Backend API compiles (`pnpm typecheck`) and tests pass (`pnpm test`) after env changes.
+
+**Approach:**
+Zulip REST API authenticates using a bot account's email + API key (`Authorization: Basic base64(bot_email:api_key)`). The Backend API will use a dedicated admin bot account in Zulip. Create this bot in the Zulip admin panel after W-051 completes. The API key is stored in the env file.
+
+---
+
+- [ ] **RED — Infrastructure Check:**
+  - [ ] Verify `.env.example` still contains `ROCKETCHAT_URL` — confirm it exists (pre-edit state).
+  - [ ] **Run — confirm RED (old RC vars present).**
+
+- [ ] **GREEN — Env File Updates:**
+  - [ ] [Env] Update `.env.example`:
+        - Remove: `ROCKETCHAT_URL`, `ROCKETCHAT_ADMIN_USER`, `ROCKETCHAT_ADMIN_PASSWORD`, `ROCKETCHAT_ADMIN_TOKEN`, `ROCKETCHAT_ADMIN_ID`.
+        - Add:
+          ```
+          # Zulip Integration & Admin Bot API
+          ZULIP_BASE_URL=http://127.0.0.1:9991
+          ZULIP_BOT_EMAIL=jdconnect-bot@company.com
+          ZULIP_BOT_API_KEY=zulip_bot_api_key_here
+          ZULIP_ATTENDANCE_STREAM=attendance
+          ```
+        - Update `ALLOWED_CORS_ORIGINS=http://127.0.0.1:3200,http://127.0.0.1:9991`.
+  - [ ] [Env] Apply the same changes to `.env.test` and `.env.test.example`.
+  - [ ] [Env] Update `docker/.env.example` with Zulip service variables.
+  - [ ] Run `pnpm typecheck` — **confirm GREEN (no TS errors from env changes).**
+
+- [ ] **RED — Unit Check:**
+  - [ ] Run `pnpm test` → confirm all 30 existing tests still GREEN.
+  - [ ] **Run — confirm RED if any test references old RC env vars.**
+
+- [ ] **GREEN — Tests Stable:**
+  - [ ] Verify no test imports or references `ROCKETCHAT_*` env vars — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] `cat .env.example` → no `ROCKETCHAT_*` variables present.
+  - [ ] `cat .env.example` → `ZULIP_BASE_URL`, `ZULIP_BOT_EMAIL`, `ZULIP_BOT_API_KEY` present.
+  - [ ] `pnpm test` → all 30 tests GREEN.
+  - [ ] ✅ Done.
+
+---
+
+#### W-053 — Database: Rename `rocketchat_user_id` → `zulip_user_id` (INTEGER)
+
+**Root cause:**
+Decision 12 changes the cross-system key from `employees.rocketchat_user_id TEXT` (Rocket.Chat's string `_id`) to `employees.zulip_user_id INTEGER` (Zulip's numeric user ID). The Postgres migration, the repository query, and all TypeScript types referencing this column must be updated.
+
+**Goal:**
+1. New SQL migration `011_rename_rocketchat_to_zulip.sql` runs cleanly on both `jdconnect` and `jdconnect_test` databases.
+2. `employees` table has column `zulip_user_id INTEGER UNIQUE` (was `rocketchat_user_id TEXT UNIQUE`).
+3. Index renamed from `idx_employees_rc_user` to `idx_employees_zulip_user`.
+4. `rc_provisioned` column renamed to `zulip_provisioned`.
+5. `employee.repository.ts#findByRocketChatId` renamed to `findByZulipUserId` with updated query.
+6. All TypeScript types updated: `EmployeeResponse.rc_provisioned` → `zulip_provisioned`, `rc_user_id: string` → `zulip_user_id: number` in `JwtPayload`.
+7. All existing 30 tests pass GREEN after migration.
+
+**Approach:**
+Write a new numbered migration file (011) using `ALTER TABLE` with column rename and type change. Drop the old index, create the new one. Update repository method and all dependent type files. The JWT payload type change affects `src/types/auth.ts` and `src/middleware/auth.ts`.
+
+---
+
+- [ ] **RED — Integration (`backend/tests/migrations.test.ts`):**
+  - [ ] Add test: Query `information_schema.columns` for `employees.zulip_user_id` with `data_type = 'integer'` → assert column exists.
+  - [ ] Add test: Query `information_schema.columns` for `employees.rocketchat_user_id` → assert it does NOT exist.
+  - [ ] **Run — confirm RED (column still named `rocketchat_user_id`).**
+
+- [ ] **GREEN — Backend:**
+  - [ ] [Schema] Create `backend/migrations/011_rename_rocketchat_to_zulip.sql`:
+        ```sql
+        -- Rename and retype cross-system key column
+        ALTER TABLE employees
+          DROP COLUMN IF EXISTS rocketchat_user_id;
+        ALTER TABLE employees
+          ADD COLUMN IF NOT EXISTS zulip_user_id INTEGER UNIQUE;
+
+        -- Rename provisioning flag
+        ALTER TABLE employees
+          RENAME COLUMN rc_provisioned TO zulip_provisioned;
+
+        -- Update index
+        DROP INDEX IF EXISTS idx_employees_rc_user;
+        CREATE INDEX IF NOT EXISTS idx_employees_zulip_user ON employees(zulip_user_id);
+        ```
+  - [ ] Run `npx ts-node backend/scripts/migrate.ts` on `jdconnect` and `jdconnect_test`.
+  - [ ] [Repository] In `backend/src/repositories/employee.repository.ts`:
+        - Rename `findByRocketChatId(rcUserId: string)` → `findByZulipUserId(zulipUserId: number)`.
+        - Update SQL: `SELECT * FROM employees WHERE zulip_user_id = $1`.
+        - Update column references in `createEmployee` and `updateEmployee` calls.
+  - [ ] [Types] In `backend/src/types/auth.ts`:
+        - Change `JwtPayload.rc_user_id: string` → `zulip_user_id: number`.
+  - [ ] [Middleware] In `backend/src/middleware/auth.ts`:
+        - Update `req.employee` attachment: replace `rc_user_id` with `zulip_user_id`.
+        - Update `requirePermission` and any JWT payload destructuring.
+  - [ ] [Types] In `backend/src/types/employee.ts`:
+        - Change `EmployeeResponse.rocketchat_user_id` → `zulip_user_id: number | null`.
+        - Change `EmployeeResponse.rc_provisioned` → `zulip_provisioned: boolean`.
+  - [ ] Run integration test — **confirm GREEN.**
+
+- [ ] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
+  - [ ] Update mocks: replace `rocketchat_user_id` with `zulip_user_id` in all test employee fixtures.
+  - [ ] Replace any `findByRocketChatId` mock with `findByZulipUserId`.
+  - [ ] **Run — confirm RED (mocks still use old field names).**
+
+- [ ] **GREEN — Updated Unit Tests:**
+  - [ ] Fix all test fixtures and mock references — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] `psql -U jduser -d jdconnect -c "\d employees"` → column `zulip_user_id integer` present, `rocketchat_user_id` absent.
+  - [ ] `psql -U jduser -d jdconnect -c "\d employees"` → column `zulip_provisioned boolean` present, `rc_provisioned` absent.
+  - [ ] `pnpm test` → all 30 tests GREEN.
+  - [ ] ✅ Done.
+
+---
+
+#### W-054 — Scaffold `attendance-app/` and `zulip-bot/` Directories
+
+**Root cause:**
+Decision 12 retired the `rc-app/` (Rocket.Chat Apps-Engine) directory in favour of two new components: a standalone Attendance Web App (`attendance-app/`) and a stateless Zulip Bot (`zulip-bot/`). These directories must be scaffolded with the correct project structure, package.json, and placeholder source files so the monorepo remains consistent and the CI pipeline does not break.
+
+**Goal:**
+1. `rc-app/` directory is removed (or archived — do not delete if it has existing source files that need preserving for reference).
+2. `attendance-app/` directory scaffolded with `package.json`, `index.html` (placeholder), `app.js` (placeholder), and `README.md`.
+3. `zulip-bot/` directory scaffolded with `package.json`, `tsconfig.json`, `src/poster.ts` (placeholder), and `README.md`.
+4. Root `pnpm-workspace.yaml` updated to include `attendance-app` and `zulip-bot` (replacing `rc-app`).
+5. `pnpm install` at root succeeds. `pnpm typecheck` succeeds across all workspaces.
+
+**Approach:**
+Create the two new directories with minimal but functional scaffolding. The actual implementation of the Attendance Web App UI and Zulip Bot message poster happens in Phase 5. This work item only ensures the directory structure, package.json workspace definitions, and placeholder source files exist.
+
+---
+
+- [ ] **RED — Infrastructure Check:**
+  - [ ] Verify `ls` → `rc-app/` exists, `attendance-app/` and `zulip-bot/` do NOT exist.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Directory Scaffolding:**
+  - [ ] [Files] Archive or remove `rc-app/` directory. (If it contains source files already written, rename to `rc-app.archived/` for reference.)
+  - [ ] [Files] Create `attendance-app/` with:
+        - `attendance-app/package.json` (name: `@jdconnect/attendance-app`, version: `1.0.0`, scripts: `{ "start": "npx serve ." }`).
+        - `attendance-app/index.html` (placeholder HTML skeleton with `<title>JD Connect — Attendance</title>`).
+        - `attendance-app/app.js` (placeholder: `// Attendance Web App — implemented in Phase 5`).
+        - `attendance-app/README.md` (brief description: standalone attendance web page).
+  - [ ] [Files] Create `zulip-bot/` with:
+        - `zulip-bot/package.json` (name: `@jdconnect/zulip-bot`, version: `1.0.0`, scripts: `{ "start": "ts-node src/poster.ts" }`, dependencies: `node-fetch`, `dotenv`; devDependencies: `typescript`, `ts-node`, `@types/node`).
+        - `zulip-bot/tsconfig.json` (extends `../tsconfig.base.json`).
+        - `zulip-bot/src/poster.ts` (placeholder: `// Zulip Bot message poster — implemented in Phase 5`).
+        - `zulip-bot/README.md` (brief description: posts daily attendance prompt to Zulip #attendance stream).
+  - [ ] [Config] Update `pnpm-workspace.yaml`: replace `packages/rc-app` or `rc-app` with `attendance-app` and `zulip-bot`.
+  - [ ] Run `pnpm install` at root — **confirm GREEN.**
+
+- [ ] **RED — Unit Check:**
+  - [ ] Run `pnpm typecheck` — **confirm RED if new files have TS issues.**
+
+- [ ] **GREEN — Typecheck:**
+  - [ ] Fix any TypeScript config issues in new workspaces — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] `ls` at root → `attendance-app/` and `zulip-bot/` present, `rc-app/` absent (or renamed).
+  - [ ] `pnpm install` → succeeds with no workspace resolution errors.
+  - [ ] `pnpm typecheck` → all workspaces (backend, attendance-app, zulip-bot, hr-dashboard) pass.
+  - [ ] `pnpm test` → all 30 tests GREEN (no regressions).
+  - [ ] ✅ Done.
+
+> **Session Note (Phase 0.5 — 2026-08-14)**
+> - **Decision 12 Accepted:** Rocket.Chat replaced by Zulip. MongoDB removed. `rc-app/` replaced by `attendance-app/` + `zulip-bot/`. See `CONTEXT/decision_log.md` Decision 12 for full rationale.
+> - **Phase 0.5 Added:** Four work items (W-051 through W-054) covering Docker reconfiguration, env file updates, database migration renaming `rocketchat_user_id` → `zulip_user_id`, and directory scaffolding.
 
 ---
 

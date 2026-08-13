@@ -230,3 +230,168 @@ Use the plain Node.js `pg` connection pool with pure SQL migrations and dedicate
 - SQL queries and migrations are written explicitly by hand and tracked in `backend/migrations/`.
 - Repository methods handle raw SQL parameterization and return typed JavaScript objects.
 - High query performance and zero ORM engine overhead on the hosting server.
+
+---
+
+### Decision 12: Replace Rocket.Chat with Zulip as the Team Communication Layer
+
+**Date:** 2026-08-14
+**Status:** Accepted
+
+#### Context
+
+The original architecture selected Rocket.Chat as the team communication layer (Component 1), with a bespoke Rocket.Chat Apps-Engine attendance app (Component 2). Rocket.Chat was chosen for its rich self-hosted feature set and Admin REST API.
+
+During investigation prior to building Phase 4 (RC Integration & SSO) and Phase 5 (RC Attendance App), a critical licensing constraint was discovered: **Rocket.Chat's Community Edition (open-source) is subject to "open core" feature gating beyond ~50 users.** Features required for a BPO operation at scale — advanced admin roles, granular permission sets, certain OAuth/SSO capabilities, and audit logs — are locked behind Rocket.Chat's Enterprise license (~$7–9/seat/month). This makes Rocket.Chat commercially unviable for JD Connect's scale without significant ongoing cost.
+
+Additionally, Rocket.Chat requires a MongoDB replica set (3+ containers), significantly increasing VPS RAM/CPU footprint on the single Hostinger server.
+
+#### Investigation: Zulip as Replacement
+
+Zulip was investigated as a drop-in replacement. Key findings:
+
+**Licensing:**
+- Zulip is **100% open source (Apache 2.0)**. The self-hosted version is completely free with **no user limits and no feature paywalls**.
+- All features — SAML, OIDC, LDAP, advanced admin controls, full REST API — are available in the free self-hosted tier.
+- The only paid component: mobile push notifications via Zulip's central relay service (free for ≤10 users; ~$1/user/month for larger teams). Since JD Connect is a desktop-first BPO operation, this is a non-issue.
+
+**Database:**
+- Zulip uses **PostgreSQL natively** (managed via Django ORM). This eliminates MongoDB entirely.
+- The project transitions from a **two-database model** (Postgres + MongoDB) to a **single-database-technology model** (both JD Connect's Backend API and Zulip use Postgres, though in completely isolated schemas — they still never communicate directly).
+
+**REST API:**
+- Zulip provides a full, well-documented REST API: `POST /api/v1/users` (create user), `PATCH /api/v1/users/{user_id}` (update/deactivate), `GET /api/v1/users` (list), and more.
+- This is functionally equivalent to the RC Admin REST API that Backend API was already planning to use.
+
+**SSO:**
+- Zulip supports **OIDC (OpenID Connect)** and **SAML** natively on self-hosted instances.
+- The Backend API becomes an OIDC provider (replacing the custom RC OAuth server from Decision 3). The OAuth 2.0 endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/userinfo`) remain but are now consumed by Zulip rather than Rocket.Chat.
+
+**Attendance App (Component 2 — the biggest change):**
+- Rocket.Chat had Apps-Engine: a sandboxed TypeScript runtime capable of injecting a persistent **toolbar button** and **UIKit modal** directly inside the RC interface.
+- Zulip has **no equivalent Apps-Engine**. Zulip's bot/widget system is limited to: outgoing webhooks (text responses only), and a narrow internal widget system (polls/todo lists) that is not a public API for custom integrations.
+- **Decision:** The RC Attendance App (Component 2) is redesigned as a **standalone lightweight Attendance Web App** (served from the Backend API or a separate subdomain, e.g., `clock.yourcompany.com`).
+- A **Zulip Bot** posts a daily pinned message into a dedicated `#attendance` stream at shift-start time (e.g., 8:45 AM EST) containing Markdown links to the attendance web page. Employees click the link, perform clock-in/break actions in the web app (which calls the Backend API), and return to Zulip.
+- This is a **cleaner separation of concerns** than the RC Apps-Engine approach: the attendance UI is a standalone, fully-testable web page, not a sandboxed app living inside the chat platform.
+
+#### Decision
+
+**Replace Rocket.Chat with Zulip as the team communication layer (Component 1). Retire the Rocket.Chat Apps-Engine attendance app (Component 2). Introduce a standalone Attendance Web App (Component 2, redesigned).**
+
+Specifically:
+- Remove all Rocket.Chat and MongoDB containers from `docker/docker-compose.yml`.
+- Add Zulip container (official Docker image) connecting to the same Postgres server (isolated Zulip database schema).
+- The cross-system key changes from `employees.rocketchat_user_id` (TEXT) to `employees.zulip_user_id` (INTEGER — Zulip user IDs are integers).
+- All references to `rocketchat_user_id` in code, migrations, repositories, services, JWT payloads, and types are renamed to `zulip_user_id`.
+- All references to `rc_provisioned` remain functionally identical but now refer to Zulip account provisioning.
+- Backend API's `src/services/rocketchat.service.ts` is renamed and rewritten as `src/services/zulip.service.ts`.
+- The OAuth server endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/userinfo`) remain in place — now acting as OIDC provider for Zulip instead of Custom OAuth provider for Rocket.Chat.
+- The `rc-app/` directory is removed. A new `attendance-app/` directory is introduced for the standalone attendance web app (lightweight HTML/JS/CSS page served separately).
+- The Zulip bot (outgoing webhook bot) is configured inside Zulip and posts the daily attendance prompt. It is a simple Node.js/TypeScript service in `zulip-bot/`.
+
+#### New Four-Component Architecture
+
+The system continues to be built as four deliberately isolated components:
+
+**Component 1: Zulip (Chat Platform)**
+- Self-hosted via Docker Compose.
+- Zulip uses its own PostgreSQL database (Zulip-internal schema — never touched by the Backend API directly).
+- Handles: messages, streams (channels), topics, mentions, Zulip-native notifications and presence.
+- **Zulip's Postgres database owns only chat data** — it is not used for HR, attendance, or employee data.
+
+**Component 2: Attendance Web App + Zulip Bot**
+- Replaces the Rocket.Chat Apps-Engine attendance app entirely.
+- Sub-component A — **Attendance Web App** (`attendance-app/`): A standalone lightweight web application served at `clock.yourcompany.com`. Employees navigate to this page to clock in/out and manage breaks. Authenticates via the same JWT session cookie (SSO). Calls the Backend API for all data operations.
+- Sub-component B — **Zulip Bot** (`zulip-bot/`): A small Node.js service running as a scheduled cron task. Every morning at shift-start time (e.g., 8:45 AM EST), it posts a Markdown message into the `#attendance` Zulip stream containing a link to the Attendance Web App. It is a stateless fire-and-forget poster — it does not receive attendance events, does not maintain state, and does not call the Backend API for HR data.
+
+**Component 3: Backend API**
+- Unchanged in architecture and responsibility.
+- The only process that writes to JD Connect's Postgres database.
+- The only process that calls Zulip's Admin REST API (to provision users on employee creation).
+- Handles: JWT auth, employee CRUD, attendance recording, break recording, permission checks, admin password reset, employee provisioning into Zulip, OIDC server endpoints for SSO.
+- Data flow: `Attendance Web App → Backend API → Postgres` and `HR Dashboard → Backend API → Postgres + Zulip Admin API`.
+
+**Component 4: HR / Admin Dashboard (Web App)**
+- No change. Still a separate web application at `hr.yourcompany.com`.
+- Reads/writes JD Connect's Postgres exclusively via the Backend API.
+- Now shows `zulip_provisioned` instead of `rc_provisioned` for chat account status.
+
+#### The Cross-System Key (Updated)
+
+The `employees` table in Postgres now has a `zulip_user_id` column (INTEGER, UNIQUE). This is Zulip's internal numeric user ID for that user. It is the **only bridge** between the JD Connect Postgres database and the Zulip system.
+
+```
+Postgres employees.zulip_user_id = Zulip users.user_id (integer)
+```
+
+- When an employee is created: Backend API inserts into Postgres, calls Zulip Admin REST API `POST /api/v1/users`, stores the returned `user_id` integer back on the Postgres row.
+- When the attendance app sends a request: the JWT contains `zulip_user_id`. Backend API uses that to look up the Postgres employee.
+- Never use email as a join key — it can change. Always use `zulip_user_id`.
+
+#### Updated JWT Payload Shape
+
+```typescript
+{
+  sub: string;           // Postgres users.id
+  employee_id: string;   // Postgres employees.id
+  zulip_user_id: number; // Zulip user ID (integer) — the cross-system key
+  roles: string[];       // e.g. ['super_admin'] or ['employee']
+  iat: number;
+  exp: number;
+}
+```
+
+#### Single-Database-Technology Model
+
+| Database | Owner | Stores |
+|---|---|---|
+| **Postgres (JD Connect schema)** | Backend API (only) | Employees, users, roles, permissions, attendance, breaks, sessions |
+| **Postgres (Zulip schema)** | Zulip (only) | Messages, streams, Zulip user identities |
+
+Both databases use Postgres technology but are **completely isolated schemas/databases**. The Backend API never queries Zulip's Postgres database. Zulip never queries the JD Connect Postgres database. The Backend API communicates with Zulip exclusively via the Zulip REST API.
+
+MongoDB is **removed entirely** from the stack. The `mongo` and `mongo-init` services in `docker/docker-compose.yml` are deleted. The `mongodata` volume is removed.
+
+#### White Labelling
+
+Zulip's built-in organization settings allow:
+- Custom organization name (appears in browser tab, login page, notifications)
+- Custom logo (replaces Zulip logo in top-left corner)
+- Custom domain (`chat.yourcompany.com`)
+- Custom login page description
+
+This is sufficient for an internal BPO platform. Full mobile app white-labelling is not required.
+
+#### Consequences
+
+**What changes:**
+1. `docker/docker-compose.yml`: Remove `mongo`, `mongo-init`, `rocketchat` services and `mongodata` volume. Add `zulip` service.
+2. `employees` table: Rename `rocketchat_user_id TEXT` → `zulip_user_id INTEGER`. Update all indexes, repositories, services, and types.
+3. JWT payload: Replace `rc_user_id` with `zulip_user_id` (number type).
+4. `backend/src/services/rocketchat.service.ts` → renamed and rewritten as `backend/src/services/zulip.service.ts`.
+5. `rc-app/` directory: Removed. Replaced by `attendance-app/` (standalone web page) and `zulip-bot/` (daily message poster).
+6. `.env.example` and all `.env.*` files: Replace `ROCKETCHAT_*` variables with `ZULIP_*` variables.
+7. Phase 4 in `current_state.md` retitled: "Zulip Integration & SSO" (was "Rocket.Chat Integration & SSO").
+8. Phase 5 in `current_state.md` retitled: "Attendance Web App & Zulip Bot" (was "Rocket.Chat Attendance App").
+9. `database_schema.md` MongoDB section replaced with Zulip Postgres schema reference.
+10. All TDD checklist items referencing `rocketchat_user_id`, `rc_user_id`, `RocketChat`, `rc_provisioned` updated to Zulip equivalents.
+
+**What does NOT change:**
+- The Backend API's three-layer architecture (repositories → services → routes). Decision 7 stands.
+- Plain `pg` pool + SQL repositories. Decision 11 stands.
+- Custom JWT auth (RS256 asymmetric). Decision 2 stands.
+- OIDC/OAuth server endpoints on the Backend API (now used by Zulip instead of RC). Decision 3 pattern stands.
+- Attendance decoupled from chat presence. Decision 6 stands and is even more enforceable — Zulip's presence system is now even further removed from attendance logic.
+- All Postgres table schemas for HR/attendance/break data (no structural changes, only `rocketchat_user_id` column rename).
+- Admin-only password reset (no self-service email). Decision 2 consequence stands.
+- The Backend API is the sole writer to JD Connect's Postgres. Decision 7 stands.
+- All business logic constants (attendance thresholds, break duration computation, EST timezone). Unchanged.
+- HR Dashboard architecture. Unchanged.
+
+#### Architectural Constraint Updates
+
+The 10 key architectural constraints in `project_data.md` Section 10 are updated as follows:
+- Constraint 3: "`rocketchat_user_id` is the immutable cross-system key" → "`zulip_user_id` is the immutable cross-system key."
+- Constraint 4: "All employee creation must provision RC atomically" → "All employee creation must provision Zulip atomically."
+- Constraint 8: "Rocket.Chat's Admin REST API is called only by the Backend API" → "Zulip's Admin REST API is called only by the Backend API."
+- All other constraints remain unchanged.

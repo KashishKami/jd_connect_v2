@@ -20,55 +20,55 @@ This document is the **authoritative reference** for JD Connect's metadata, tech
 
 The system is built as four deliberately isolated components so each can be upgraded independently:
 
-### Component 1: Rocket.Chat (Chat Platform)
-- Self-hosted via Docker Compose (separate stack from Postgres)
-- MongoDB replica set required (hard requirement for Rocket.Chat 8.x)
-- Handles: messages, rooms, channels, threads, mentions, RC-native notifications
-- **MongoDB owns only chat data** — it is not used for HR, attendance, or employee data
+### Component 1: Zulip (Chat Platform)
+- Self-hosted via Docker Compose.
+- Zulip uses its own PostgreSQL database (Zulip-internal schema — never touched by the Backend API directly).
+- Handles: messages, streams (channels), topics, mentions, Zulip-native notifications and presence.
+- **Zulip's Postgres database owns only chat data** — it is not used for HR, attendance, or employee data.
+- Decision log reference: Decision 12.
 
-### Component 2: Rocket.Chat Attendance App (RC Apps-Engine)
-- Private TypeScript/UIKit app installed into Rocket.Chat via Apps-Engine
-- Adds a toolbar button (and/or slash command) for clock-in/clock-out and break selection
-- NOT a fork of Rocket.Chat core — it is a sandboxed app; RC upgrades do not break it
-- Calls the Backend API for all data operations
+### Component 2: Attendance Web App + Zulip Bot
+- Replaces the old Rocket.Chat Apps-Engine attendance app. See Decision 12.
+- **Sub-component A — Attendance Web App** (`attendance-app/`): A standalone lightweight web application served at `clock.yourcompany.com`. Employees navigate here to clock in/out and manage breaks. Authenticates via JWT session cookie (SSO). Calls the Backend API for all data operations.
+- **Sub-component B — Zulip Bot** (`zulip-bot/`): A small Node.js cron service. Every morning at 8:45 AM EST it posts a Markdown message into the `#attendance` Zulip stream with a link to the Attendance Web App. Stateless — does not process attendance events.
 
 ### Component 3: Backend API
-- Our own Node.js/TypeScript REST API service
-- The **only** process that writes to Postgres
-- The **only** process that calls Rocket.Chat's Admin REST API
-- Handles: JWT auth, employee CRUD, attendance recording, break recording, permission checks, admin password reset, employee provisioning into RC
-- Data flow: `RC App → Backend API → Postgres` and `HR Dashboard → Backend API → Postgres + RC Admin API`
+- Our own Node.js/TypeScript REST API service.
+- The **only** process that writes to JD Connect's Postgres database.
+- The **only** process that calls Zulip's Admin REST API.
+- Handles: JWT auth, employee CRUD, attendance recording, break recording, permission checks, admin password reset, employee provisioning into Zulip, OIDC server endpoints for SSO.
+- Data flow: `Attendance Web App → Backend API → Postgres` and `HR Dashboard → Backend API → Postgres + Zulip Admin API`.
 
 ### Component 4: HR / Admin Dashboard (Web App)
-- Separate web application served on its own subdomain (e.g., `hr.yourcompany.com`)
-- Admin subdomain: permission management, user role assignment
-- HR subdomain: employee CRUD, attendance history, break history, password reset
-- Reads/writes Postgres exclusively via the Backend API — no direct DB access
+- Separate web application served on its own subdomain (e.g., `hr.yourcompany.com`).
+- Admin subdomain: permission management, user role assignment.
+- HR subdomain: employee CRUD, attendance history, break history, password reset, Zulip provisioning retry.
+- Reads/writes Postgres exclusively via the Backend API — no direct DB access.
 
 ---
 
 ## 3. Database Architecture
 
-### Two Databases, One Ecosystem
+### Two Postgres Databases, One Technology
 
 | Database | Owner | Stores |
 |---|---|---|
-| **Postgres** | Backend API (only) | Employees, users, roles, permissions, attendance, breaks, sessions |
-| **MongoDB** | Rocket.Chat (only) | Messages, rooms, channels, RC user identities |
+| **Postgres (JD Connect schema)** | Backend API (only) | Employees, users, roles, permissions, attendance, breaks, sessions |
+| **Postgres (Zulip schema)** | Zulip (only) | Messages, streams, Zulip user identities |
 
-**They never talk to each other directly.** The Backend API is the only middleman.
+**They never communicate directly.** The Backend API is the only middleman. MongoDB has been removed from the stack entirely (see Decision 12).
 
 ### The Cross-System Link
 
-The `employees` table in Postgres has a `rocketchat_user_id` column (TEXT, UNIQUE). This is Rocket.Chat's internal `_id` for that user. It is the **only bridge** between the two databases.
+The `employees` table in Postgres has a `zulip_user_id` column (INTEGER, UNIQUE). This is Zulip's internal numeric user ID for that user. It is the **only bridge** between the two systems.
 
 ```
-Postgres employees.rocketchat_user_id = MongoDB users._id
+Postgres employees.zulip_user_id = Zulip users.user_id (integer)
 ```
 
-- When an employee is created: Backend API inserts into Postgres, calls RC Admin API, stores the returned `_id` back on the Postgres row.
-- When the RC attendance app sends a request: the JWT contains `rc_user_id`. Backend API uses that to look up the Postgres employee.
-- Never use email as a join key — it can change. Always use `rocketchat_user_id`.
+- When an employee is created: Backend API inserts into Postgres, calls Zulip Admin REST API `POST /api/v1/users`, stores the returned `user_id` integer back on the Postgres row.
+- When the attendance app sends a request: the JWT contains `zulip_user_id`. Backend API uses that to look up the Postgres employee.
+- Never use email as a join key — it can change. Always use `zulip_user_id`.
 
 ---
 
@@ -90,19 +90,19 @@ Auth is entirely handled by the Backend API. There is no third-party auth platfo
 ### JWT Payload Shape
 ```typescript
 {
-  sub: string;          // Postgres users.id
-  employee_id: string;  // Postgres employees.id
-  rc_user_id: string;   // Rocket.Chat users._id (the cross-system key)
-  roles: string[];      // e.g. ['super_admin'] or ['employee']
+  sub: string;           // Postgres users.id
+  employee_id: string;   // Postgres employees.id
+  zulip_user_id: number; // Zulip user ID integer (the cross-system key)
+  roles: string[];       // e.g. ['super_admin'] or ['employee']
   iat: number;
   exp: number;
 }
 ```
 
-### OAuth Endpoints (for Rocket.Chat SSO)
-- `GET  /oauth/authorize` — authorization code flow entry
-- `POST /oauth/token`     — exchange code for token
-- `GET  /oauth/userinfo`  — return user identity to RC
+### OIDC Endpoints (for Zulip SSO)
+- `GET  /oauth/authorize` — authorization code flow entry (Zulip configured as OIDC client)
+- `POST /oauth/token`     — exchange code for access token
+- `GET  /oauth/userinfo`  — return user identity to Zulip
 
 ---
 
@@ -170,8 +170,8 @@ These are the fields carried over from the existing system:
 | `joining_date` | DATE | |
 | `employment_status` | ENUM | `active`, `suspended`, `resigned`, `terminated` |
 | `profile_photo_url` | TEXT | Optional |
-| `rocketchat_user_id` | TEXT UNIQUE | RC `_id` — the cross-system bridge key |
-| `rc_provisioned` | BOOLEAN | `false` if RC account creation failed |
+| `zulip_user_id` | INTEGER UNIQUE | Zulip numeric user ID — the cross-system bridge key |
+| `zulip_provisioned` | BOOLEAN | `false` if Zulip account creation failed |
 | `created_at` | TIMESTAMPTZ | |
 | `updated_at` | TIMESTAMPTZ | |
 
@@ -230,11 +230,13 @@ Seeded locations:
 
 ## 10. Key Architectural Constraints (Always Keep in Mind)
 
-1. **MongoDB and Postgres never communicate directly.** The Backend API is the only bridge.
-2. **RC presence ≠ attendance state.** Never couple them.
-3. **`rocketchat_user_id` is the immutable cross-system key.** Never use email as a join key.
-4. **All employee creation must provision RC atomically.** Failure is surfaced, not silently swallowed.
+1. **Zulip's Postgres schema and JD Connect's Postgres schema never communicate directly.** The Backend API is the only bridge. MongoDB has been removed entirely.
+2. **Zulip presence ≠ attendance state.** Never couple them. Attendance is tracked exclusively via explicit clock-in/clock-out actions in the Attendance Web App.
+3. **`zulip_user_id` is the immutable cross-system key.** Never use email as a join key between Zulip and JD Connect Postgres.
+4. **All employee creation must provision Zulip atomically.** Failure sets `zulip_provisioned = false` and is surfaced to HR — never silently swallowed.
 5. **Auth is entirely custom JWT.** No Supabase, no third-party auth platform.
 6. **Password reset is admin-only.** No self-service email flow.
-7. **The Backend API is the single writer to Postgres.** The HR dashboard never touches Postgres directly.
-8. **Rocket.Chat's Admin REST API is called only by the Backend API.** The RC app calls the Backend API, not RC Admin API directly.
+7. **The Backend API is the single writer to JD Connect's Postgres.** The HR dashboard never touches Postgres directly.
+8. **Zulip's Admin REST API is called only by the Backend API.** The Attendance Web App calls the Backend API, not Zulip Admin API directly.
+9. **The Zulip Bot (`zulip-bot/`) is stateless and posts-only.** It never processes attendance events or calls the Backend API for HR data.
+10. **The Attendance Web App (`attendance-app/`) is fully independent of Zulip.** It is a standalone web page that calls the Backend API. If Zulip is down, attendance tracking continues uninterrupted.
