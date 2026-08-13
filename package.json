@@ -11,6 +11,8 @@
     "test": "pnpm --recursive run test",
     "build": "pnpm --recursive run build",
     "ci:quality": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "db:migrate": "pnpm --filter @jdconnect/backend run migrate",
+    "db:seed": "pnpm --filter @jdconnect/backend run seed",
     "docker:dev:up": "docker compose -f docker/docker-compose.yml up -d",
     "docker:dev:down": "docker compose -f docker/docker-compose.yml down",
     "docker:test:up": "docker compose -f docker/docker-compose.yml up -d postgres mongo",

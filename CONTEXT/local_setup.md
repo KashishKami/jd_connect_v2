@@ -85,19 +85,19 @@ The database container automatically initializes both the development database (
 Apply SQL migrations and seed initial domain lookup records (roles, permissions, departments, centres, shifts, break types):
 
 ```bash
-# Run migrations on development database (jdconnect)
-cd backend
-npx ts-node scripts/migrate.ts
-npx ts-node scripts/seed.ts
-cd ..
+# Option A: Root workspace shortcuts (recommended)
+pnpm db:migrate
+pnpm db:seed
+
+# Option B: Filtered pnpm execution
+pnpm --filter @jdconnect/backend run migrate
+pnpm --filter @jdconnect/backend run seed
 ```
 
 To run migrations on the test database (`jdconnect_test`):
 
 ```bash
-cd backend
-NODE_ENV=test npx ts-node scripts/migrate.ts
-cd ..
+pnpm --filter @jdconnect/backend exec tsx scripts/migrate.ts
 ```
 
 ---

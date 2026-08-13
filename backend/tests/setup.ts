@@ -1,22 +1,30 @@
 import { beforeAll, beforeEach, afterAll } from 'vitest';
 import dotenv from 'dotenv';
 import path from 'path';
+import pool from '../src/lib/db';
+import { runMigrations } from '../scripts/migrate';
 
-// Ensure .env.test is loaded before test hooks execute
 dotenv.config({ path: path.resolve(__dirname, '../../.env.test') });
 dotenv.config({ path: path.resolve(__dirname, '../.env.test') });
 
 beforeAll(async () => {
-  // Global test setup: verify test database URL points to jdconnect_test
   if (!process.env.DATABASE_URL?.includes('jdconnect_test')) {
-    console.warn('WARN: Test suite should run against jdconnect_test database!');
+    process.env.DATABASE_URL = 'postgres://jduser:jdpassword@127.0.0.1:5432/jdconnect_test';
   }
+  await runMigrations();
 });
 
 beforeEach(async () => {
-  // Hook for resetting database state between test runs
+  // Truncate domain data between tests while preserving seeded lookup tables
+  await pool.query(`
+    TRUNCATE users, employees, employee_sessions, 
+             attendance_records, attendance_corrections, attendance_audit_logs,
+             break_records, break_requests, break_audit_logs, audit_logs CASCADE
+  `);
 });
 
 afterAll(async () => {
-  // Hook for closing DB connection pools
+  if (!pool.ended) {
+    await pool.end();
+  }
 });

@@ -12,6 +12,7 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
     passWithNoTests: true,
+    fileParallelism: false,
     env: {
       NODE_ENV: 'test',
       DATABASE_URL: process.env.DATABASE_URL || 'postgresql://jduser:jdpassword@127.0.0.1:5432/jdconnect_test?schema=public',

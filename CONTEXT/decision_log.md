@@ -206,3 +206,27 @@ All Supabase-specific syntax is removed. All RLS policies are removed. Access co
 - Data from the old system must be migrated via an ETL script — old Supabase Postgres → new plain Postgres.
 - The migration script must map `auth.users.id` to the new `users.id` and re-link `employees.auth_user_id` accordingly.
 - Chat data (messages, conversations, channels) is migrated to Rocket.Chat via the RC Admin REST API separately.
+
+---
+
+### Decision 11: Use Plain `pg` Connection Pool + SQL Repositories over Prisma ORM
+
+**Date:** 2026-08-14
+**Status:** Accepted
+
+#### Context
+When designing the Backend API's database interface layer, using an ORM like Prisma was evaluated against plain SQL queries executed via the Node.js `pg` pool module.
+
+#### Decision
+Use the plain Node.js `pg` connection pool with pure SQL migrations and dedicated repository classes (`src/repositories/`), rejecting Prisma ORM.
+
+#### Rationale
+1. **Resource Efficiency:** Rocket.Chat, MongoDB, Postgres, and the Backend API run on a single Hostinger VPS. Prisma bundles Rust binaries (`query-engine`) that consume ~50MB+ RAM per instance, whereas `pg` has negligible RAM footprint.
+2. **Native Postgres Precision:** The system relies on native Postgres capabilities (custom ENUM types with `IF NOT EXISTS` checks, sequences like `employee_code_seq` formatting `JD0001`, and `TIMESTAMPTZ` evaluated strictly in EST). Plain SQL gives full control without ORM abstraction limits.
+3. **Build & Deployment Simplicity:** Avoids binary compilation steps (`npx prisma generate`) and native Rust engine target issues between Windows development hosts and Docker Linux Alpine containers.
+4. **Alignment with Architecture:** Decision 7 enforces a strict 3-layer architecture (`repositories` → `services` → `routes`). Plain SQL repositories isolate all query logic cleanly without coupling models to an ORM schema generator.
+
+#### Consequences
+- SQL queries and migrations are written explicitly by hand and tracked in `backend/migrations/`.
+- Repository methods handle raw SQL parameterization and return typed JavaScript objects.
+- High query performance and zero ORM engine overhead on the hosting server.
