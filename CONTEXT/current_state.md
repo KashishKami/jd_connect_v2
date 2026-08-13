@@ -13,7 +13,7 @@ This file is the **source of truth** for what is done, what is in progress, and 
 
 | Phase | Description | Status | Target Files |
 |:---|:---|:---|:---|
-| **Phase 0** | Project Setup & Infrastructure | **[ ] NOT STARTED** | `docker/docker-compose.yml`, `backend/package.json`, `backend/src/app.ts`, `backend/migrations/`, `backend/vitest.config.ts` |
+| **Phase 0** | Project Setup & Infrastructure | **[/] IN PROGRESS** | `docker/docker-compose.yml`, `backend/package.json`, `backend/src/app.ts`, `backend/migrations/`, `backend/vitest.config.ts` |
 | **Phase 1** | JWT Authentication | **[ ] NOT STARTED** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
 | **Phase 2** | Attendance API | **[ ] NOT STARTED** | `backend/src/routes/attendance.ts`, `backend/src/services/attendance.service.ts`, `backend/src/repositories/attendance.repository.ts` |
 | **Phase 3** | Break API | **[ ] NOT STARTED** | `backend/src/routes/breaks.ts`, `backend/src/services/break.service.ts`, `backend/src/repositories/break.repository.ts` |
@@ -45,28 +45,28 @@ This file is the **source of truth** for what is done, what is in progress, and 
 
 ---
 
-- [ ] **RED — Infrastructure Check:**
-  - [ ] Check workspace directories `backend/`, `rc-app/`, `hr-dashboard/`, `docker/`.
-  - [ ] **Run — confirm RED (directories do not exist yet).**
+- [x] **RED — Infrastructure Check:**
+  - [x] Check workspace directories `backend/`, `rc-app/`, `hr-dashboard/`, `docker/`.
+  - [x] **Run — confirm RED (directories do not exist yet).**
 
-- [ ] **GREEN — Monorepo Scaffolding:**
-  - [ ] [Schema/Files] Create root `.gitignore` (node_modules, dist, .env, coverage, logs).
-  - [ ] [Files] Create root `README.md` with architecture diagram.
-  - [ ] [Files] Create workspace folders: `backend/`, `rc-app/`, `hr-dashboard/`, `docker/`.
-  - [ ] [Files] Create root `package.json` with npm/pnpm workspace definitions.
-  - [ ] Run infrastructure check — **confirm GREEN.**
+- [x] **GREEN — Monorepo Scaffolding:**
+  - [x] [Schema/Files] Create root `.gitignore` (node_modules, dist, .env, coverage, logs).
+  - [x] [Files] Create root `README.md` with architecture diagram.
+  - [x] [Files] Create workspace folders: `backend/`, `rc-app/`, `hr-dashboard/`, `docker/`.
+  - [x] [Files] Create root `package.json` with npm/pnpm workspace definitions.
+  - [x] Run infrastructure check — **confirm GREEN.**
 
-- [ ] **RED — Unit Check:**
-  - [ ] Validate workspace package resolution.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit Check:**
+  - [x] Validate workspace package resolution.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Workspace Verification:**
-  - [ ] Run `npm install` at root — **confirm GREEN.**
+- [x] **GREEN — Workspace Verification:**
+  - [x] Run `pnpm install` at root — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `ls` at root → `backend/`, `rc-app/`, `hr-dashboard/`, `docker/` exist.
-  - [ ] `git status` → untracked files clean according to `.gitignore`.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `ls` at root → `backend/`, `rc-app/`, `hr-dashboard/`, `docker/` exist.
+  - [x] `git status` → untracked files clean according to `.gitignore`.
+  - [x] ✅ Done.
 
 ---
 

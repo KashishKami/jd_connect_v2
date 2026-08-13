@@ -1,0 +1,4 @@
+packages:
+  - 'backend'
+  - 'rc-app'
+  - 'hr-dashboard'
