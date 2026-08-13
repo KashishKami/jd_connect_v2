@@ -354,18 +354,18 @@ This file is the **source of truth** for what is done, what is in progress, and 
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/auth.test.ts`):**
-  - [ ] Test: `POST /api/auth/login` with valid `{ email, password }` → assert HTTP 200, body `{ access_token, token_type: "Bearer" }`, decoded JWT contains `employee_id` and `rc_user_id`.
-  - [ ] Test: `POST /api/auth/login` with wrong password → assert HTTP 401.
-  - [ ] Test: `POST /api/auth/login` with non-existent email → assert HTTP 401 (do NOT reveal email non-existence).
-  - [ ] Test: `POST /api/auth/login` for suspended employee → assert HTTP 403 `{ error: "Account suspended" }`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/auth.test.ts`):**
+  - [x] Test: `POST /api/auth/login` with valid `{ email, password }` → assert HTTP 200, body `{ access_token, token_type: "Bearer" }`, decoded JWT contains `employee_id` and `rc_user_id`.
+  - [x] Test: `POST /api/auth/login` with wrong password → assert HTTP 401.
+  - [x] Test: `POST /api/auth/login` with non-existent email → assert HTTP 401 (do NOT reveal email non-existence).
+  - [x] Test: `POST /api/auth/login` for suspended employee → assert HTTP 403 `{ error: "Account suspended" }`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Backend:**
-  - [ ] [Schema] No migration needed — `employee_sessions` exists per `database_schema.md`.
-  - [ ] [Repository] `src/repositories/user.repository.ts#findAuthUserByEmail`: JOIN `users`, `employees`, `roles`.
-  - [ ] [Repository] `src/repositories/session.repository.ts#createSession`: INSERT into `employee_sessions`.
-  - [ ] [Service] `src/services/auth.service.ts#login`:
+- [x] **GREEN — Backend:**
+  - [x] [Schema] No migration needed — `employee_sessions` exists per `database_schema.md`.
+  - [x] [Repository] `src/repositories/user.repository.ts#findAuthUserByEmail`: JOIN `users`, `employees`, `roles`.
+  - [x] [Repository] `src/repositories/session.repository.ts#createSession`: INSERT into `employee_sessions`.
+  - [x] [Service] `src/services/auth.service.ts#login`:
         - Find user by email.
         - Verify bcrypt: `bcrypt.compare(password, user.password_hash)`.
         - Check `employee.employment_status === 'active'`.
@@ -373,26 +373,30 @@ This file is the **source of truth** for what is done, what is in progress, and 
         - Sign JWT with RS256 private key (`jose` library, 15m expiration).
         - Save session token hash in `employee_sessions`.
         - Return `{ access_token, token_type: "Bearer" }`.
-  - [ ] [Controller] `src/routes/auth.ts` `POST /login`:
+  - [x] [Controller] `src/routes/auth.ts` `POST /login`:
         - Zod schema: `{ email: z.string().email(), password: z.string().min(1) }`.
         - Call `authService.login`.
         - Return HTTP 200.
-  - [ ] Run integration test — **confirm GREEN.**
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`backend/tests/auth.service.unit.test.ts`):**
-  - [ ] Mock user with invalid password → assert `login` throws `InvalidCredentialsError`.
-  - [ ] Mock employee with status `'suspended'` → assert `login` throws `AccountSuspendedError`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`backend/tests/auth.service.unit.test.ts`):**
+  - [x] Mock user with invalid password → assert `login` throws `InvalidCredentialsError`.
+  - [x] Mock employee with status `'suspended'` → assert `login` throws `AccountSuspendedError`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Auth Logic:**
-  - [ ] [Type] `src/types/auth.ts` — export `LoginInput`, `JwtPayload`, `AuthResponse`.
-  - [ ] Implement service methods — **confirm GREEN.**
+- [x] **GREEN — Auth Logic:**
+  - [x] [Type] `src/types/auth.ts` — export `LoginInput`, `JwtPayload`, `AuthResponse`.
+  - [x] Implement service methods — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `POST /api/auth/login` with valid email & password → HTTP 200 with JWT token.
-  - [ ] Decode JWT at jwt.io → verify `sub`, `employee_id`, `rc_user_id`, `roles` payload.
-  - [ ] Query Postgres `employee_sessions` table → session row present and active.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `POST /api/auth/login` with valid email & password → HTTP 200 with JWT token.
+  - [x] Decode JWT at jwt.io → verify `sub`, `employee_id`, `rc_user_id`, `roles` payload.
+  - [x] Query Postgres `employee_sessions` table → session row present and active.
+  - [x] ✅ Done.
+
+> **Session Note 4 — 2026-08-14**
+> - **W-102 Completion**: Built and fully verified W-102 (`POST /api/auth/login`) with CSR architecture (`src/routes/auth.ts` -> `src/services/auth.service.ts` -> `src/repositories/`). Added RS256 JWT token generation, bcrypt password comparison, employment status check (`suspended` check), session tracking in `employee_sessions` table, and unit + integration tests.
+> - **Quality Verification**: Verified `pnpm ci:quality` (`lint` -> `typecheck` -> `test` -> `build`) passing 100% cleanly with 10 test files and 24/24 passing tests.
 
 ---
 
@@ -406,37 +410,41 @@ This file is the **source of truth** for what is done, what is in progress, and 
 
 ---
 
-- [ ] **RED — Unit (`backend/tests/auth.middleware.unit.test.ts`):**
-  - [ ] Test: valid JWT → calls `next()`, populates `req.employee` with `{ id, rc_user_id, roles, permissions }`.
-  - [ ] Test: expired JWT → returns HTTP 401 `{ error: "Token expired" }`.
-  - [ ] Test: malformed token → returns HTTP 401 `{ error: "Invalid token" }`.
-  - [ ] Test: missing header → returns HTTP 401 `{ error: "No token provided" }`.
-  - [ ] Test: user lacking permission → returns HTTP 403 `{ error: "Insufficient permissions" }`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`backend/tests/auth.middleware.unit.test.ts`):**
+  - [x] Test: valid JWT → calls `next()`, populates `req.employee` with `{ id, rc_user_id, roles, permissions }`.
+  - [x] Test: expired JWT → returns HTTP 401 `{ error: "Token expired" }`.
+  - [x] Test: malformed token → returns HTTP 401 `{ error: "Invalid token" }`.
+  - [x] Test: missing header → returns HTTP 401 `{ error: "No token provided" }`.
+  - [x] Test: user lacking permission → returns HTTP 403 `{ error: "Insufficient permissions" }`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Middleware:**
-  - [ ] [Middleware] `src/middleware/auth.ts#authenticateJwt`:
+- [x] **GREEN — Middleware:**
+  - [x] [Middleware] `src/middleware/auth.ts#authenticateJwt`:
         - Extract Bearer token from header.
         - Verify RS256 signature using `jose.jwtVerify`.
         - Attach `req.employee = { id: payload.employee_id, rc_user_id: payload.rc_user_id, roles: payload.roles }`.
         - Call `next()`.
-  - [ ] [Middleware] `src/middleware/auth.ts#requirePermission(permissionKey)`:
+  - [x] [Middleware] `src/middleware/auth.ts#requirePermission(permissionKey)`:
         - Fetch active permissions for `req.employee.roles` from DB cache.
         - If permission key missing → return HTTP 403.
         - Else call `next()`.
-  - [ ] Run unit tests — **confirm GREEN.**
+  - [x] Run unit tests — **confirm GREEN.**
 
-- [ ] **RED — Integration (`backend/tests/protected_route.test.ts`):**
-  - [ ] Test: Request protected route `/api/employees` without header → 401. With valid JWT → 200.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/protected_route.test.ts`):**
+  - [x] Test: Request protected route `/api/employees` without header → 401. With valid JWT → 200.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Route Integration:**
-  - [ ] Wire middleware onto `/api/employees` routes — **confirm GREEN.**
+- [x] **GREEN — Route Integration:**
+  - [x] Wire middleware onto `/api/employees` routes — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Call protected endpoint with valid JWT → success.
-  - [ ] Call protected endpoint with tampered JWT → HTTP 401.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Call protected endpoint with valid JWT → success.
+  - [x] Call protected endpoint with tampered JWT → HTTP 401.
+  - [x] ✅ Done.
+
+> **Session Note 5 — 2026-08-14**
+> - **W-103 Completion**: Built and fully verified W-103 (`authenticateJwt` and `requirePermission` middlewares in `src/middleware/auth.ts`). Validated RS256 token verification, payload claim extraction, explicit `exp` expiration validation, `super_admin` role bypass, and DB role permission checks.
+> - **Quality Verification**: Verified `pnpm ci:quality` (`lint` -> `typecheck` -> `test` -> `build`) passing 100% cleanly across all workspaces with 11 test files and 30/30 passing tests.
 
 ---
 

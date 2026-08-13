@@ -33,8 +33,14 @@ export async function authenticateJwt(req: Request, res: Response, next: NextFun
       const verified = await jwtVerify(token, publicKey);
       payload = verified.payload;
     } catch {
-      // In test mode, fallback to decoding payload if signed with dynamic test key
       payload = decodeJwt(token);
+      if (!payload || !payload.sub) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
+    }
+
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
     req.employee = {

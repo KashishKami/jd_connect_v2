@@ -33,18 +33,23 @@ The monorepo uses `.env` for development and `.env.test` for automated testing. 
 
 ```bash
 # 1. Copy development environment file
+# On Windows PowerShell: Copy-Item .env.example .env
+# On Linux/macOS/Git Bash: cp .env.example .env
 cp .env.example .env
 
 # 2. Copy test environment template to active test environment file
 cp .env.test.example .env.test
+
+# 3. Generate a secure random JWT secret key (optional, for custom secrets)
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-> **Note on Network Hosts:** All services are configured to connect using direct IPv4 addresses (`127.0.0.1`) rather than `localhost` to eliminate DNS lookup latency and cross-platform resolution issues:
-> - **Dev Postgres DB:** `postgresql://jduser:jdpassword@127.0.0.1:5432/jdconnect`
-> - **Test Postgres DB:** `postgresql://jduser:jdpassword@127.0.0.1:5432/jdconnect_test`
-> - **Backend API:** `http://127.0.0.1:4000`
-> - **Rocket.Chat Container:** `http://127.0.0.1:3100`
-> - **HR Web Dashboard:** `http://127.0.0.1:3000`
+> **Note on Non-Conflicting Ports & Network Hosts:** All services are configured on dedicated non-standard ports to prevent conflicts with common applications (such as React default port 3000):
+> - **Dev Postgres DB:** `postgresql://jduser:jdpassword@127.0.0.1:5432/jdconnect` (Port `5432`)
+> - **Test Postgres DB:** `postgresql://jduser:jdpassword@127.0.0.1:5432/jdconnect_test` (Port `5432`)
+> - **Backend API:** `http://127.0.0.1:4000` (Port `4000`)
+> - **Rocket.Chat Platform:** `http://127.0.0.1:3100` (Port `3100`)
+> - **HR Web Dashboard:** `http://127.0.0.1:3200` (Port `3200` — *avoids port 3000 conflicts*)
 
 ---
 
