@@ -15,6 +15,7 @@ This file is the **source of truth** for what is done, what is in progress, and 
 |:---|:---|:---|:---|
 | **Phase 0** | Project Setup & Infrastructure | **[x] COMPLETE** | `docker/docker-compose.yml`, `backend/package.json`, `backend/src/app.ts`, `backend/migrations/`, `backend/vitest.config.ts` |
 | **Phase 0.5** | Zulip Migration (Remove Rocket.Chat/MongoDB, Install Zulip) | **[x] COMPLETE** | `docker/docker-compose.yml`, `.env.example`, `.env.test`, `backend/migrations/004_create_employees.sql`, `backend/src/types/auth.ts`, `backend/src/middleware/auth.ts`, `backend/src/services/zulip.service.ts`, `attendance-app/`, `zulip-bot/` |
+| **Phase 0.6** | Zulip Docker Fix (Correct Official Stack Setup) | **[x] COMPLETE** | `docker/zulip/compose.override.yaml`, `docker/zulip/.env`, `docker/docker-compose.yml`, `.env` |
 | **Phase 1** | JWT Authentication | **[x] COMPLETE** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
 | **Phase 1.5** | Zulip Backend Alignment (Refactor Phase 1 Auth & Employees for Zulip) | **[ ] NOT STARTED** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
 | **Phase 2** | Attendance API | **[ ] NOT STARTED** | `backend/src/routes/attendance.ts`, `backend/src/services/attendance.service.ts`, `backend/src/repositories/attendance.repository.ts` |
@@ -537,6 +538,258 @@ Create the two new directories with minimal but functional scaffolding. The actu
 > **Session Note (Phase 0.5 — 2026-08-14)**
 > - **Decision 12 Accepted:** Rocket.Chat replaced by Zulip. MongoDB removed. `rc-app/` replaced by `attendance-app/` + `zulip-bot/`. See `CONTEXT/decision_log.md` Decision 12 for full rationale.
 > - **Phase 0.5 Added:** Four work items (W-051 through W-054) covering Docker reconfiguration, env file updates, database migration renaming `rocketchat_user_id` → `zulip_user_id`, and directory scaffolding.
+
+---
+
+### Phase 0.6 — Zulip Docker Fix (Correct Official Stack Setup)
+
+> **Goal:** Replace the broken hand-rolled Zulip compose service definitions in `docker/docker-compose.yml` with the correct official `docker-zulip` repository approach. After this phase, Zulip must be reachable at `https://127.0.0.1:9991`, the organization setup link must be generated, and all existing JD Connect Postgres tests must remain GREEN.
+
+> **Background — What Was Wrong (Investigation Finding — 2026-08-14)**
+>
+> During a systematic investigation of the non-working Zulip Docker setup, **seven distinct problems** were identified in `docker/docker-compose.yml`. These are documented here as the authoritative root-cause record so the correct approach is never forgotten:
+>
+> **Problem 1 — Wrong Approach: Re-inventing the Official Stack**
+> The `docker-zulip` GitHub repository (`github.com/zulip/docker-zulip`) already ships a complete, tested `compose.yaml` with all required services (database, memcached, rabbitmq, redis, zulip) and a `compose.override.yaml.example` template for customisation. The correct workflow per the official docs is to clone that repo, copy the override example, fill in two required settings (`SETTING_EXTERNAL_HOST`, `SETTING_ZULIP_ADMINISTRATOR`), run `docker compose run --rm zulip app:init`, and then `docker compose up zulip --wait`. Our compose file attempted to recreate all of this from scratch with incompatible definitions — a fundamentally wrong approach.
+>
+> **Problem 2 — Wrong PostgreSQL Image**
+> Our compose used `image: postgres:16-alpine`. The official Zulip database service requires `image: zulip/zulip-postgresql:14` — a custom Zulip-specific PostgreSQL image with special extensions, locale settings, and `POSTGRES_PASSWORD_FILE` secrets support that Zulip's Django ORM depends on at startup. Using the wrong image means Zulip cannot initialise its internal schema. The version mismatch (14 vs 16) adds additional risk.
+>
+> **Problem 3 — Wrong Secrets Mechanism (Old `SECRETS_*` vs Current `ZULIP__*` Docker Secrets)**
+> Our compose passed `SECRETS_postgres_password=...`, `SECRETS_redis_password=...` etc. These are the **legacy API** from the old `zulip/docker-zulip` image. The current `docker-zulip` stack (v9+) has migrated to Docker Compose native secrets. The correct pattern uses `ZULIP__POSTGRES_PASSWORD`, `ZULIP__REDIS_PASSWORD` etc. as environment variables mapped through a `secrets:` block in `compose.override.yaml`. The `SECRETS_*` prefix is silently ignored by the current image.
+>
+> **Problem 4 — Wrong Port Mapping (HTTPS vs HTTP Confusion)**
+> Our compose had `ports: - "9991:443"` with `CERTIFICATES=self-signed` and no `DISABLE_HTTPS=true`. This means Zulip ran HTTPS on port 443 inside the container, but accessing `http://127.0.0.1:9991` hits an HTTPS port over plain HTTP — the browser receives a TLS protocol error. For local development the correct pattern is to use the Zulip default (port 443 with self-signed cert) and accept the browser warning, OR configure proper TLS termination. The port mapping `9991:443` is actually correct for the official image — the confusion was that accessing it required `https://127.0.0.1:9991` (not `http://`), and `DISABLE_HTTPS` was not a recognised variable in the current image (it was a workaround for the legacy image).
+>
+> **Problem 5 — Wrong Database Connection Variables**
+> Our compose passed `DB_HOST=zulip-postgres`, `DB_USER=zulip`, `DB_NAME=zulip`, `SETTING_POSTGRES_HOST=zulip-postgres` etc. The official compose does not use any of these variable names. The database connection is handled entirely through the secret injection pattern — the Zulip image reads the postgres password from the injected secret file and uses the service name `database` (not `zulip-postgres`) as the internal hostname.
+>
+> **Problem 6 — Memcached Missing SASL Authentication Setup**
+> The official `compose.yaml` memcached service has a custom init command that sets up SASL authentication (writes `mech_list: plain` and a password database file). Our compose used bare `image: memcached:alpine` with no SASL setup at all. Zulip fails to authenticate with an SASL-less memcached.
+>
+> **Problem 7 — Docker Desktop Not Running**
+> At the time of investigation, running `docker ps` returned: `Cannot connect to the Docker daemon at unix:///Users/kashihyadav/.docker/run/docker.sock. Is the docker daemon running?` — Docker Desktop was not started, so no containers could be started regardless of any compose file issues.
+
+> **Correct Approach (to be implemented in W-061 through W-063):**
+> Clone the official `docker-zulip` repository into `docker/zulip/`. Use its own `compose.yaml` as-is and configure only `compose.override.yaml` with the two required settings. Keep the JD Connect Postgres service in the root `docker/docker-compose.yml` (separate stack, separate network). Zulip and JD Connect Postgres are completely isolated — they do not share a Docker network or communicate directly. This matches the architectural constraint from Decision 12.
+
+---
+
+#### W-061 — Clone Official `docker-zulip` Repo and Configure Override
+
+**Root cause:**
+The hand-rolled Zulip service definitions in `docker/docker-compose.yml` have seven fundamental problems (wrong image, wrong secrets API, wrong port semantics, wrong DB vars, missing memcached SASL, wrong approach overall — see Phase 0.6 background above). None of these can be patched individually because the root issue is that we re-invented the official stack instead of using it. The correct fix is to adopt the official `docker-zulip` repository exactly as designed.
+
+**Goal:**
+1. `docker/zulip/` directory contains a clone of `github.com/zulip/docker-zulip`.
+2. `docker/zulip/compose.override.yaml` is created from the example template with `SETTING_EXTERNAL_HOST=127.0.0.1:9991` and `SETTING_ZULIP_ADMINISTRATOR=admin@company.com`.
+3. `docker/zulip/.env` contains the required `ZULIP__*` secret environment variables.
+4. The root `docker/docker-compose.yml` has the Zulip-related services (`zulip`, `zulip-postgres`, `zulip-redis`, `zulip-memcached`, `zulip-rabbitmq`) **removed** — Zulip is now managed entirely by its own compose stack.
+5. `pnpm test` (all JD Connect Backend API tests) still passes GREEN — no regressions from the compose cleanup.
+
+**Approach:**
+Clone the official repo into `docker/zulip/`. Copy `compose.override.yaml.example` → `compose.override.yaml`. Edit only the two required `SETTING_*` environment variables in the override. Create `docker/zulip/.env` with the `ZULIP__*` secret vars. Strip the now-redundant Zulip service blocks from the root compose. Add `docker/zulip/` to `.gitignore` or document it as a manual setup step (the cloned repo should not be tracked inside this monorepo).
+
+---
+
+- [x] **RED — Infrastructure Check:**
+  - [x] Run: `ls docker/zulip/` → confirm directory does NOT exist yet.
+  - [x] Run: `docker compose -f docker/docker-compose.yml config --services` → confirm services still include `zulip`, `zulip-postgres`, `zulip-redis`, `zulip-memcached`, `zulip-rabbitmq` (pre-cleanup state).
+  - [x] **Run — confirm RED (official stack not yet cloned, old broken services still present).**
+
+- [x] **GREEN — Clone and Configure:**
+  - [x] [Shell] Ensure Docker Desktop is running: open Docker Desktop app, wait for the whale icon to show "Docker Desktop is running".
+  - [x] [Shell] Clone the official stack:
+        ```bash
+        cd docker
+        git clone https://github.com/zulip/docker-zulip.git zulip
+        cd zulip
+        ```
+  - [x] [Files] Copy the override template:
+        ```bash
+        cp compose.override.yaml.example compose.override.yaml
+        ```
+  - [x] [Config] Edit `docker/zulip/compose.override.yaml` — set the two required fields under the `zulip` service `environment:` block:
+        ```yaml
+        SETTING_EXTERNAL_HOST: "127.0.0.1:9991"
+        SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"
+        ```
+  - [x] [Files] Create `docker/zulip/.env` with the required secret variables (these feed the `secrets:` block in `compose.override.yaml`):
+        ```dotenv
+        ZULIP__POSTGRES_PASSWORD=zulipdevpostgrespassword
+        ZULIP__MEMCACHED_PASSWORD=zulipdevmemcachedpassword
+        ZULIP__RABBITMQ_PASSWORD=zulipdevrabbitmqpassword
+        ZULIP__REDIS_PASSWORD=zulipdevredispassword
+        ZULIP__SECRET_KEY=zulipdevsecretkey32charsminimumXXX
+        ZULIP__EMAIL_PASSWORD=
+        ```
+  - [x] [Docker] Strip the following services from `docker/docker-compose.yml` (they are now managed by the official stack):
+        - Remove service: `zulip`
+        - Remove service: `zulip-postgres`
+        - Remove service: `zulip-redis`
+        - Remove service: `zulip-memcached`
+        - Remove service: `zulip-rabbitmq`
+        - Remove volume: `zulipdata`
+        - Remove volume: `zulipdbdata`
+        `docker/docker-compose.yml` should now contain **only** the `postgres` service (JD Connect HR/attendance DB), `pgdata` volume, and `jdconnect_network`.
+  - [x] [Gitignore] Add `docker/zulip/` to the root `.gitignore` so the cloned Zulip repo is not accidentally tracked inside the JD Connect monorepo:
+        ```
+        # Zulip official stack (cloned separately — not a submodule)
+        docker/zulip/
+        ```
+  - [x] [Docs] Update `docker/README.md` to document the two-compose-stack architecture: JD Connect Postgres (`docker/docker-compose.yml`) and Zulip (`docker/zulip/` — clone of `github.com/zulip/docker-zulip`).
+  - [x] Run `docker compose -f docker/docker-compose.yml config --services` → confirm output is only `postgres`.
+  - [x] Run `pnpm test` → **confirm GREEN (all JD Connect tests still pass).**
+
+- [x] **RED — Unit Check:**
+  - [x] Verify `cat docker/docker-compose.yml` contains no references to `zulip`, `rabbitmq`, `memcached`, `redis` service names.
+  - [x] **Run — confirm RED (before cleanup, old service blocks are still present).**
+
+- [x] **GREEN — Compose Cleanup Verified:**
+  - [x] `docker compose -f docker/docker-compose.yml config` shows only `postgres` service — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] `cat docker/docker-compose.yml` → only `postgres` service, `pgdata` volume, `jdconnect_network` — no Zulip references.
+  - [x] `ls docker/zulip/` → `compose.yaml`, `compose.override.yaml`, `.env`, and other official repo files present.
+  - [x] `cat docker/zulip/compose.override.yaml` → `SETTING_EXTERNAL_HOST: "127.0.0.1:9991"` and `SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"` present.
+  - [x] `cat docker/zulip/.env` → all six `ZULIP__*` variables present.
+  - [x] `pnpm test` → all tests GREEN (no regressions).
+  - [x] ✅ Done.
+
+---
+
+#### [x] W-062 — Run Zulip `app:init` and Bring Up the Stack
+
+**Root cause:**
+Zulip requires a mandatory one-time initialisation step (`docker compose run --rm zulip app:init`) that seeds the database schema and writes internal configuration files to the `/data` volume. Without this step, `docker compose up zulip` will fail or produce an unusable instance. Our previous setup skipped this step entirely — we just ran `docker compose up -d` directly, which is why Zulip never initialised correctly.
+
+**Goal:**
+1. `docker compose run --rm zulip app:init` completes successfully, ending with the line `=== End Initial Configuration Phase ===`.
+2. `docker compose up zulip --wait` brings the Zulip container to a healthy state.
+3. `https://127.0.0.1:9991` is reachable (browser shows Zulip login page or org-creation page, with a self-signed cert warning to click past).
+
+**Approach:**
+Follow the official getting-started steps exactly: `docker compose pull` to fetch latest images, then `docker compose run --rm zulip app:init`, then `docker compose up zulip --wait`. All commands run from `docker/zulip/` where the official compose files live.
+
+---
+
+- [x] **RED — Integration Check:**
+  - [x] Run: `curl -k https://127.0.0.1:9991` → confirm RED (Zulip not running yet, connection refused or no response).
+  - [x] **Run — confirm RED (Zulip stack not yet started).**
+
+- [x] **GREEN — Official Init and Start:**
+  - [x] [Shell] Pull the latest official Zulip images:
+        ```bash
+        cd docker/zulip
+        docker compose pull
+        ```
+  - [x] [Shell] Run the mandatory first-time initialisation:
+        ```bash
+        docker compose run --rm zulip app:init
+        ```
+        Watch the output. Wait for it to complete. The last line **must** read:
+        ```
+        === End Initial Configuration Phase ===
+        ```
+        If it does not end with this line, read the output for errors before proceeding. Do NOT continue to the next step until this completes cleanly.
+  - [x] [Shell] Start Zulip and wait for it to be healthy:
+        ```bash
+        docker compose up zulip --wait
+        ```
+  - [x] Run integration check — **confirm GREEN.**
+
+- [x] **RED — Unit Check:**
+  - [x] Run: `docker compose -f docker/zulip/compose.yaml ps` → confirm RED (containers not running before `up`).
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Containers Healthy:**
+  - [x] `docker compose -f docker/zulip/compose.yaml ps` shows `zulip` container status `healthy` or `running` — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] `docker compose -f docker/zulip/compose.yaml ps` → all Zulip services running (database, memcached, rabbitmq, redis, zulip).
+  - [x] Open `https://127.0.0.1:9991` in a browser → Zulip page loads (click past the self-signed cert warning).
+  - [x] JD Connect Postgres container is still running independently: `docker compose -f docker/docker-compose.yml ps` → `postgres` healthy.
+  - [x] `pnpm test` → all JD Connect tests still GREEN.
+  - [x] ✅ Done.
+
+---
+
+#### [x] W-063 — Generate Realm Creation Link and Complete Zulip Organization Setup
+
+**Root cause:**
+A fresh Zulip instance has no organization and no users. Before the Backend API can call the Zulip Admin REST API (to provision employees) or before anyone can log in, an organization must be created via Zulip's `generate_realm_creation_link` management command. This step was also missing from our previous setup — we tried to navigate to `http://127.0.0.1:9991` expecting a GUI setup wizard, but Zulip does not show one automatically after first boot.
+
+**Goal:**
+1. A Zulip organization creation link is generated via the management command.
+2. The link is opened in a browser, and the initial organization + admin account are created.
+3. The admin account credentials are recorded in `docker/zulip/.env` (local dev only — never committed).
+4. A Zulip Bot account is created for JD Connect's Backend API usage, and its API key is captured.
+5. `.env` at the project root is updated with the real `ZULIP_BOT_EMAIL` and `ZULIP_BOT_API_KEY` values.
+
+**Approach:**
+Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships to run Django management commands inside the running Zulip container. Generate the realm creation link, complete the wizard in the browser, then create a bot account via Zulip's web admin panel.
+
+---
+
+- [x] **RED — Integration Check:**
+  - [x] Run: `curl -k -s https://127.0.0.1:9991/api/v1/server_settings | grep -c 'realm_uri'` → confirm output is `0` or returns an error (no realm configured yet).
+  - [x] **Run — confirm RED (no organization exists yet).**
+
+- [x] **GREEN — Organization Setup:**
+  - [x] [Shell] Generate the organization creation link (run from `docker/zulip/`):
+        ```bash
+        ./manage.py generate_realm_creation_link
+        ```
+        This prints a one-time-use URL like `https://127.0.0.1:9991/new/<token>`.
+  - [x] [Browser] Open the printed URL in a browser (click past the self-signed cert warning).
+  - [x] [Browser] Complete the Zulip organization setup wizard:
+        - Organization name: `JD Connect` (or your company name)
+        - Admin email: `admin@company.com` (must match `SETTING_ZULIP_ADMINISTRATOR`)
+        - Admin password: choose a strong password
+        - Complete the form and click "Create organization".
+  - [x] [Config] Record the admin credentials in `docker/zulip/.env` (local dev only):
+        ```dotenv
+        ZULIP_ADMIN_EMAIL=admin@company.com
+        ZULIP_ADMIN_PASSWORD=<the-password-you-chose>
+        ```
+  - [x] [Browser] Log in to the Zulip admin panel at `https://127.0.0.1:9991/#organization/bots`.
+  - [x] [Browser] Create a new bot account:
+        - Bot type: **Generic bot**
+        - Full name: `JD Connect Bot`
+        - Username / email: `jdconnect-bot@company.com`
+        - Click "Create bot" and copy the generated **API Key**.
+  - [x] [Config] Update the root `.env` file with the real bot credentials:
+        ```dotenv
+        ZULIP_BASE_URL=https://127.0.0.1:9991
+        ZULIP_BOT_EMAIL=jdconnect-bot@company.com
+        ZULIP_BOT_API_KEY=<the-api-key-copied-from-zulip>
+        ```
+  - [x] Run integration check — **confirm GREEN.**
+
+- [x] **RED — Unit Check:**
+  - [x] Run: `curl -k -s -u "jdconnect-bot@company.com:<API_KEY>" https://127.0.0.1:9991/api/v1/users/me` → confirm RED (bot does not exist yet, request will fail with 401 or connection error).
+  - [x] **Run — confirm RED (before bot is created).**
+
+- [x] **GREEN — Bot API Key Verified:**
+  - [x] Run the same `curl` command after bot creation → confirm HTTP 200 and JSON response containing `"result": "success"` — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] `https://127.0.0.1:9991` in browser → Zulip login page for the "JD Connect" organization.
+  - [x] Log in as `admin@company.com` → Zulip workspace loads.
+  - [x] Run:
+        ```bash
+        curl -k -s -u "jdconnect-bot@company.com:<API_KEY>" \
+          https://127.0.0.1:9991/api/v1/users/me
+        ```
+        → Response: `{ "result": "success", "email": "jdconnect-bot@company.com", ... }`
+  - [x] Root `.env` has real `ZULIP_BOT_API_KEY` (`G8e43VrvWU1x5Llk2Amjtqm3u6FXH7xI`).
+  - [x] `pnpm test` → all JD Connect tests still GREEN.
+  - [x] ✅ Done.
+
+> **Session Note (Phase 0.6 — Investigation 2026-08-14)**
+> - **Root Cause Identified:** Seven fundamental problems diagnosed in the hand-rolled Zulip compose setup: wrong approach (re-inventing the official stack), wrong PostgreSQL image (`postgres:16-alpine` vs `zulip/zulip-postgresql:14`), wrong secrets API (`SECRETS_*` legacy vs current `ZULIP__*` Docker secrets), wrong port/TLS configuration, wrong DB connection variable names, missing memcached SASL authentication setup, and Docker Desktop not running.
+> - **Correct Fix:** Adopt the official `docker-zulip` GitHub repo as a standalone inner compose stack in `docker/zulip/`. Configure only via `compose.override.yaml` and `.env`. Strip Zulip services from the root `docker/docker-compose.yml` entirely. Follow the official three-step boot sequence: `pull` → `app:init` → `up zulip --wait`.
+> - **Phase 0.6 Added:** Three work items (W-061 through W-063): official stack clone & configuration, init & startup, and organization + bot setup.
 
 ---
 

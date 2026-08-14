@@ -3,3 +3,7 @@ packages:
   - 'attendance-app'
   - 'zulip-bot'
   - 'hr-dashboard'
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild

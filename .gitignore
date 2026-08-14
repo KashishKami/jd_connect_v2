@@ -51,3 +51,7 @@ temp/
 docker/pgdata/
 docker/mongodata/
 docker/rc_uploads/
+
+# Zulip official stack (cloned separately)
+docker/zulip/
+

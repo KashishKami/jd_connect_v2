@@ -6,30 +6,29 @@ This directory contains the Docker Compose infrastructure setup for local develo
 
 ## 🛠 Services Overview
 
-| Service | Container Name | Host Port | Purpose |
-|:---|:---|:---|:---|
-| **postgres** | `jdconnect_postgres` | `5432` | Plain Postgres 16 database (auto-initializes `jdconnect` and `jdconnect_test`) |
-| **mongo** | `jdconnect_mongo` | `27017` | MongoDB 7 replica set (`rs0`) for Rocket.Chat |
-| **mongo-init** | `jdconnect_mongo_init` | — | One-shot initialization script running `rs.initiate()` |
-| **rocketchat** | `jdconnect_rocketchat` | `3100` | Rocket.Chat 8.x web application |
+JD Connect uses two isolated Docker Compose stacks:
+
+1. **JD Connect Infrastructure (`docker/docker-compose.yml`)**
+   - `postgres` (`jdconnect_postgres`, port `5432`): Plain Postgres 16 database owning JD Connect HR, employee, and attendance data (`jdconnect` and `jdconnect_test` databases).
+
+2. **Zulip Official Stack (`docker/zulip/`)**
+   - Cloned directly from `github.com/zulip/docker-zulip`.
+   - Managed independently via `docker/zulip/compose.yaml` and `docker/zulip/compose.override.yaml`.
+   - Accessible at `https://127.0.0.1:9991`.
 
 ---
 
-## 🚀 Startup & Lifecycle Commands
+## 🚀 Startup Commands
 
+### 1. Start JD Connect Database Stack
 ```bash
-# Start all infrastructure containers in detached mode
-docker compose up -d
+docker compose -f docker/docker-compose.yml up -d
+```
 
-# Check status of containers
-docker compose ps
-
-# View container logs
-docker compose logs -f
-
-# Stop containers
-docker compose down
-
-# Stop containers and purge data volumes (reset database & chat state)
-docker compose down -v
+### 2. Start Zulip Chat Stack
+```bash
+cd docker/zulip
+docker compose pull
+docker compose run --rm zulip app:init
+docker compose up zulip --wait
 ```

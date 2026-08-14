@@ -1,2 +1,2 @@
 // Zulip Bot message poster — implemented in Phase 5
-console.log('JD Connect Zulip Bot initialized');
+console.info('JD Connect Zulip Bot initialized');

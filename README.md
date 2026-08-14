@@ -17,10 +17,10 @@ The system consists of four isolated components:
 
 ## 🛠️ Quick Links
 
-- [Local Setup Guide](file:///c:/Users/Administrator/Desktop/jd_connect/local_setup.md) — Step-by-step developer setup instructions.
-- [Project Data Context](file:///c:/Users/Administrator/Desktop/jd_connect/CONTEXT/project_data.md) — Technical metadata, permission keys, and constants.
-- [Database Schema Context](file:///c:/Users/Administrator/Desktop/jd_connect/CONTEXT/database_schema.md) — Authoritative Postgres & MongoDB schemas.
-- [Decision Log Context](file:///c:/Users/Administrator/Desktop/jd_connect/CONTEXT/decision_log.md) — Architectural decisions record.
+- [Local Setup Guide](file:///Users/kashihyadav/Desktop/jd_connect_v2/local_setup.md) — Step-by-step developer setup instructions.
+- [Project Data Context](file:///Users/kashihyadav/Desktop/jd_connect_v2/CONTEXT/project_data.md) — Technical metadata, permission keys, and constants.
+- [Database Schema Context](file:///Users/kashihyadav/Desktop/jd_connect_v2/CONTEXT/database_schema.md) — Authoritative Postgres & Zulip database schemas.
+- [Decision Log Context](file:///Users/kashihyadav/Desktop/jd_connect_v2/CONTEXT/decision_log.md) — Architectural decisions record.
 
 ---
 
