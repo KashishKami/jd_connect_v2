@@ -66,6 +66,14 @@ export class UserRepository {
     );
     return res.rows[0];
   }
+
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<boolean> {
+    const res = await pool.query(
+      `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+      [passwordHash, userId]
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
 }
 
 export const userRepository = new UserRepository();

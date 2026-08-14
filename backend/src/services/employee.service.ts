@@ -10,6 +10,13 @@ export class DuplicateEmailError extends Error {
   }
 }
 
+export class EmployeeNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Employee not found: ${id}`);
+    this.name = 'EmployeeNotFoundError';
+  }
+}
+
 export class EmployeeService {
   constructor(
     private userRepo: UserRepository = defaultUserRepo,
@@ -29,6 +36,16 @@ export class EmployeeService {
     });
 
     return await this.empRepo.createEmployee(user.id, input);
+  }
+
+  async resetPassword(employeeId: string, newPassword: string): Promise<void> {
+    const employee = await this.empRepo.findById(employeeId);
+    if (!employee || !employee.auth_user_id) {
+      throw new EmployeeNotFoundError(employeeId);
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.userRepo.updatePasswordHash(employee.auth_user_id, passwordHash);
   }
 }
 

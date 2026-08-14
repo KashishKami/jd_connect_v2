@@ -37,6 +37,14 @@ export class EmployeeRepository {
     );
     return res.rows[0] || null;
   }
+
+  async findById(id: string): Promise<EmployeeResponse | null> {
+    const res = await pool.query<EmployeeResponse>(
+      'SELECT * FROM employees WHERE id = $1',
+      [id]
+    );
+    return res.rows[0] || null;
+  }
 }
 
 export const employeeRepository = new EmployeeRepository();

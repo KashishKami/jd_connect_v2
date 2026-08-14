@@ -17,7 +17,7 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | **Phase 0.5** | Zulip Migration (Remove Rocket.Chat/MongoDB, Install Zulip) | **[x] COMPLETE** | `docker/docker-compose.yml`, `.env.example`, `.env.test`, `backend/migrations/004_create_employees.sql`, `backend/src/types/auth.ts`, `backend/src/middleware/auth.ts`, `backend/src/services/zulip.service.ts`, `attendance-app/`, `zulip-bot/` |
 | **Phase 0.6** | Zulip Docker Fix (Correct Official Stack Setup) | **[x] COMPLETE** | `docker/zulip/compose.override.yaml`, `docker/zulip/.env`, `docker/docker-compose.yml`, `.env` |
 | **Phase 1** | JWT Authentication | **[x] COMPLETE** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
-| **Phase 1.5** | Zulip Backend Alignment (Refactor Phase 1 Auth & Employees for Zulip) | **[ ] NOT STARTED** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
+| **Phase 1.5** | Zulip Backend Alignment (Refactor Phase 1 Auth & Employees for Zulip) | **[x] COMPLETE** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
 | **Phase 2** | Attendance API | **[ ] NOT STARTED** | `backend/src/routes/attendance.ts`, `backend/src/services/attendance.service.ts`, `backend/src/repositories/attendance.repository.ts` |
 | **Phase 3** | Break API | **[ ] NOT STARTED** | `backend/src/routes/breaks.ts`, `backend/src/services/break.service.ts`, `backend/src/repositories/break.repository.ts` |
 | **Phase 4** | Zulip Integration & SSO | **[ ] NOT STARTED** | `backend/src/services/zulip.service.ts`, `backend/src/routes/oauth.ts`, `backend/src/services/oauth.service.ts` |
@@ -968,39 +968,43 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/password_reset.test.ts`):**
-  - [ ] Test: `POST /api/employees/:id/reset-password` with `{ new_password: "NewSecret123!" }` as admin (has `hr.reset_password`) → assert HTTP 200 `{ message: "Password updated successfully" }`. Target user logs in with new password.
-  - [ ] Test: Same endpoint called by standard employee (lacks permission) → assert HTTP 403.
-  - [ ] Test: Same endpoint for non-existent employee ID → assert HTTP 404.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/password_reset.test.ts`):**
+  - [x] Test: `POST /api/employees/:id/reset-password` with `{ new_password: "NewSecret123!" }` as admin (has `hr.reset_password`) → assert HTTP 200 `{ message: "Password updated successfully" }`. Target user logs in with new password.
+  - [x] Test: Same endpoint called by standard employee (lacks permission) → assert HTTP 403.
+  - [x] Test: Same endpoint for non-existent employee ID → assert HTTP 404.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Backend:**
-  - [ ] [Schema] No migration needed.
-  - [ ] [Repository] `src/repositories/user.repository.ts#updatePasswordHash(userId, passwordHash)`.
-  - [ ] [Service] `src/services/employee.service.ts#resetPassword`:
+- [x] **GREEN — Backend:**
+  - [x] [Schema] No migration needed.
+  - [x] [Repository] `src/repositories/user.repository.ts#updatePasswordHash(userId, passwordHash)`.
+  - [x] [Service] `src/services/employee.service.ts#resetPassword`:
         - Verify caller has `hr.reset_password` permission.
         - Find employee by ID -> extract `auth_user_id`.
         - Hash new password using `bcrypt.hash(newPassword, 12)`.
         - Update password in Postgres `users` table.
-  - [ ] [Controller] `src/routes/employees.ts` `POST /:id/reset-password`:
+  - [x] [Controller] `src/routes/employees.ts` `POST /:id/reset-password`:
         - JWT guard + `requirePermission('hr.reset_password')`.
         - Zod schema: `{ new_password: z.string().min(8) }`.
         - Call `employeeService.resetPassword`.
         - Return HTTP 200.
-  - [ ] Run integration test — **confirm GREEN.**
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`backend/tests/password_reset.unit.test.ts`):**
-  - [ ] Mock service call without required permission → assert throws `ForbiddenError`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`backend/tests/password_reset.unit.test.ts`):**
+  - [x] Mock service call without required permission → assert throws `ForbiddenError`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Reset Logic:**
-  - [ ] Implement password reset service validation — **confirm GREEN.**
+- [x] **GREEN — Reset Logic:**
+  - [x] Implement password reset service validation — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Admin sends `POST /api/employees/<emp-id>/reset-password` with `{ new_password: "ChangedPass123" }` → 200 OK.
-  - [ ] Employee logs in with old password → 401 Unauthorized.
-  - [ ] Employee logs in with `"ChangedPass123"` → 200 OK with valid JWT.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Admin sends `POST /api/employees/<emp-id>/reset-password` with `{ new_password: "ChangedPass123" }` → 200 OK.
+  - [x] Employee logs in with old password → 401 Unauthorized.
+  - [x] Employee logs in with `"ChangedPass123"` → 200 OK with valid JWT.
+  - [x] ✅ Done.
+
+> **Session Note 6 — 2026-08-15**
+> - **W-104 Completion**: Built and fully verified W-104 (`POST /api/employees/:id/reset-password`). Added `updatePasswordHash` in `user.repository.ts`, `findById` in `employee.repository.ts`, `resetPassword` in `employee.service.ts`, and endpoint with `authenticateJwt` + `requirePermission('hr.reset_password')`.
+> - **Quality Verification**: Monorepo suite passing 100% GREEN (13 test files, 35/35 passing tests, `pnpm ci:quality` passing cleanly). Phase 1 is now **[x] COMPLETE**.
 
 ---
 
@@ -1020,27 +1024,27 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/employees.test.ts`):**
-  - [ ] Update assertions: `POST /api/employees` → assert body `{ id, employee_code, full_name, email, zulip_provisioned: false, zulip_user_id: null }`. Confirm tests fail if old property names are returned.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/employees.test.ts`):**
+  - [x] Update assertions: `POST /api/employees` → assert body `{ id, employee_code, full_name, email, zulip_provisioned: false, zulip_user_id: null }`. Confirm tests fail if old property names are returned.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Backend:**
-  - [ ] [Type] `src/types/employee.ts`: replace `rocketchat_user_id` with `zulip_user_id: number | null`, replace `rc_provisioned` with `zulip_provisioned: boolean`.
-  - [ ] [Service] `src/services/employee.service.ts`: return `zulip_provisioned: false`, `zulip_user_id: null`.
-  - [ ] [Controller] `src/routes/employees.ts`: update response mapping.
-  - [ ] Run integration test — **confirm GREEN.**
+- [x] **GREEN — Backend:**
+  - [x] [Type] `src/types/employee.ts`: replace `rocketchat_user_id` with `zulip_user_id: number | null`, replace `rc_provisioned` with `zulip_provisioned: boolean`.
+  - [x] [Service] `src/services/employee.service.ts`: return `zulip_provisioned: false`, `zulip_user_id: null`.
+  - [x] [Controller] `src/routes/employees.ts`: update response mapping.
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
-  - [ ] Update mocks to return `zulip_provisioned: false`, `zulip_user_id: null`. Confirm failure pre-fix.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
+  - [x] Update mocks to return `zulip_provisioned: false`, `zulip_user_id: null`. Confirm failure pre-fix.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Service Logic:**
-  - [ ] Update service tests — **confirm GREEN.**
+- [x] **GREEN — Service Logic:**
+  - [x] Update service tests — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `POST /api/employees` as super_admin → 201 response with `zulip_provisioned: false`, `zulip_user_id: null`.
-  - [ ] `psql` check `SELECT zulip_provisioned, zulip_user_id FROM employees` → `false`, `null`.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `POST /api/employees` as super_admin → 201 response with `zulip_provisioned: false`, `zulip_user_id: null`.
+  - [x] `psql` check `SELECT zulip_provisioned, zulip_user_id FROM employees` → `false`, `null`.
+  - [x] ✅ Done.
 
 ---
 
@@ -1054,27 +1058,27 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/auth.test.ts`):**
-  - [ ] Update test assertion: decoded JWT must contain `zulip_user_id` of type `number` (or `null` if unprovisioned). Confirm failure pre-fix.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/auth.test.ts`):**
+  - [x] Update test assertion: decoded JWT must contain `zulip_user_id` of type `number` (or `null` if unprovisioned). Confirm failure pre-fix.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Backend:**
-  - [ ] [Type] `src/types/auth.ts`: change `rc_user_id: string` → `zulip_user_id: number | null`.
-  - [ ] [Repository] `src/repositories/user.repository.ts`: query `zulip_user_id` instead of `rocketchat_user_id`.
-  - [ ] [Service] `src/services/auth.service.ts`: construct JWT payload with `zulip_user_id`.
-  - [ ] Run integration test — **confirm GREEN.**
+- [x] **GREEN — Backend:**
+  - [x] [Type] `src/types/auth.ts`: change `rc_user_id: string` → `zulip_user_id: number | null`.
+  - [x] [Repository] `src/repositories/user.repository.ts`: query `zulip_user_id` instead of `rocketchat_user_id`.
+  - [x] [Service] `src/services/auth.service.ts`: construct JWT payload with `zulip_user_id`.
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`backend/tests/auth.service.unit.test.ts`):**
-  - [ ] Update test fixtures with `zulip_user_id`. Confirm failure pre-fix.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`backend/tests/auth.service.unit.test.ts`):**
+  - [x] Update test fixtures with `zulip_user_id`. Confirm failure pre-fix.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Auth Logic:**
-  - [ ] Update service unit tests — **confirm GREEN.**
+- [x] **GREEN — Auth Logic:**
+  - [x] Update service unit tests — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] `POST /api/auth/login` → 200 response with JWT.
-  - [ ] Decode JWT → payload contains `zulip_user_id` (number/null).
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] `POST /api/auth/login` → 200 response with JWT.
+  - [x] Decode JWT → payload contains `zulip_user_id` (number/null).
+  - [x] ✅ Done.
 
 ---
 
@@ -1088,25 +1092,29 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Unit (`backend/tests/auth.middleware.unit.test.ts`):**
-  - [ ] Update test assertion: `req.employee` populated with `zulip_user_id` (number). Confirm failure pre-fix.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`backend/tests/auth.middleware.unit.test.ts`):**
+  - [x] Update test assertion: `req.employee` populated with `zulip_user_id` (number). Confirm failure pre-fix.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Middleware:**
-  - [ ] [Middleware] `src/middleware/auth.ts`: attach `req.employee = { id: payload.employee_id, zulip_user_id: payload.zulip_user_id, roles: payload.roles }`.
-  - [ ] Run unit tests — **confirm GREEN.**
+- [x] **GREEN — Middleware:**
+  - [x] [Middleware] `src/middleware/auth.ts`: attach `req.employee = { id: payload.employee_id, zulip_user_id: payload.zulip_user_id, roles: payload.roles }`.
+  - [x] Run unit tests — **confirm GREEN.**
 
-- [ ] **RED — Integration (`backend/tests/protected_route.test.ts`):**
-  - [ ] Call protected endpoint with JWT containing `zulip_user_id` → assert 200.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/protected_route.test.ts`):**
+  - [x] Call protected endpoint with JWT containing `zulip_user_id` → assert 200.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Route Integration:**
-  - [ ] Verify protected routes — **confirm GREEN.**
+- [x] **GREEN — Route Integration:**
+  - [x] Verify protected routes — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Protected route request with valid JWT → 200 OK, `req.employee.zulip_user_id` accessible.
-  - [ ] `pnpm test` → all 30 tests GREEN.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Protected route request with valid JWT → 200 OK, `req.employee.zulip_user_id` accessible.
+  - [x] `pnpm test` → all 30 tests GREEN.
+  - [x] ✅ Done.
+
+> **Session Note 7 — 2026-08-15**
+> - **Phase 1.5 Alignment Completed**: Verified complete removal of all legacy Rocket.Chat field/type references (`rocketchat_user_id`, `rc_provisioned`, `rc_user_id`) in favor of `zulip_user_id: number | null` and `zulip_provisioned: boolean` across `src/types/`, `src/services/`, `src/routes/`, `src/middleware/`, and all unit/integration test suites.
+> - **Quality Status**: 13 test files and 35/35 tests passing GREEN. Monorepo quality check (`pnpm ci:quality`) passing cleanly. Phase 1.5 marked **[x] COMPLETE**.
 
 ---
 

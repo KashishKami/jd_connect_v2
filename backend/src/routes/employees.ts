@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticateJwt, requirePermission } from '../middleware/auth';
-import { employeeService, DuplicateEmailError } from '../services/employee.service';
+import { employeeService, DuplicateEmailError, EmployeeNotFoundError } from '../services/employee.service';
 
 const router: Router = Router();
 
@@ -17,6 +17,10 @@ const createEmployeeSchema = z.object({
   team_leader_id: z.string().uuid().optional(),
   manager_id: z.string().uuid().optional(),
   designation: z.string().optional(),
+});
+
+const resetPasswordSchema = z.object({
+  new_password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 router.post(
@@ -36,6 +40,27 @@ router.post(
         return res.status(409).json({ error: 'Email already exists' });
       }
       return res.status(500).json({ error: 'Failed to create employee', details: (err as Error).message });
+    }
+  }
+);
+
+router.post(
+  '/:id/reset-password',
+  authenticateJwt,
+  requirePermission('hr.reset_password'),
+  async (req: Request, res: Response) => {
+    try {
+      const input = resetPasswordSchema.parse(req.body);
+      await employeeService.resetPassword(req.params.id, input.new_password);
+      return res.status(200).json({ message: 'Password updated successfully' });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Validation failed', details: err.errors });
+      }
+      if (err instanceof EmployeeNotFoundError) {
+        return res.status(404).json({ error: 'Employee not found' });
+      }
+      return res.status(500).json({ error: 'Failed to reset password', details: (err as Error).message });
     }
   }
 );
