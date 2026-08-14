@@ -2,6 +2,7 @@ import express, { Express } from 'express';
 import cors from 'cors';
 import authRouter from './routes/auth';
 import employeeRouter from './routes/employees';
+import attendanceRouter from './routes/attendance';
 
 const app: Express = express();
 
@@ -18,5 +19,6 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/employees', employeeRouter);
+app.use('/api/attendance', attendanceRouter);
 
 export default app;
