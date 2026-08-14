@@ -121,25 +121,36 @@ from zerver.actions.create_user import do_create_user
 
 realm = Realm.objects.get(string_id='')
 
-# Create Admin User
-do_create_user(
-    email='admin@company.com',
-    password='AdminPassword123!',
-    realm=realm,
-    full_name='JD Connect Admin',
-    role=UserProfile.ROLE_REALM_ADMINISTRATOR,
-    acting_user=None,
-)
+# Check / Create Admin User
+admin = UserProfile.objects.filter(delivery_email='admin@company.com', realm=realm).first()
+if not admin:
+    admin = do_create_user(
+        email='admin@company.com',
+        password='AdminPassword123!',
+        realm=realm,
+        full_name='JD Connect Admin',
+        role=UserProfile.ROLE_REALM_ADMINISTRATOR,
+        acting_user=None,
+    )
+    print('ADMIN_CREATED')
+else:
+    print('ADMIN_EXISTS')
 
-# Create Bot Account
-bot = do_create_user(
-    email='jdconnect-bot@company.com',
-    password=None,
-    realm=realm,
-    full_name='JD Connect Bot',
-    bot_type=UserProfile.DEFAULT_BOT,
-    acting_user=None,
-)
+# Check / Create Bot Account
+bot = UserProfile.objects.filter(delivery_email='jdconnect-bot@company.com', realm=realm).first()
+if not bot:
+    bot = do_create_user(
+        email='jdconnect-bot@company.com',
+        password=None,
+        realm=realm,
+        full_name='JD Connect Bot',
+        bot_type=UserProfile.DEFAULT_BOT,
+        acting_user=None,
+    )
+    print('BOT_CREATED')
+else:
+    print('BOT_EXISTS')
+
 print('BOT_API_KEY:', bot.api_key)
 "
 ```
@@ -150,6 +161,26 @@ ZULIP_BASE_URL=https://127.0.0.1:9991
 ZULIP_BOT_EMAIL=jdconnect-bot@company.com
 ZULIP_BOT_API_KEY=<pasted_bot_api_key_here>
 ```
+
+### Step 7: Start Development Servers
+
+Once `.env` is updated with `ZULIP_BOT_API_KEY`, start the development servers:
+
+1. **Backend API Server (`http://127.0.0.1:4000`)**:
+   ```bash
+   cd backend
+   pnpm dev
+   ```
+
+2. **HR Dashboard (`http://127.0.0.1:3200`)**:
+   ```bash
+   cd hr-dashboard
+   pnpm dev
+   ```
+
+3. **Access Zulip Workspace (`https://127.0.0.1:9991`)**:
+   - Open `https://127.0.0.1:9991` in your browser.
+   - Log in using `admin@company.com` / `AdminPassword123!`.
 
 ---
 
