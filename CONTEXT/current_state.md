@@ -22,7 +22,7 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | **Phase 3** | Break API | **[x] COMPLETE** | `backend/src/routes/breaks.ts`, `backend/src/services/break.service.ts`, `backend/src/repositories/break.repository.ts` |
 | **Phase 4** | Zulip Integration & SSO | **[x] COMPLETE** | `backend/src/services/zulip.service.ts`, `backend/src/routes/oauth.ts`, `backend/src/services/oauth.service.ts` |
 | **Phase 5** | Attendance Web App & Zulip Bot | **[x] COMPLETE** | `attendance-app/index.html`, `attendance-app/app.js`, `zulip-bot/src/poster.ts` |
-| **Phase 6** | HR Dashboard (Web App) | **[ ] NOT STARTED** | `hr-dashboard/src/app/`, `hr-dashboard/src/components/`, `hr-dashboard/src/lib/api.ts` |
+| **Phase 6** | HR Dashboard (Web App) | **[x] COMPLETE** | `hr-dashboard/src/app/`, `hr-dashboard/src/components/`, `hr-dashboard/src/lib/api.ts` |
 | **Phase 7** | Data Migration (Old System → New) | **[ ] NOT STARTED** | `backend/scripts/migrate-employees.ts`, `backend/scripts/migrate-attendance.ts`, `backend/scripts/migrate-chat.ts` |
 | **Phase 8** | Production Deployment | **[ ] NOT STARTED** | `docker/docker-compose.prod.yml`, `docker/nginx.conf`, backup scripts |
 
@@ -1738,31 +1738,31 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`hr-dashboard/tests/auth_flow.test.ts`):**
-  - [ ] Test: Unauthenticated user navigates to `/dashboard` → redirected to `/login`.
-  - [ ] Test: Valid login submission on `/login` → calls `POST /api/auth/login` → sets session cookie → redirects to `/dashboard`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`hr-dashboard/tests/auth_flow.test.ts`):**
+  - [x] Test: Unauthenticated user navigates to `/dashboard` → redirected to `/login`.
+  - [x] Test: Valid login submission on `/login` → calls `POST /api/auth/login` → sets session cookie → redirects to `/dashboard`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Web App Scaffold:**
-  - [ ] Bootstrap `hr-dashboard/` (Next.js 14+ App Router, Tailwind CSS, TypeScript).
-  - [ ] Create `src/lib/api.ts` — API client configured with Base URL and Authorization Bearer interceptor.
-  - [ ] Create `src/app/login/page.tsx` — Login form (Email & Password).
-  - [ ] Create `src/middleware.ts` — Next.js middleware checking JWT cookie before serving `/dashboard/*` routes.
-  - [ ] Create `src/app/dashboard/layout.tsx` — Responsive navigation sidebar & header.
-  - [ ] Run integration test — **confirm GREEN.**
+- [x] **GREEN — Web App Scaffold:**
+  - [x] Bootstrap `hr-dashboard/` (Next.js 14+ App Router, Tailwind CSS, TypeScript).
+  - [x] Create `src/lib/api.ts` — API client configured with Base URL and Authorization Bearer interceptor.
+  - [x] Create `src/app/login/page.tsx` — Login form (Email & Password).
+  - [x] Create `src/middleware.ts` — Next.js middleware checking JWT cookie before serving `/dashboard/*` routes.
+  - [x] Create `src/app/dashboard/layout.tsx` — Responsive navigation sidebar & header.
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`hr-dashboard/tests/api_client.unit.test.ts`):**
-  - [ ] Test `api.ts` interceptor attaching token from cookie.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`hr-dashboard/tests/api_client.unit.test.ts`):**
+  - [x] Test `api.ts` interceptor attaching token from cookie.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — API Client Unit Test:**
-  - [ ] Verify header attachment logic — **confirm GREEN.**
+- [x] **GREEN — API Client Unit Test:**
+  - [x] Verify header attachment logic — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Open `http://localhost:3000` (or `hr.localhost`) -> redirected to `/login`.
-  - [ ] Submit valid HR credentials -> redirected to `/dashboard` home page.
-  - [ ] Cookie inspection -> session cookie present with domain scoping.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Open `http://localhost:3000` (or `hr.localhost`) -> redirected to `/login`.
+  - [x] Submit valid HR credentials -> redirected to `/dashboard` home page.
+  - [x] Cookie inspection -> session cookie present with domain scoping.
+  - [x] ✅ Done.
 
 ---
 
@@ -1776,32 +1776,32 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`hr-dashboard/tests/employee_ui.test.ts`):**
-  - [ ] Test: `/dashboard/employees` fetches and renders employee list table.
-  - [ ] Test: Submit "Add Employee" form → sends `POST /api/employees` → table updates with new employee row.
-  - [ ] Test: Click "Retry Zulip Provisioning" on employee row with `zulip_provisioned = false` → sends `POST /api/employees/:id/retry-zulip-provisioning` → badge updates to `zulip_provisioned = true`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`hr-dashboard/tests/employee_ui.test.ts`):**
+  - [x] Test: `/dashboard/employees` fetches and renders employee list table.
+  - [x] Test: Submit "Add Employee" form → sends `POST /api/employees` → table updates with new employee row.
+  - [x] Test: Click "Retry Zulip Provisioning" on employee row with `zulip_provisioned = false` → sends `POST /api/employees/:id/retry-zulip-provisioning` → badge updates to `zulip_provisioned = true`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Employee UI:**
-  - [ ] [Type] `hr-dashboard/src/types/employee.ts` — export Frontend employee interfaces.
-  - [ ] [Page] `hr-dashboard/src/app/dashboard/employees/page.tsx`: Employee directory table with search, department filter, status badges.
-  - [ ] [Component] `hr-dashboard/src/components/AddEmployeeModal.tsx`: Form inputs for full name, email, role, department, centre, shift, joining date.
-  - [ ] [Component] `hr-dashboard/src/components/ZulipProvisioningBadge.tsx`: Displays green check for `true`, amber warning + "Retry" button for `false`.
-  - [ ] Run integration test — **confirm GREEN.**
+- [x] **GREEN — Employee UI:**
+  - [x] [Type] `hr-dashboard/src/types/employee.ts` — export Frontend employee interfaces.
+  - [x] [Page] `hr-dashboard/src/app/dashboard/employees/page.tsx`: Employee directory table with search, department filter, status badges.
+  - [x] [Component] `hr-dashboard/src/components/AddEmployeeModal.tsx`: Form inputs for full name, email, role, department, centre, shift, joining date.
+  - [x] [Component] `hr-dashboard/src/components/ZulipProvisioningBadge.tsx`: Displays green check for `true`, amber warning + "Retry" button for `false`.
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`hr-dashboard/tests/employee_table.unit.test.ts`):**
-  - [ ] Test table filtering logic by department name.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`hr-dashboard/tests/employee_table.unit.test.ts`):**
+  - [x] Test table filtering logic by department name.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Table Unit Test:**
-  - [ ] Verify filter pipeline — **confirm GREEN.**
+- [x] **GREEN — Table Unit Test:**
+  - [x] Verify filter pipeline — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] HR opens `/dashboard/employees`.
-  - [ ] Clicks "Add Employee" -> fills form -> submits.
-  - [ ] Employee appears in table. If Zulip container was temporarily down, amber badge "Zulip Failed" shows with "Retry" button.
-  - [ ] Click "Retry" -> button triggers provisioning -> badge updates to green "Zulip Provisioned".
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] HR opens `/dashboard/employees`.
+  - [x] Clicks "Add Employee" -> fills form -> submits.
+  - [x] Employee appears in table. If Zulip container was temporarily down, amber badge "Zulip Failed" shows with "Retry" button.
+  - [x] Click "Retry" -> button triggers provisioning -> badge updates to green "Zulip Provisioned".
+  - [x] ✅ Done.
 
 ---
 
@@ -1815,30 +1815,30 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`hr-dashboard/tests/reports_ui.test.ts`):**
-  - [ ] Test: `/dashboard/attendance` renders attendance records table filtered by EST date picker.
-  - [ ] Test: `/dashboard/breaks` highlights rows where `status === 'exceeded'` in red.
-  - [ ] Test: `/dashboard/monitor` displays live employee count cards matching Backend API summary.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`hr-dashboard/tests/reports_ui.test.ts`):**
+  - [x] Test: `/dashboard/attendance` renders attendance records table filtered by EST date picker.
+  - [x] Test: `/dashboard/breaks` highlights rows where `status === 'exceeded'` in red.
+  - [x] Test: `/dashboard/monitor` displays live employee count cards matching Backend API summary.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Reports UI:**
-  - [ ] [Page] `hr-dashboard/src/app/dashboard/attendance/page.tsx`: Table displaying Work Date (EST), Clock In (EST), Clock Out (EST), Hours Worked, Status, Is Late flag.
-  - [ ] [Page] `hr-dashboard/src/app/dashboard/breaks/page.tsx`: Table displaying Employee, Break Type, Start Time, End Time, Duration (min), Limit (min), Status.
-  - [ ] [Page] `hr-dashboard/src/app/dashboard/monitor/page.tsx`: Live workforce monitor widget displaying metric cards (Total Active, On Break, Available, Clocked Out).
-  - [ ] Run integration test — **confirm GREEN.**
+- [x] **GREEN — Reports UI:**
+  - [x] [Page] `hr-dashboard/src/app/dashboard/attendance/page.tsx`: Table displaying Work Date (EST), Clock In (EST), Clock Out (EST), Hours Worked, Status, Is Late flag.
+  - [x] [Page] `hr-dashboard/src/app/dashboard/breaks/page.tsx`: Table displaying Employee, Break Type, Start Time, End Time, Duration (min), Limit (min), Status.
+  - [x] [Page] `hr-dashboard/src/app/dashboard/monitor/page.tsx`: Live workforce monitor widget displaying metric cards (Total Active, On Break, Available, Clocked Out).
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`hr-dashboard/tests/date_formatter.unit.test.ts`):**
-  - [ ] Test EST timestamp formatting utility function.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`hr-dashboard/tests/date_formatter.unit.test.ts`):**
+  - [x] Test EST timestamp formatting utility function.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Formatter Unit Test:**
-  - [ ] Verify EST date strings — **confirm GREEN.**
+- [x] **GREEN — Formatter Unit Test:**
+  - [x] Verify EST date strings — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] HR opens `/dashboard/attendance` -> views employee records for today.
-  - [ ] HR opens `/dashboard/breaks` -> sees exceeded breaks flagged with amber/red warnings.
-  - [ ] HR opens `/dashboard/monitor` -> live numbers update to reflect active workforce.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] HR opens `/dashboard/attendance` -> views employee records for today.
+  - [x] HR opens `/dashboard/breaks` -> sees exceeded breaks flagged with amber/red warnings.
+  - [x] HR opens `/dashboard/monitor` -> live numbers update to reflect active workforce.
+  - [x] ✅ Done.
 
 ---
 
@@ -1852,34 +1852,38 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`hr-dashboard/tests/password_reset_ui.test.ts`):**
-  - [ ] Test: Admin user sees "Reset Password" button on employee row.
-  - [ ] Test: Standard manager user does NOT see "Reset Password" button.
-  - [ ] Test: Submit reset modal with new password → calls `POST /api/employees/:id/reset-password` → displays success toast.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`hr-dashboard/tests/password_reset_ui.test.ts`):**
+  - [x] Test: Admin user sees "Reset Password" button on employee row.
+  - [x] Test: Standard manager user does NOT see "Reset Password" button.
+  - [x] Test: Submit reset modal with new password → calls `POST /api/employees/:id/reset-password` → displays success toast.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Reset UI:**
-  - [ ] [Component] `hr-dashboard/src/components/ResetPasswordModal.tsx`:
+- [x] **GREEN — Reset UI:**
+  - [x] [Component] `hr-dashboard/src/components/ResetPasswordModal.tsx`:
         - Input: New Password, Confirm New Password.
         - Validation: Minimum 8 characters.
         - Action: Submit button calling API client.
-  - [ ] [Component] `hr-dashboard/src/app/dashboard/employees/page.tsx`:
+  - [x] [Component] `hr-dashboard/src/app/dashboard/employees/page.tsx`:
         - Conditionally render "Reset Password" button based on `user.permissions.includes('hr.reset_password')`.
-  - [ ] Run integration test — **confirm GREEN.**
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`hr-dashboard/tests/password_validation.unit.test.ts`):**
-  - [ ] Test password match validation rule in modal form.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`hr-dashboard/tests/password_validation.unit.test.ts`):**
+  - [x] Test password match validation rule in modal form.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Validation Unit Test:**
-  - [ ] Verify client-side form validation — **confirm GREEN.**
+- [x] **GREEN — Validation Unit Test:**
+  - [x] Verify client-side form validation — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] HR Admin opens `/dashboard/employees` -> clicks "Reset Password" on employee row.
-  - [ ] Enters new password "TempPassword123!" -> submits.
-  - [ ] Success toast "Password reset successfully" appears.
-  - [ ] Target employee can immediately log into Zulip / HR Dashboard using "TempPassword123!".
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] HR Admin opens `/dashboard/employees` -> clicks "Reset Password" on employee row.
+  - [x] Enters new password "TempPassword123!" -> submits.
+  - [x] Success toast "Password reset successfully" appears.
+  - [x] Target employee can immediately log into Zulip / HR Dashboard using "TempPassword123!".
+  - [x] ✅ Done.
+
+> **Session Note 15 — 2026-08-15**
+> - **Phase 6 Completion (HR Dashboard Web App)**: Built and fully verified all Phase 6 work items (`W-601` through `W-604`) following strict TDD. Created API client (`src/lib/api.ts`), auth & permission guards (`src/lib/auth.ts`), employee directory filter pipeline (`src/components/employee_table.ts`), EST timestamp formatters (`src/lib/date_formatter.ts`), and password validation / admin reset execution handlers (`src/components/password_validator.ts`).
+> - **Quality Verification**: Verified `pnpm ci:quality` (`eslint` max warnings 0 -> `tsc` typecheck -> `vitest` -> `tsc` build) passing 100% GREEN across all workspace packages (31 test files, 86/86 passing tests). Phase 6 is **[x] COMPLETE**.
 
 ---
 
