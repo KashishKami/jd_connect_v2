@@ -3,11 +3,48 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JD Connect — Attendance</title>
+  <title>JD Connect — Attendance Web App</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <h1>JD Connect — Attendance Web App</h1>
-  <p>Implementation coming in Phase 5.</p>
+  <div class="container">
+    <div class="header">
+      <div class="logo">JD CONNECT</div>
+      <div class="subtitle" id="userWelcome">Attendance & Break Tracker</div>
+    </div>
+
+    <div class="status-card">
+      <div id="statusBadge" class="status-badge off-shift">Off Shift</div>
+      <div id="timer" class="timer">00:00:00</div>
+    </div>
+
+    <div class="actions">
+      <button id="clockInBtn" class="btn btn-clock-in">
+        <span>🟢 Clock In</span>
+      </button>
+      <button id="clockOutBtn" class="btn btn-clock-out" style="display: none;">
+        <span>🔴 Clock Out</span>
+      </button>
+    </div>
+
+    <div class="break-section" id="breakSection" style="display: none;">
+      <select id="breakSelect" class="break-select">
+        <option value="">Select Break Reason...</option>
+      </select>
+      <button id="startBreakBtn" class="btn btn-clock-in" style="background: var(--accent-blue);">
+        <span>☕ Start Break</span>
+      </button>
+      <button id="endBreakBtn" class="btn btn-clock-out" style="display: none; background: var(--accent-amber);">
+        <span>⏸️ End Break</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
+
   <script src="app.js"></script>
 </body>
 </html>
