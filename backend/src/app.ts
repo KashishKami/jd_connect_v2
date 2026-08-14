@@ -5,6 +5,7 @@ import employeeRouter from './routes/employees';
 import attendanceRouter from './routes/attendance';
 import breakRouter from './routes/breaks';
 import breakTypesRouter from './routes/break_types';
+import oauthRouter from './routes/oauth';
 
 const app: Express = express();
 
@@ -24,5 +25,6 @@ app.use('/api/employees', employeeRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use('/api/breaks', breakRouter);
 app.use('/api/break-types', breakTypesRouter);
+app.use('/oauth', oauthRouter);
 
 export default app;

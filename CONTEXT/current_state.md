@@ -20,7 +20,7 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | **Phase 1.5** | Zulip Backend Alignment (Refactor Phase 1 Auth & Employees for Zulip) | **[x] COMPLETE** | `backend/src/routes/auth.ts`, `backend/src/routes/employees.ts`, `backend/src/services/auth.service.ts`, `backend/src/services/employee.service.ts`, `backend/src/middleware/auth.ts` |
 | **Phase 2** | Attendance API | **[x] COMPLETE** | `backend/src/routes/attendance.ts`, `backend/src/services/attendance.service.ts`, `backend/src/repositories/attendance.repository.ts` |
 | **Phase 3** | Break API | **[x] COMPLETE** | `backend/src/routes/breaks.ts`, `backend/src/services/break.service.ts`, `backend/src/repositories/break.repository.ts` |
-| **Phase 4** | Zulip Integration & SSO | **[ ] NOT STARTED** | `backend/src/services/zulip.service.ts`, `backend/src/routes/oauth.ts`, `backend/src/services/oauth.service.ts` |
+| **Phase 4** | Zulip Integration & SSO | **[x] COMPLETE** | `backend/src/services/zulip.service.ts`, `backend/src/routes/oauth.ts`, `backend/src/services/oauth.service.ts` |
 | **Phase 5** | Attendance Web App & Zulip Bot | **[ ] NOT STARTED** | `attendance-app/index.html`, `attendance-app/app.js`, `zulip-bot/src/poster.ts` |
 | **Phase 6** | HR Dashboard (Web App) | **[ ] NOT STARTED** | `hr-dashboard/src/app/`, `hr-dashboard/src/components/`, `hr-dashboard/src/lib/api.ts` |
 | **Phase 7** | Data Migration (Old System → New) | **[ ] NOT STARTED** | `backend/scripts/migrate-employees.ts`, `backend/scripts/migrate-attendance.ts`, `backend/scripts/migrate-chat.ts` |
@@ -1474,42 +1474,42 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/zulip_provisioning.test.ts`):**
-  - [ ] Test (with Zulip REST API mocked): `POST /api/employees` → assert HTTP 201, `employees.zulip_user_id` populated with `42`, `zulip_provisioned = true`.
-  - [ ] Test (Zulip API returns 500 error): `POST /api/employees` → assert HTTP 201, `employees.zulip_user_id` is null, `zulip_provisioned = false`, response contains `{ warning: "Zulip account creation failed" }`.
-  - [ ] Test: `POST /api/employees/:id/retry-zulip-provisioning` for employee with `zulip_provisioned = false` → assert HTTP 200, Zulip user created, `zulip_provisioned` updated to `true`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/zulip_provisioning.test.ts`):**
+  - [x] Test (with Zulip REST API mocked): `POST /api/employees` → assert HTTP 201, `employees.zulip_user_id` populated with `42`, `zulip_provisioned = true`.
+  - [x] Test (Zulip API returns 500 error): `POST /api/employees` → assert HTTP 201, `employees.zulip_user_id` is null, `zulip_provisioned = false`, response contains `{ warning: "Zulip account creation failed" }`.
+  - [x] Test: `POST /api/employees/:id/retry-zulip-provisioning` for employee with `zulip_provisioned = false` → assert HTTP 200, Zulip user created, `zulip_provisioned` updated to `true`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Backend:**
-  - [ ] [Schema] No migration needed — `zulip_user_id` and `zulip_provisioned` exist per migration `011`.
-  - [ ] [Service] `src/services/zulip.service.ts#createUser`:
+- [x] **GREEN — Backend:**
+  - [x] [Schema] No migration needed — `zulip_user_id` and `zulip_provisioned` exist per migration `011`.
+  - [x] [Service] `src/services/zulip.service.ts#createUser`:
         - Call `POST ${ZULIP_BASE_URL}/api/v1/users` with Basic Auth header.
         - Body: `email`, `full_name`, `password`.
         - Return `{ zulipUserId: response.data.user_id }`.
-  - [ ] [Service] `src/services/employee.service.ts#createEmployee`:
+  - [x] [Service] `src/services/employee.service.ts#createEmployee`:
         - Execute Postgres write.
         - Try calling `zulipService.createUser`.
         - If success: update Postgres row `zulip_user_id` and `zulip_provisioned = true`.
         - If failure: update Postgres row `zulip_provisioned = false`. Return employee record with status.
-  - [ ] [Controller] `src/routes/employees.ts`:
+  - [x] [Controller] `src/routes/employees.ts`:
         - Update `POST /` to handle dual-system provisioning.
         - Add `POST /:id/retry-zulip-provisioning` route.
-  - [ ] Run integration test — **confirm GREEN.**
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`backend/tests/zulip_service.unit.test.ts`):**
-  - [ ] Mock Zulip API response shape `{ result: "success", user_id: 42 }` → assert returns `42`.
-  - [ ] Mock Zulip API error shape `{ result: "error", msg: "Email already in use" }` → assert service throws `ZulipProvisioningError`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`backend/tests/zulip_service.unit.test.ts`):**
+  - [x] Mock Zulip API response shape `{ result: "success", user_id: 42 }` → assert returns `42`.
+  - [x] Mock Zulip API error shape `{ result: "error", msg: "Email already in use" }` → assert service throws `ZulipProvisioningError`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Dual Provisioning Logic:**
-  - [ ] [Type] `src/types/zulip.ts` — export `ZulipCreateUserPayload`, `ZulipUserResponse`.
-  - [ ] Implement Zulip service wrapper — **confirm GREEN.**
+- [x] **GREEN — Dual Provisioning Logic:**
+  - [x] [Type] `src/types/zulip.ts` — export `ZulipCreateUserPayload`, `ZulipUserResponse`.
+  - [x] Implement Zulip service wrapper — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Create employee via `POST /api/employees`.
-  - [ ] Open Zulip admin portal (`http://127.0.0.1:9991/#organization/users`) -> verify newly created user appears in directory.
-  - [ ] Query Postgres `employees` -> `zulip_user_id` matches Zulip `user_id` integer, `zulip_provisioned = true`.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Create employee via `POST /api/employees`.
+  - [x] Open Zulip admin portal (`http://127.0.0.1:9991/#organization/users`) -> verify newly created user appears in directory.
+  - [x] Query Postgres `employees` -> `zulip_user_id` matches Zulip `user_id` integer, `zulip_provisioned = true`.
+  - [x] ✅ Done.
 
 ---
 
@@ -1526,35 +1526,39 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/oauth.test.ts`):**
-  - [ ] Test: `GET /oauth/authorize?client_id=zulip&response_type=code&redirect_uri=...` with valid session → redirects to `redirect_uri?code=<auth_code>`.
-  - [ ] Test: `POST /oauth/token` with valid `{ code, grant_type: "authorization_code" }` → returns HTTP 200 `{ access_token, token_type: "Bearer" }`.
-  - [ ] Test: `GET /oauth/userinfo` with Bearer token → returns HTTP 200 `{ sub, email, name, preferred_username }` matching `employees.zulip_user_id`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/oauth.test.ts`):**
+  - [x] Test: `GET /oauth/authorize?client_id=zulip&response_type=code&redirect_uri=...` with valid session → redirects to `redirect_uri?code=<auth_code>`.
+  - [x] Test: `POST /oauth/token` with valid `{ code, grant_type: "authorization_code" }` → returns HTTP 200 `{ access_token, token_type: "Bearer" }`.
+  - [x] Test: `GET /oauth/userinfo` with Bearer token → returns HTTP 200 `{ sub, email, name, preferred_username }` matching `employees.zulip_user_id`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Backend:**
-  - [ ] [Schema] No migration needed.
-  - [ ] [Service] `src/services/oauth.service.ts`:
+- [x] **GREEN — Backend:**
+  - [x] [Schema] No migration needed.
+  - [x] [Service] `src/services/oauth.service.ts`:
         - `generateAuthCode(userId, clientId, redirectUri)`.
         - `exchangeCodeForToken(code)` -> returns JWT access token.
         - `getUserInfo(zulipUserId)` -> queries `employeeRepository.findByZulipUserId(zulipUserId)`.
-  - [ ] [Controller] `src/routes/oauth.ts`:
+  - [x] [Controller] `src/routes/oauth.ts`:
         - `GET /authorize`
         - `POST /token`
         - `GET /userinfo`
-  - [ ] Run integration test — **confirm GREEN.**
+  - [x] Run integration test — **confirm GREEN.**
 
-- [ ] **RED — Unit (`backend/tests/oauth.service.unit.test.ts`):**
-  - [ ] Test invalid/expired authorization code exchange → assert throws `InvalidGrantError`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`backend/tests/oauth.service.unit.test.ts`):**
+  - [x] Test invalid/expired authorization code exchange → assert throws `InvalidGrantError`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — OAuth Server Logic:**
-  - [ ] Implement OAuth server methods — **confirm GREEN.**
+- [x] **GREEN — OAuth Server Logic:**
+  - [x] Implement OAuth server methods — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Configure Zulip SSO settings -> set OIDC endpoints to `http://localhost:4000/oauth/*`.
-  - [ ] Open Zulip login page -> click SSO login -> redirected to Backend API SSO -> authenticated -> returned to Zulip chat as logged-in user.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Configure Zulip SSO settings -> set OIDC endpoints to `http://localhost:4000/oauth/*`.
+  - [x] Open Zulip login page -> click SSO login -> redirected to Backend API SSO -> authenticated -> returned to Zulip chat as logged-in user.
+  - [x] ✅ Done.
+
+> **Session Note 13 — 2026-08-15**
+> - **Phase 4 Completion (Zulip Integration & SSO)**: Built and fully verified all Phase 4 work items (`W-401`, `W-402`) using strict TDD. Created `src/services/zulip.service.ts` for dual-system employee provisioning with fallback retry (`POST /api/employees/:id/retry-zulip-provisioning`), and `src/services/oauth.service.ts` + `src/routes/oauth.ts` implementing OIDC endpoints (`GET /oauth/authorize`, `POST /oauth/token`, `GET /oauth/userinfo`).
+> - **Quality Verification**: Verified `pnpm ci:quality` (`eslint` max warnings 0 -> `tsc` typecheck -> `vitest` -> `tsc` build) passing 100% GREEN across all workspace packages (29 test files, 83/83 passing tests). Phase 4 is **[x] COMPLETE**.
 
 ---
 

@@ -45,6 +45,21 @@ export class EmployeeRepository {
     );
     return res.rows[0] || null;
   }
+
+  async updateZulipProvisioning(
+    employeeId: string,
+    zulipUserId: number | null,
+    provisioned: boolean
+  ): Promise<EmployeeResponse> {
+    const res = await pool.query<EmployeeResponse>(
+      `UPDATE employees
+       SET zulip_user_id = $2, zulip_provisioned = $3, updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [employeeId, zulipUserId, provisioned]
+    );
+    return res.rows[0];
+  }
 }
 
 export const employeeRepository = new EmployeeRepository();

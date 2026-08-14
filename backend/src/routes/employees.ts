@@ -45,6 +45,23 @@ router.post(
 );
 
 router.post(
+  '/:id/retry-zulip-provisioning',
+  authenticateJwt,
+  requirePermission('employees.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const employee = await employeeService.retryZulipProvisioning(req.params.id);
+      return res.status(200).json(employee);
+    } catch (err) {
+      if (err instanceof EmployeeNotFoundError) {
+        return res.status(404).json({ error: 'Employee not found' });
+      }
+      return res.status(500).json({ error: 'Failed to retry Zulip provisioning', details: (err as Error).message });
+    }
+  }
+);
+
+router.post(
   '/:id/reset-password',
   authenticateJwt,
   requirePermission('hr.reset_password'),
