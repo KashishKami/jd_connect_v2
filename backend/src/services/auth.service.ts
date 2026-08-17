@@ -60,6 +60,11 @@ export class AuthService {
       access_token: token,
       token_type: 'Bearer',
       expires_in: 900,
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+      },
     };
   }
 }

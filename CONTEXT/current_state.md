@@ -23,6 +23,7 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | **Phase 4** | Zulip Integration & SSO | **[x] COMPLETE** | `backend/src/services/zulip.service.ts`, `backend/src/routes/oauth.ts`, `backend/src/services/oauth.service.ts` |
 | **Phase 5** | Attendance Web App & Zulip Bot | **[x] COMPLETE** | `attendance-app/index.html`, `attendance-app/app.js`, `zulip-bot/src/poster.ts` |
 | **Phase 6** | HR Dashboard (Web App) | **[x] COMPLETE** | `hr-dashboard/src/app/`, `hr-dashboard/src/components/`, `hr-dashboard/src/lib/api.ts` |
+| **Phase 6.5** | UI Polish, HR Interactivity & Zulip SSO Guide | **[x] COMPLETE** | `hr-dashboard/index.html`, `hr-dashboard/app.js`, `backend/scripts/seed.ts`, `DEV_GUIDE.md` |
 | **Phase 7** | Data Migration (Old System → New) | **[ ] NOT STARTED** | `backend/scripts/migrate-employees.ts`, `backend/scripts/migrate-attendance.ts`, `backend/scripts/migrate-chat.ts` |
 | **Phase 8** | Production Deployment | **[ ] NOT STARTED** | `docker/docker-compose.prod.yml`, `docker/nginx.conf`, backup scripts |
 
@@ -1884,6 +1885,133 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 > **Session Note 15 — 2026-08-15**
 > - **Phase 6 Completion (HR Dashboard Web App)**: Built and fully verified all Phase 6 work items (`W-601` through `W-604`) following strict TDD. Created API client (`src/lib/api.ts`), auth & permission guards (`src/lib/auth.ts`), employee directory filter pipeline (`src/components/employee_table.ts`), EST timestamp formatters (`src/lib/date_formatter.ts`), and password validation / admin reset execution handlers (`src/components/password_validator.ts`).
 > - **Quality Verification**: Verified `pnpm ci:quality` (`eslint` max warnings 0 -> `tsc` typecheck -> `vitest` -> `tsc` build) passing 100% GREEN across all workspace packages (31 test files, 86/86 passing tests). Phase 6 is **[x] COMPLETE**.
+
+---
+
+### Phase 6.5 — UI Polish, HR Interactivity & Zulip SSO Integration Guide
+
+> **Goal:** Address all UI interactivity gaps in the HR Dashboard (add Login Screen overlay and "+ Add Employee" Modal popup on port 3500), seed sample regular employee and manager test accounts in Postgres, update `DEV_GUIDE.md` with complete credentials and ports, and document the Zulip -> Attendance Web App -> HR Dashboard navigation & SSO flow.
+
+---
+
+#### W-651 — HR Dashboard Interactivity: Login Screen & Session Management
+
+**Root cause:** `hr-dashboard/index.html` lacks a login view overlay. When unauthenticated, opening `http://localhost:3500` causes `loadEmployees()` to fail with HTTP 401 Unauthorized with no interface for HR users to enter credentials.
+
+**Goal:** Implement `#loginOverlay` in `hr-dashboard/index.html` and `app.js`. Intercept 401 errors to show the login overlay. Upon successful authentication (`POST /api/auth/login`), store `jdconnect_hr_token` in `localStorage`, hide overlay, and populate dashboard data.
+
+**Approach:** Add responsive HTML login form structure to `index.html`. In `app.js`, add `showLoginOverlay()`, `hideLoginOverlay()`, and `handleLogin()`. Add unit/integration tests in `hr-dashboard/tests/hr_auth_and_modal.test.ts`.
+
+---
+
+- [x] **RED — Integration (`hr-dashboard/tests/hr_auth_and_modal.test.ts`):**
+  - [x] Test: Unauthenticated initial page state displays `#loginOverlay`.
+  - [x] Test: Submit login form with valid credentials -> calls `POST /api/auth/login` -> saves token -> hides `#loginOverlay`.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — HR Dashboard App:**
+  - [x] [HTML] Add `<div id="loginOverlay">` overlay form to `hr-dashboard/index.html`.
+  - [x] [JS] Add `handleLogin()`, `showLoginOverlay()`, `hideLoginOverlay()`, and logout handlers to `hr-dashboard/app.js`.
+  - [x] Run integration test — **confirm GREEN.**
+
+- [x] **RED — Unit (`hr-dashboard/tests/hr_auth_and_modal.test.ts`):**
+  - [x] Test token validation and local storage persistence helpers.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit Verification:**
+  - [x] Verify token storage behavior — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Open `http://localhost:3500` -> Login Overlay appears.
+  - [x] Submit `admin@jdconnect.com` / `AdminSecret123!` -> overlay hides -> employee table populates.
+  - [x] ✅ Done.
+
+---
+
+#### W-652 — HR Dashboard Interactivity: "+ Add Employee" Modal Component
+
+**Root cause:** `hr-dashboard/index.html` has an `+ Add Employee` button, but the modal dialog container markup and JS event handlers to submit `POST /api/employees` are missing.
+
+**Goal:** Create `#addEmployeeModal` dialog in `index.html` with fields (`full_name`, `email`, `password`, `role_key`, `department_id`, `centre_id`, `shift_id`). Wire JS open/close/submit event listeners in `app.js` to create employees via Backend API.
+
+**Approach:** Implement modal markup in `index.html` with styling matching `styles.css`. In `app.js`, add modal open/close handlers and `handleAddEmployee()` sending payload to `POST /api/employees`.
+
+---
+
+- [x] **RED — Integration (`hr-dashboard/tests/hr_auth_and_modal.test.ts`):**
+  - [x] Test: Click `#openAddModalBtn` -> `#addEmployeeModal` becomes visible.
+  - [x] Test: Submit form with valid employee fields -> calls `POST /api/employees` -> closes modal -> reloads employee directory.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Add Employee Component:**
+  - [x] [HTML] Add `<div id="addEmployeeModal" class="modal">` form markup to `hr-dashboard/index.html`.
+  - [x] [JS] Implement modal toggle and `handleAddEmployee()` form submission logic in `hr-dashboard/app.js`.
+  - [x] Run integration test — **confirm GREEN.**
+
+- [x] **RED — Unit (`hr-dashboard/tests/hr_auth_and_modal.test.ts`):**
+  - [x] Test employee payload validation function.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Form Unit Verification:**
+  - [x] Verify validation functions — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Open `http://localhost:3500` -> Click "+ Add Employee".
+  - [x] Fill form details -> Submit -> Modal closes -> New employee appears in table with Zulip status badge.
+  - [x] ✅ Done.
+
+---
+
+#### W-653 — Database Seeding: Sample Employee Accounts
+
+**Root cause:** `backend/scripts/seed.ts` only seeds `admin@jdconnect.com` (`super_admin`). There are no regular employee or manager test accounts created out-of-the-box, requiring manual API calls to test standard employee attendance flows.
+
+**Goal:** Update `backend/scripts/seed.ts` to automatically seed a regular employee (`john.doe@jdconnect.com` / `Employee123!`) and a department manager (`jane.mgr@jdconnect.com` / `Manager123!`).
+
+**Approach:** Update `runSeed()` in `backend/scripts/seed.ts` to create users and employee records for John Doe and Jane Manager. Update unit test `backend/tests/seed_users.unit.test.ts`.
+
+---
+
+- [x] **RED — Unit (`backend/tests/seed_users.unit.test.ts`):**
+  - [x] Test: Execute `runSeed()` -> query DB -> assert `john.doe@jdconnect.com` and `jane.mgr@jdconnect.com` exist with active `role_id` and `employee` records.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Seed Update:**
+  - [x] [Script] Add `john.doe@jdconnect.com` and `jane.mgr@jdconnect.com` seeding logic in `backend/scripts/seed.ts`.
+  - [x] Run unit test — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Run `pnpm db:seed`.
+  - [x] Query Postgres: `SELECT email FROM users;` -> includes `admin@jdconnect.com`, `john.doe@jdconnect.com`, `jane.mgr@jdconnect.com`.
+  - [x] ✅ Done.
+
+---
+
+#### W-654 — Developer Quickstart Guide (`DEV_GUIDE.md`) & Zulip SSO Navigation
+
+**Root cause:** `DEV_GUIDE.md` is incomplete, lacks seeded user credentials, has port conflicts (3000 vs 3500), and lacks instructions on how users authenticate via Zulip and access the Attendance Web App.
+
+**Goal:** Rewrite `DEV_GUIDE.md` to provide exact setup commands, pinned port numbers (HR Dashboard on port 3500, Attendance App on port 3300, Backend API on port 4000, Zulip on port 9991), full credentials list, and a dedicated **Zulip -> Attendance Web App -> HR Dashboard User & SSO Guide**.
+
+**Approach:** Edit `DEV_GUIDE.md` to serve as a complete, single-source-of-truth quickstart reference for developers.
+
+---
+
+- [x] **RED — Documentation Verification:**
+  - [x] Check `DEV_GUIDE.md` -> verify missing credentials and port mismatches.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Documentation Update:**
+  - [x] [Docs] Rewrite `DEV_GUIDE.md` with complete directory ports, terminal execution steps, credentials table, and Zulip SSO navigation instructions.
+  - [x] Confirm documentation accuracy.
+
+- [x] **Verification chain:**
+  - [x] Read `DEV_GUIDE.md` -> follow setup steps -> all services launch on expected ports with clear login credentials.
+  - [x] ✅ Done.
+
+> **Session Note 16 — 2026-08-17**
+> - **Phase 6.5 Completion (UI Polish, HR Interactivity & Zulip SSO Guide)**: Added and completed all Phase 6.5 work items (`W-651` through `W-654`) following strict TDD. Added interactive Login overlay and "+ Add Employee" modal dialog component to `hr-dashboard/index.html` & `app.js`. Seeded default test accounts `john.doe@jdconnect.com` (`Employee123!`) and `jane.mgr@jdconnect.com` (`Manager123!`) in `backend/scripts/seed.ts`. Rewrote `DEV_GUIDE.md` with pinned port numbers (HR Dashboard on port 3500), full credentials table, and step-by-step Zulip -> Attendance Web App -> HR Dashboard SSO navigation guide.
+> - **Quality Verification**: Verified `pnpm ci:quality` passing 100% GREEN across all workspace packages (32 test files, 107/107 passing tests). Phase 6.5 is **[x] COMPLETE**.
 
 ---
 

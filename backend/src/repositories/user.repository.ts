@@ -23,6 +23,7 @@ export class UserRepository {
     const res = await pool.query<{
       id: string;
       email: string;
+      full_name?: string;
       password_hash: string;
       is_active: boolean;
       employee_id: string;
@@ -31,7 +32,7 @@ export class UserRepository {
       role_key: string;
     }>(
       `SELECT u.id, u.email, u.password_hash, u.is_active,
-              e.id as employee_id, e.zulip_user_id, e.employment_status,
+              e.id as employee_id, e.full_name, e.zulip_user_id, e.employment_status,
               r.key as role_key
        FROM users u
        LEFT JOIN employees e ON e.auth_user_id = u.id
@@ -48,6 +49,7 @@ export class UserRepository {
     return {
       id: first.id,
       email: first.email,
+      full_name: first.full_name || undefined,
       password_hash: first.password_hash,
       is_active: first.is_active,
       employee_id: first.employee_id,

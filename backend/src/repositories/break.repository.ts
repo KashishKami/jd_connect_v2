@@ -116,23 +116,29 @@ export class BreakRepository {
 
     if (filters.employee_id) {
       values.push(filters.employee_id);
-      conditions.push(`employee_id = $${values.length}`);
+      conditions.push(`br.employee_id = $${values.length}`);
     }
     if (filters.fromDate) {
       values.push(filters.fromDate);
-      conditions.push(`start_at >= $${values.length}`);
+      conditions.push(`br.start_at >= $${values.length}`);
     }
     if (filters.toDate) {
       values.push(filters.toDate);
-      conditions.push(`start_at <= $${values.length}`);
+      conditions.push(`br.start_at <= $${values.length}`);
     }
     if (filters.status) {
       values.push(filters.status);
-      conditions.push(`status = $${values.length}`);
+      conditions.push(`br.status = $${values.length}`);
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM break_records ${whereClause} ORDER BY start_at DESC`;
+    const query = `
+      SELECT br.*, bt.name AS break_name, bt.key AS break_type_key
+      FROM break_records br
+      LEFT JOIN break_types bt ON br.break_type_id = bt.id
+      ${whereClause}
+      ORDER BY br.start_at DESC
+    `;
 
     const result = await pool.query(query, values);
     return result.rows;

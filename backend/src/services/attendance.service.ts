@@ -1,5 +1,6 @@
 import { attendanceRepository, AttendanceRepository, FindAttendanceFilters } from '../repositories/attendance.repository';
 import { employeeRepository, EmployeeRepository } from '../repositories/employee.repository';
+import { breakRepository, BreakRepository } from '../repositories/break.repository';
 import { AttendanceRecord, AttendanceStatus } from '../types/attendance';
 
 export class AlreadyClockedInError extends Error {
@@ -36,16 +37,22 @@ export function getESTWorkDate(date = new Date()): string {
     month: '2-digit',
     day: '2-digit',
   };
-  const formatter = new Intl.DateTimeFormat('en-CA', options);
-  return formatter.format(date);
+  const formatter = new Intl.DateTimeFormat('en-US', options);
+  const parts = formatter.formatToParts(date);
+
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+
+  return `${year}-${month}-${day}`;
 }
 
 export function computeAttendanceStatus(
-  clockInAt: Date,
-  shiftStart: Date,
+  clockInTime: Date,
+  shiftStartTime: Date,
   hoursWorked: number
 ): { status: AttendanceStatus; isLate: boolean } {
-  const minutesLate = (clockInAt.getTime() - shiftStart.getTime()) / 60000;
+  const minutesLate = Math.floor((clockInTime.getTime() - shiftStartTime.getTime()) / 60000);
 
   if (hoursWorked < ATTENDANCE_THRESHOLDS.MIN_HOURS_FOR_FULL_DAY) {
     return { status: 'half_day', isLate: false };
@@ -62,8 +69,35 @@ export function computeAttendanceStatus(
 export class AttendanceService {
   constructor(
     private attRepo: AttendanceRepository = attendanceRepository,
-    private empRepo: EmployeeRepository = employeeRepository
+    private empRepo: EmployeeRepository = employeeRepository,
+    private breakRepo: BreakRepository = breakRepository
   ) {}
+
+  async getStatus(employeeId: string): Promise<{
+    status: 'off_shift' | 'clocked_in' | 'on_break';
+    clock_in_at?: string | undefined;
+    break_start_at?: string | undefined;
+  }> {
+    const todayEST = getESTWorkDate();
+    const openRecord = await this.attRepo.findOpenRecord(employeeId, todayEST);
+    if (!openRecord) {
+      return { status: 'off_shift' };
+    }
+
+    const activeBreak = await this.breakRepo.findActiveBreak(employeeId);
+    if (activeBreak) {
+      return {
+        status: 'on_break',
+        clock_in_at: openRecord.clock_in_at ? new Date(openRecord.clock_in_at).toISOString() : undefined,
+        break_start_at: activeBreak.start_at ? new Date(activeBreak.start_at).toISOString() : undefined,
+      };
+    }
+
+    return {
+      status: 'clocked_in',
+      clock_in_at: openRecord.clock_in_at ? new Date(openRecord.clock_in_at).toISOString() : undefined,
+    };
+  }
 
   async clockIn(zulipUserId: number): Promise<AttendanceRecord> {
     const employee = await this.empRepo.findByZulipUserId(zulipUserId);

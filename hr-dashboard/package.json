@@ -5,7 +5,7 @@
   "description": "JD Connect HR & Admin Web Dashboard",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "echo 'Next.js dev server ready'",
+    "dev": "npx serve . -p 3500",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",

@@ -9,6 +9,15 @@ import {
 
 const router: Router = Router();
 
+router.get('/status', authenticateJwt, async (req: Request, res: Response) => {
+  try {
+    const status = await attendanceService.getStatus(req.employee!.id);
+    return res.status(200).json(status);
+  } catch (error) {
+    return res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 router.get('/', authenticateJwt, async (req: Request, res: Response) => {
   try {
     const actor = {

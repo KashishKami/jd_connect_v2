@@ -96,8 +96,8 @@ export async function runSeed() {
     }
 
     // 7. Initial Super Admin User & Employee Profile
-    const adminEmail = process.env.INITIAL_ADMIN_EMAIL || 'admin@jdconnect.com';
-    const adminPassword = process.env.INITIAL_ADMIN_PASSWORD || 'AdminSecret123!';
+    const adminEmail = process.env.INITIAL_ADMIN_EMAIL || 'admin@company.com';
+    const adminPassword = process.env.INITIAL_ADMIN_PASSWORD || 'AdminPassword123!';
     const passwordHash = await bcrypt.hash(adminPassword, 12);
 
     const userRes = await client.query(
@@ -122,10 +122,54 @@ export async function runSeed() {
     const shiftId = shiftRes.rows[0]?.id;
 
     await client.query(
-      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned)
-       VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', true)
-       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3`,
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_user_id, zulip_provisioned)
+       VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', 11, true)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 11`,
       [adminUserId, adminEmail, superAdminRoleId, deptId, centreId, shiftId]
+    );
+
+    // 8. Sample Employee User & Profile
+    const empEmail = 'john.doe@jdconnect.com';
+    const empPassword = 'Employee123!';
+    const empHash = await bcrypt.hash(empPassword, 12);
+
+    const empUserRes = await client.query(
+      `INSERT INTO users (email, password_hash)
+       VALUES ($1, $2)
+       ON CONFLICT (email) DO UPDATE SET password_hash = $2
+       RETURNING id`,
+      [empEmail, empHash]
+    );
+
+    const empRoleIdRes = await client.query(`SELECT id FROM roles WHERE key = 'employee'`);
+
+    await client.query(
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_user_id, zulip_provisioned)
+       VALUES ($1, 'John Doe', $2, $3, $4, $5, $6, 'Backend Engineer', 14, true)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 14`,
+      [empUserRes.rows[0].id, empEmail, empRoleIdRes.rows[0]?.id, deptId, centreId, shiftId]
+    );
+
+    // 9. Sample Manager User & Profile
+    const mgrEmail = 'jane.mgr@jdconnect.com';
+    const mgrPassword = 'Manager123!';
+    const mgrHash = await bcrypt.hash(mgrPassword, 12);
+
+    const mgrUserRes = await client.query(
+      `INSERT INTO users (email, password_hash)
+       VALUES ($1, $2)
+       ON CONFLICT (email) DO UPDATE SET password_hash = $2
+       RETURNING id`,
+      [mgrEmail, mgrHash]
+    );
+
+    const mgrRoleIdRes = await client.query(`SELECT id FROM roles WHERE key = 'manager'`);
+
+    await client.query(
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_user_id, zulip_provisioned)
+       VALUES ($1, 'Jane Manager', $2, $3, $4, $5, $6, 'Engineering Manager', 15, true)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 15`,
+      [mgrUserRes.rows[0].id, mgrEmail, mgrRoleIdRes.rows[0]?.id, deptId, centreId, shiftId]
     );
 
     await client.query('COMMIT');

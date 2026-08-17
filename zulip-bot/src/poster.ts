@@ -1,7 +1,13 @@
 import dotenv from 'dotenv';
+import path from 'path';
 import { buildAttendancePromptMessage } from './builder';
 
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
+
+if (process.env.NODE_ENV !== 'production') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
 
 export interface PosterConfig {
   baseUrl: string;
@@ -48,11 +54,11 @@ export async function postDailyAttendancePrompt(config: PosterConfig): Promise<{
 // Standalone execution wrapper
 if (require.main === module) {
   const config: PosterConfig = {
-    baseUrl: process.env.ZULIP_BASE_URL || 'http://127.0.0.1:9991',
+    baseUrl: process.env.ZULIP_BASE_URL || 'https://127.0.0.1:9991',
     botEmail: process.env.ZULIP_BOT_EMAIL || 'jdconnect-bot@company.com',
     botApiKey: process.env.ZULIP_BOT_API_KEY || 'zulip_bot_api_key_here',
     streamName: process.env.ZULIP_ATTENDANCE_STREAM || 'attendance',
-    clockAppUrl: process.env.CLOCK_APP_URL || 'https://clock.yourcompany.com',
+    clockAppUrl: process.env.CLOCK_APP_URL || 'http://localhost:3300',
   };
 
   postDailyAttendancePrompt(config)

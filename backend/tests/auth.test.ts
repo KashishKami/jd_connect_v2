@@ -14,8 +14,8 @@ describe('POST /api/auth/login - Authentication & Session Tracking', () => {
 
   it('returns 200 with access_token and valid JWT claims on correct credentials', async () => {
     const res = await supertest(app).post('/api/auth/login').send({
-      email: 'admin@jdconnect.com',
-      password: 'AdminSecret123!',
+      email: 'admin@company.com',
+      password: 'AdminPassword123!',
     });
 
     expect(res.status).toBe(200);
@@ -36,7 +36,7 @@ describe('POST /api/auth/login - Authentication & Session Tracking', () => {
 
   it('returns 401 Unauthorized for incorrect password', async () => {
     const res = await supertest(app).post('/api/auth/login').send({
-      email: 'admin@jdconnect.com',
+      email: 'admin@company.com',
       password: 'WrongPassword!',
     });
 
