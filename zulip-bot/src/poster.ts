@@ -19,7 +19,10 @@ export interface PosterConfig {
 
 export async function postDailyAttendancePrompt(config: PosterConfig): Promise<{ success: boolean; messageId?: number; error?: string }> {
   const authHeader = 'Basic ' + Buffer.from(`${config.botEmail}:${config.botApiKey}`).toString('base64');
-  const messageContent = buildAttendancePromptMessage(config.clockAppUrl);
+  const backendUrl = (process.env.BACKEND_URL || 'http://127.0.0.1:4000').replace('localhost', '127.0.0.1').replace(/\/$/, '');
+  const clockAppUrl = config.clockAppUrl.replace('localhost', '127.0.0.1');
+  const ssoAuthorizeUrl = `${backendUrl}/oauth/authorize?client_id=attendance-app&response_type=code&redirect_uri=${encodeURIComponent(clockAppUrl)}`;
+  const messageContent = buildAttendancePromptMessage(ssoAuthorizeUrl);
 
   const params = new URLSearchParams();
   params.append('type', 'stream');

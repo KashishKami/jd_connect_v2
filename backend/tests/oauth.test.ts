@@ -89,22 +89,174 @@ describe('OIDC Server Endpoints Integration (W-402)', () => {
     expect(res.body.sub).toBeDefined();
   });
 
-  it('GET /oauth/authorize generates auth code via email query param without Bearer header', async () => {
+  it('redirects safely without code when no user identity or matching cookie is provided', async () => {
     const res = await request(app)
       .get('/oauth/authorize')
       .query({
         client_id: 'attendance-app',
         response_type: 'code',
         redirect_uri: 'http://localhost:3300',
-        email: 'sso@company.com',
       });
 
     expect(res.status).toBe(302);
-    expect(res.headers.location).toMatch(/^http:\/\/localhost:3300\/?\?code=/);
+    // MUST redirect to login page WITHOUT code
+    expect(res.headers.location).toBe('http://localhost:3300');
+    expect(res.headers.location).not.toContain('code=');
   });
 
-  it('GET /oauth/authorize generates auth code via fallback for attendance-app without auth header', async () => {
-    const res = await request(app)
+
+  it('strictly isolates per-browser sessions using sessionid cookie without cross-user leakage', async () => {
+    // Create Employee 1 & Employee 2 in database
+    await pool.query(
+      `INSERT INTO employees (full_name, email, zulip_user_id, zulip_provisioned)
+       VALUES ('Browser User One', 'browser1@company.com', 201, true)
+       RETURNING id`
+    );
+    await pool.query(
+      `INSERT INTO employees (full_name, email, zulip_user_id, zulip_provisioned)
+       VALUES ('Browser User Two', 'browser2@company.com', 202, true)
+       RETURNING id`
+    );
+
+
+    // Mock getZulipUserBySessionKey to return exact session mapping
+    const { zulipService } = await import('../src/services/zulip.service');
+    const spy = vi.spyOn(zulipService, 'getZulipUserBySessionKey').mockImplementation(async (key?: string) => {
+      if (key === 'browser_session_1') return { email: 'browser1@company.com', zulipUserId: 201 };
+      if (key === 'browser_session_2') return { email: 'browser2@company.com', zulipUserId: 202 };
+      return null;
+    });
+
+    // Browser 1 sends Cookie: sessionid=browser_session_1
+    const authRes1 = await request(app)
+      .get('/oauth/authorize')
+      .set('Cookie', 'sessionid=browser_session_1')
+      .query({
+        client_id: 'attendance-app',
+        response_type: 'code',
+        redirect_uri: 'http://localhost:3300',
+      });
+
+    expect(authRes1.status).toBe(302);
+    const code1 = new URL(authRes1.headers.location).searchParams.get('code')!;
+
+    const tokenRes1 = await request(app)
+      .post('/oauth/token')
+      .send({
+        grant_type: 'authorization_code',
+        code: code1,
+        client_id: 'attendance-app',
+        redirect_uri: 'http://localhost:3300',
+      });
+    const user1 = await request(app)
+      .get('/oauth/userinfo')
+      .set('Authorization', `Bearer ${tokenRes1.body.access_token}`);
+
+    expect(user1.body.email).toBe('browser1@company.com');
+    expect(user1.body.name).toBe('Browser User One');
+
+    // Browser 2 sends Cookie: sessionid=browser_session_2
+    const authRes2 = await request(app)
+      .get('/oauth/authorize')
+      .set('Cookie', 'sessionid=browser_session_2')
+      .query({
+        client_id: 'attendance-app',
+        response_type: 'code',
+        redirect_uri: 'http://localhost:3300',
+      });
+
+    expect(authRes2.status).toBe(302);
+    const code2 = new URL(authRes2.headers.location).searchParams.get('code')!;
+
+    const tokenRes2 = await request(app)
+      .post('/oauth/token')
+      .send({
+        grant_type: 'authorization_code',
+        code: code2,
+        client_id: 'attendance-app',
+        redirect_uri: 'http://localhost:3300',
+      });
+    const user2 = await request(app)
+      .get('/oauth/userinfo')
+      .set('Authorization', `Bearer ${tokenRes2.body.access_token}`);
+
+    expect(user2.body.email).toBe('browser2@company.com');
+    expect(user2.body.name).toBe('Browser User Two');
+
+    // Verify complete multi-browser isolation
+    expect(user1.body.email).not.toBe(user2.body.email);
+
+    spy.mockRestore();
+  });
+
+  it('supports session_key query parameter for SSO authorization and prevents leakage on logged-out sessions', async () => {
+    await pool.query(
+      `INSERT INTO employees (full_name, email, zulip_user_id, zulip_provisioned)
+       VALUES ('User B', 'userB@company.com', 302, true)
+       ON CONFLICT (email) DO NOTHING`
+    );
+
+    const { zulipService } = await import('../src/services/zulip.service');
+    const spy = vi.spyOn(zulipService, 'getZulipUserBySessionKey').mockImplementation(async (key?: string) => {
+      if (key === 'valid_user_B_session') return { email: 'userB@company.com', zulipUserId: 302 };
+      return null;
+    });
+
+    // Valid session key in query param
+    const authRes = await request(app)
+      .get('/oauth/authorize')
+      .query({
+        client_id: 'attendance-app',
+        response_type: 'code',
+        redirect_uri: 'http://localhost:3300',
+        session_key: 'valid_user_B_session',
+      });
+
+    expect(authRes.status).toBe(302);
+    expect(authRes.headers.location).toMatch(/^http:\/\/localhost:3300\/?\?code=/);
+    const code = new URL(authRes.headers.location).searchParams.get('code')!;
+
+    const tokenRes = await request(app)
+      .post('/oauth/token')
+      .send({
+        grant_type: 'authorization_code',
+        code,
+        client_id: 'attendance-app',
+        redirect_uri: 'http://localhost:3300',
+      });
+
+    const userinfo = await request(app)
+      .get('/oauth/userinfo')
+      .set('Authorization', `Bearer ${tokenRes.body.access_token}`);
+
+    expect(userinfo.body.email).toBe('userB@company.com');
+
+    // Invalid or logged-out session key -> MUST NOT generate auth code
+    const invalidRes = await request(app)
+      .get('/oauth/authorize')
+      .query({
+        client_id: 'attendance-app',
+        response_type: 'code',
+        redirect_uri: 'http://localhost:3300',
+        session_key: 'logged_out_session_A',
+      });
+
+    expect(invalidRes.status).toBe(302);
+    expect(invalidRes.headers.location).toBe('http://localhost:3300');
+    expect(invalidRes.headers.location).not.toContain('code=');
+
+    spy.mockRestore();
+  });
+
+  it('refuses to guess user identity when session_key or cookie is missing, preventing cross-user session leakage', async () => {
+    await pool.query(
+      `INSERT INTO employees (full_name, email, zulip_user_id, zulip_provisioned)
+       VALUES ('Winter User', 'winter@gmail.com', 404, true)
+       ON CONFLICT (email) DO NOTHING`
+    );
+
+    // Call GET /oauth/authorize with no session_key, no cookie, no email
+    const authRes = await request(app)
       .get('/oauth/authorize')
       .query({
         client_id: 'attendance-app',
@@ -112,9 +264,14 @@ describe('OIDC Server Endpoints Integration (W-402)', () => {
         redirect_uri: 'http://localhost:3300',
       });
 
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toMatch(/^http:\/\/localhost:3300\/?\?code=/);
+    // MUST redirect to login page WITHOUT code parameter (does NOT guess Winter or Denver)
+    expect(authRes.status).toBe(302);
+    expect(authRes.headers.location).toBe('http://localhost:3300');
+    expect(authRes.headers.location).not.toContain('code=');
   });
 });
+
+
+
 
 

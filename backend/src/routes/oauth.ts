@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticateJwt } from '../middleware/auth';
 import { oauthService, InvalidGrantError } from '../services/oauth.service';
-
+import { zulipService } from '../services/zulip.service';
 import { employeeRepository } from '../repositories/employee.repository';
 
 const router: Router = Router();
@@ -12,8 +12,7 @@ const authorizeSchema = z.object({
   response_type: z.literal('code'),
   redirect_uri: z.string().url(),
   state: z.string().optional(),
-  email: z.string().optional(),
-  zulip_user_id: z.string().optional(),
+  session_key: z.string().optional(),
 });
 
 const tokenSchema = z.object({
@@ -39,26 +38,27 @@ router.get('/authorize', async (req: Request, res: Response) => {
       });
     }
 
-    if (!employeeId && input.email) {
-      const emp = await employeeRepository.findByEmail(input.email);
-      if (emp) employeeId = emp.id;
-    }
+    // Extract sessionid cookie or session_key query parameter sent by client
+    const rawCookie = req.headers.cookie || '';
+    const sessionMatch = rawCookie.match(/(?:^|;\s*)(?:sessionid|zulip_session)=([^;]+)/);
+    const sessionKey = input.session_key || (sessionMatch ? sessionMatch[1] : undefined);
 
-    if (!employeeId && input.zulip_user_id) {
-      const emp = await employeeRepository.findByZulipUserId(Number(input.zulip_user_id));
-      if (emp) employeeId = emp.id;
-    }
 
-    if (!employeeId) {
-      const allEmps = await employeeRepository.findAllEmployees();
-      if (allEmps.length > 0) {
-        employeeId = allEmps[0].id;
+    if (!employeeId && sessionKey) {
+      const zulipUser = await zulipService.getZulipUserBySessionKey(sessionKey);
+      if (zulipUser) {
+        let emp = await employeeRepository.findByEmail(zulipUser.email);
+        if (!emp) {
+          emp = await employeeRepository.findByZulipUserId(zulipUser.zulipUserId);
+        }
+        if (emp) employeeId = emp.id;
       }
     }
 
     if (!employeeId) {
-      return res.status(401).json({ error: 'Missing or invalid authorization header or employee query' });
+      return res.redirect(302, input.redirect_uri);
     }
+
 
     const code = await oauthService.generateAuthCode(
       employeeId,

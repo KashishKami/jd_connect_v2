@@ -100,6 +100,52 @@ export class ZulipService {
       throw new ZulipProvisioningError(`Zulip API request failed: ${(err as Error).message}`);
     }
   }
+
+  async getZulipUserBySessionKey(sessionKey?: string): Promise<{ email: string; zulipUserId: number } | null> {
+    if (!sessionKey) return null;
+    try {
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execAsync = util.promisify(exec);
+
+      const zulipDir = path.resolve(__dirname, '../../../docker/zulip');
+      const safeKey = sessionKey.replace(/[^a-zA-Z0-9]/g, '');
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from django.contrib.sessions.models import Session; from zerver.models import UserProfile; s = Session.objects.filter(session_key='${safeKey}').first(); data = s.get_decoded() if s else {}; uid = data.get('_auth_user_id'); u = UserProfile.objects.filter(id=int(uid)).first() if uid else None; print(f'{u.delivery_email}:{u.id}') if u else print('')"`;
+
+      const { stdout } = await execAsync(cmd, { cwd: zulipDir });
+      const lines = stdout.trim().split('\n');
+      const lastLine = lines[lines.length - 1] || '';
+      const [email, idStr] = lastLine.split(':');
+      if (email && idStr && email.includes('@')) {
+        return { email: email.trim(), zulipUserId: Number(idStr.trim()) };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getLatestActiveZulipUser(): Promise<{ email: string; zulipUserId: number } | null> {
+    try {
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execAsync = util.promisify(exec);
+
+      const zulipDir = path.resolve(__dirname, '../../../docker/zulip');
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from django.contrib.sessions.models import Session; from zerver.models import UserProfile; s = Session.objects.order_by('-expire_date').first(); data = s.get_decoded() if s else {}; uid = data.get('_auth_user_id'); u = UserProfile.objects.filter(id=int(uid)).first() if uid else None; print(f'{u.delivery_email}:{u.id}') if u else print('')"`;
+
+      const { stdout } = await execAsync(cmd, { cwd: zulipDir });
+      const lines = stdout.trim().split('\n');
+      const lastLine = lines[lines.length - 1] || '';
+      const [email, idStr] = lastLine.split(':');
+      if (email && idStr && email.includes('@')) {
+        return { email: email.trim(), zulipUserId: Number(idStr.trim()) };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export const zulipService = new ZulipService();

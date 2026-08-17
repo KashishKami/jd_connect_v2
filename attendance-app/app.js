@@ -535,11 +535,13 @@
       }
     }
 
+
+
     if (token) {
       showAttendanceView();
       initAttendanceState();
     } else {
-      handleSsoRedirect();
+      showLoginView();
     }
   }
 

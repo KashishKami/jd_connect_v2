@@ -56,8 +56,8 @@ export class EmployeeRepository {
 
   async findByEmail(email: string): Promise<EmployeeResponse | null> {
     const res = await pool.query<EmployeeResponse>(
-      'SELECT * FROM employees WHERE email = $1',
-      [email.toLowerCase().trim()]
+      'SELECT * FROM employees WHERE LOWER(email) = LOWER($1)',
+      [email.trim()]
     );
     return res.rows[0] || null;
   }

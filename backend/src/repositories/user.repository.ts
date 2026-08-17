@@ -13,8 +13,8 @@ export interface UserRow {
 export class UserRepository {
   async findByEmail(email: string): Promise<UserRow | null> {
     const res = await pool.query<UserRow>(
-      'SELECT * FROM users WHERE email = $1',
-      [email.toLowerCase().trim()]
+      'SELECT * FROM users WHERE LOWER(email) = LOWER($1)',
+      [email.trim()]
     );
     return res.rows[0] || null;
   }
@@ -37,8 +37,8 @@ export class UserRepository {
        FROM users u
        LEFT JOIN employees e ON e.auth_user_id = u.id
        LEFT JOIN roles r ON r.id = e.role_id
-       WHERE u.email = $1`,
-      [email.toLowerCase().trim()]
+       WHERE LOWER(u.email) = LOWER($1)`,
+      [email.trim()]
     );
 
     if (res.rows.length === 0) return null;

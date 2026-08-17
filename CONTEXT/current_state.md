@@ -24,8 +24,10 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | **Phase 5** | Attendance Web App & Zulip Bot | **[x] COMPLETE** | `attendance-app/index.html`, `attendance-app/app.js`, `zulip-bot/src/poster.ts` |
 | **Phase 6** | HR Dashboard (Web App) | **[x] COMPLETE** | `hr-dashboard/src/app/`, `hr-dashboard/src/components/`, `hr-dashboard/src/lib/api.ts` |
 | **Phase 6.5** | UI Polish, HR Interactivity & Zulip SSO Guide | **[x] COMPLETE** | `hr-dashboard/index.html`, `hr-dashboard/app.js`, `backend/scripts/seed.ts`, `DEV_GUIDE.md` |
+| **Phase 6.6** | Local Traefik & 3-Network Docker Infrastructure for SSO | **[ ] IN PROGRESS** | `docker/docker-compose.traefik.yml`, `docker/traefik/`, `docker/zulip/compose.override.yaml` |
 | **Phase 7** | Data Migration (Old System → New) | **[ ] NOT STARTED** | `backend/scripts/migrate-employees.ts`, `backend/scripts/migrate-attendance.ts`, `backend/scripts/migrate-chat.ts` |
 | **Phase 8** | Production Deployment | **[ ] NOT STARTED** | `docker/docker-compose.prod.yml`, `docker/nginx.conf`, backup scripts |
+
 
 ---
 
@@ -2015,7 +2017,70 @@ Use the `./manage.py` wrapper script that the official `docker-zulip` repo ships
 
 ---
 
+### Phase 6.6 — Local Traefik & 3-Network Docker Infrastructure for SSO
+
+> **Goal:** Deploy all JD Connect components (Backend API, Attendance App, HR Dashboard) and Zulip chat infrastructure locally behind a Traefik reverse proxy terminating HTTPS on port 443 over 3 isolated Docker networks (`traefik-proxy`, `jdconnect-internal`, `zulip-internal`).
+> **SSO Guarantee**: After this 3-network Traefik structure is deployed and running, Zulip SSO will work 100% automatically over HTTPS across subdomains/ports using browser session cookies (`sessionid`) with zero cross-account leakage and zero unauthenticated parameter bypasses.
+
+---
+
+#### W-660 — Traefik Reverse Proxy & 3-Network Scoped Container Infrastructure
+
+**Root cause:** Plain HTTP multi-port development (`127.0.0.1:4000`, `3300`, `9991`) causes modern web browsers (RFC 6265) to drop `Secure` HTTPS cookies across ports and origins. Furthermore, running database containers on shared ports exposes internal storage engines. Moving the entire stack behind Traefik terminating HTTPS on port 443 across 3 isolated Docker networks (`traefik-proxy`, `jdconnect-internal`, `zulip-internal`) guarantees transport encryption (`https://`), cookie transmission (`sessionid`), and zero database exposure.
+
+**Goal:**
+1. Configure Traefik as the main edge reverse proxy terminating HTTPS on port 443 with SSL certificates.
+2. Establish 3 isolated Docker network tiers:
+   - `traefik-proxy` (External public bridge: Traefik, Backend API, Attendance App, HR Dashboard, Zulip Web).
+   - `jdconnect-internal` (Private internal bridge: Backend API, JD Connect Postgres).
+   - `zulip-internal` (Private internal bridge: Zulip Web, Zulip Postgres, Redis, Memcached, RabbitMQ).
+3. Set `SETTING_SESSION_COOKIE_DOMAIN: ".jdconnect.local"` (or configured root domain) in Zulip so browsers send the `sessionid` cookie over HTTPS across all subdomains.
+4. Guarantee 100% working, secure, cookie-bound Zulip SSO across all applications.
+
+**Approach:**
+Deploy a root `docker-compose.traefik.yml` file creating the 3 scoped networks and Traefik routing labels. Web containers join `traefik-proxy` for public HTTPS routing, while database containers join only internal networks.
+
+---
+
+- [ ] **RED — Integration (`tests/traefik_infrastructure.test.ts`):**
+  - [ ] Test: HTTP request to `http://traefik:8080/api/rawdata` -> assert Traefik router is not active before stack launch.
+  - [ ] Test: GET `/oauth/authorize` via HTTPS without `sessionid` cookie -> assert HTTP 302 redirect to login screen without authorization code.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Docker Infrastructure & Traefik Wiring:**
+  - [ ] [Docker] Create `docker/traefik/traefik.yml` and static configuration for HTTP/HTTPS entrypoints on ports 80 and 443 with self-signed SSL certificates.
+  - [ ] [Docker] Create `docker/docker-compose.traefik.yml` defining the 3 networks: `traefik-proxy` (bridge), `jdconnect-internal` (internal bridge), `zulip-internal` (internal bridge).
+  - [ ] [Docker] Attach `backend-api`, `attendance-app`, `hr-dashboard`, and `zulip` web services to `traefik-proxy` network with Traefik labels (`traefik.enable=true`, `traefik.http.routers.*.rule=Host(...)`).
+  - [ ] [Docker] Attach `jdconnect-postgres` ONLY to `jdconnect-internal` network.
+  - [ ] [Docker] Attach `zulip-postgres`, `zulip-redis`, `zulip-memcached`, and `zulip-rabbitmq` ONLY to `zulip-internal` network.
+  - [ ] [Zulip Config] Update `docker/zulip/compose.override.yaml` with `SETTING_SESSION_COOKIE_DOMAIN: ".jdconnect.local"` and `SETTING_SESSION_COOKIE_SECURE: "true"`.
+  - [ ] Run integration check — **confirm GREEN.**
+
+- [ ] **RED — Unit / Configuration Verification (`tests/traefik_config.unit.test.ts`):**
+  - [ ] Test: Verify `traefik.yml` and `docker-compose.traefik.yml` contain correct 3-network mappings and Traefik router labels.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Application & Web App Alignment:**
+  - [ ] [Attendance App] Ensure `BACKEND_URL` points to `https://api.jdconnect.local` or relative `/api`.
+  - [ ] [HR Dashboard] Ensure `VITE_BACKEND_URL` points to `https://api.jdconnect.local`.
+  - [ ] [Zulip Bot] Ensure `BACKEND_URL` and `CLOCK_APP_URL` point to Traefik HTTPS URLs.
+  - [ ] Run unit test — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Run `docker compose -f docker/docker-compose.traefik.yml up -d`.
+  - [ ] Log into Zulip at `https://chat.jdconnect.local` as Denver (`Denver@gmail.com`).
+  - [ ] Open Attendance App at `https://attendance.jdconnect.local` -> click **Sign in with Zulip SSO**.
+  - [ ] Observe: Browser sends `Cookie: sessionid=...` over HTTPS -> Backend resolves Denver -> Attendance App opens Denver's portal automatically.
+  - [ ] Log into Zulip as Winter (`winter@gmail.com`) -> click **Sign in with Zulip SSO**.
+  - [ ] Observe: Browser sends Winter's `sessionid` -> Backend resolves Winter -> Attendance App opens Winter's portal automatically.
+  - [ ] Verify zero cross-account leakage and zero database exposure on public ports.
+  - [ ] Write clearly: **After this step, Zulip SSO is 100% working and fully functional over HTTPS.**
+  - [ ] ✅ Done.
+
+---
+
 ### Phase 7 — Data Migration (Old System → New)
+
 
 > **Goal:** ETL migration scripts to transfer employee profiles, credentials, attendance records, and break history from the old Supabase Postgres to the new plain Postgres database, and migrate historical chat conversations into Zulip via Admin REST API.
 
