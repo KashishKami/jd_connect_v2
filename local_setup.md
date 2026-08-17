@@ -145,6 +145,7 @@ if not bot:
         realm=realm,
         full_name='JD Connect Bot',
         bot_type=UserProfile.DEFAULT_BOT,
+        role=UserProfile.ROLE_REALM_ADMINISTRATOR,
         acting_user=None,
     )
     print('BOT_CREATED')
@@ -153,6 +154,10 @@ else:
 
 print('BOT_API_KEY:', bot.api_key)
 "
+
+# Grant Bot user-provisioning permissions in Zulip (Required for Employee Creation API)
+./manage.py change_user_role -r 2 jdconnect-bot@company.com admin
+./manage.py change_user_role -r 2 jdconnect-bot@company.com can_create_users
 ```
 
 Copy the output `BOT_API_KEY` and update the root `.env` file:

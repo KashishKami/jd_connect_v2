@@ -30,10 +30,34 @@ export class EmployeeRepository {
     return res.rows[0];
   }
 
+  async findRoleByKey(key: string): Promise<{ id: string } | null> {
+    const res = await pool.query<{ id: string }>('SELECT id FROM roles WHERE key = $1', [key]);
+    return res.rows[0] || null;
+  }
+
+  async findAllEmployees(): Promise<EmployeeResponse[]> {
+    const res = await pool.query<EmployeeResponse>(
+      `SELECT e.*, d.name AS department, r.key AS role
+       FROM employees e
+       LEFT JOIN departments d ON e.department_id = d.id
+       LEFT JOIN roles r ON e.role_id = r.id
+       ORDER BY e.created_at DESC`
+    );
+    return res.rows;
+  }
+
   async findByZulipUserId(zulipUserId: number): Promise<EmployeeResponse | null> {
     const res = await pool.query<EmployeeResponse>(
       'SELECT * FROM employees WHERE zulip_user_id = $1',
       [zulipUserId]
+    );
+    return res.rows[0] || null;
+  }
+
+  async findByEmail(email: string): Promise<EmployeeResponse | null> {
+    const res = await pool.query<EmployeeResponse>(
+      'SELECT * FROM employees WHERE email = $1',
+      [email.toLowerCase().trim()]
     );
     return res.rows[0] || null;
   }

@@ -57,22 +57,53 @@ export class AttendanceRepository {
 
     if (filters.employee_id) {
       values.push(filters.employee_id);
-      conditions.push(`employee_id = $${values.length}`);
+      conditions.push(`a.employee_id = $${values.length}`);
     }
     if (filters.fromDate) {
       values.push(filters.fromDate);
-      conditions.push(`work_date >= $${values.length}`);
+      conditions.push(`a.work_date >= $${values.length}`);
     }
     if (filters.toDate) {
       values.push(filters.toDate);
-      conditions.push(`work_date <= $${values.length}`);
+      conditions.push(`a.work_date <= $${values.length}`);
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM attendance_records ${whereClause} ORDER BY work_date DESC, clock_in_at DESC`;
+    const query = `
+      SELECT a.*, e.full_name AS employee_name, e.email AS employee_email
+      FROM attendance_records a
+      LEFT JOIN employees e ON a.employee_id = e.id
+      ${whereClause}
+      ORDER BY a.work_date DESC, a.clock_in_at DESC
+    `;
 
     const result = await pool.query(query, values);
     return result.rows;
+  }
+
+  async getLiveMonitorSummary(todayEST: string): Promise<{
+    working_count: number;
+    on_break_count: number;
+    total_clocked_in: number;
+  }> {
+    const totalClockedInRes = await pool.query(
+      `SELECT COUNT(*) FROM attendance_records WHERE work_date = $1 AND clock_out_at IS NULL`,
+      [todayEST]
+    );
+
+    const onBreakRes = await pool.query(
+      `SELECT COUNT(*) FROM break_records WHERE status = 'active'`
+    );
+
+    const totalClockedIn = parseInt(totalClockedInRes.rows[0].count, 10) || 0;
+    const onBreakCount = parseInt(onBreakRes.rows[0].count, 10) || 0;
+    const workingCount = Math.max(0, totalClockedIn - onBreakCount);
+
+    return {
+      working_count: workingCount,
+      on_break_count: onBreakCount,
+      total_clocked_in: totalClockedIn,
+    };
   }
 }
 

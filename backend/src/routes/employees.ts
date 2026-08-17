@@ -9,7 +9,8 @@ const createEmployeeSchema = z.object({
   full_name: z.string().min(1, 'Full name is required'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  role_id: z.string().uuid('Invalid role_id UUID'),
+  role_id: z.string().uuid('Invalid role_id UUID').optional(),
+  role_key: z.string().optional(),
   mobile: z.string().optional(),
   department_id: z.string().uuid().optional(),
   centre_id: z.string().uuid().optional(),
@@ -17,11 +18,27 @@ const createEmployeeSchema = z.object({
   team_leader_id: z.string().uuid().optional(),
   manager_id: z.string().uuid().optional(),
   designation: z.string().optional(),
+}).refine(data => data.role_id || data.role_key, {
+  message: 'Either role_id or role_key is required',
 });
 
 const resetPasswordSchema = z.object({
   new_password: z.string().min(8, 'Password must be at least 8 characters'),
 });
+
+router.get(
+  '/',
+  authenticateJwt,
+  requirePermission('employees.view'),
+  async (_req: Request, res: Response) => {
+    try {
+      const employees = await employeeService.listEmployees();
+      return res.status(200).json(employees);
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to list employees', details: (err as Error).message });
+    }
+  }
+);
 
 router.post(
   '/',

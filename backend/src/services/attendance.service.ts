@@ -99,6 +99,15 @@ export class AttendanceService {
     };
   }
 
+  async getLiveMonitorSummary(): Promise<{
+    working_count: number;
+    on_break_count: number;
+    total_clocked_in: number;
+  }> {
+    const todayEST = getESTWorkDate();
+    return await this.attRepo.getLiveMonitorSummary(todayEST);
+  }
+
   async clockIn(zulipUserId: number): Promise<AttendanceRecord> {
     const employee = await this.empRepo.findByZulipUserId(zulipUserId);
     if (!employee) {

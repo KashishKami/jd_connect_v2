@@ -2,7 +2,8 @@ export interface CreateEmployeeInput {
   full_name: string;
   email: string;
   password: string;
-  role_id: string;
+  role_id?: string | undefined;
+  role_key?: string | undefined;
   mobile?: string | undefined;
   department_id?: string | undefined;
   centre_id?: string | undefined;
@@ -22,6 +23,8 @@ export interface EmployeeResponse {
   mobile?: string | null;
   department_id?: string | null;
   role_id?: string | null;
+  department?: string | null;
+  role?: string | null;
   centre_id?: string | null;
   shift_id?: string | null;
   designation?: string | null;
@@ -31,3 +34,4 @@ export interface EmployeeResponse {
   created_at: string;
   updated_at: string;
 }
+

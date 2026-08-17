@@ -138,7 +138,13 @@
     try {
       const d = new Date(isoString);
       if (isNaN(d.getTime())) return '-';
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
     } catch {
       return '-';
     }
@@ -149,7 +155,12 @@
     try {
       const d = new Date(isoString);
       if (isNaN(d.getTime())) return '-';
-      return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+      return d.toLocaleDateString('en-US', {
+        timeZone: 'America/New_York',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
     } catch {
       return '-';
     }
@@ -484,11 +495,53 @@
     });
   }
 
-  // Initialize view state
-  if (token) {
-    showAttendanceView();
-    initAttendanceState();
-  } else {
-    showLoginView();
+  // Initialize view state & parse URL query token or OAuth code if redirected from SSO
+  async function initApp() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('token');
+    const codeFromUrl = urlParams.get('code');
+
+    if (tokenFromUrl) {
+      token = tokenFromUrl;
+      localStorage.setItem('jdconnect_token', token);
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } else if (codeFromUrl) {
+      try {
+        const redirectUri = window.location.origin + window.location.pathname;
+        const res = await fetch(`${BACKEND_URL}/oauth/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'authorization_code',
+            code: codeFromUrl,
+            client_id: 'attendance-app',
+            redirect_uri: redirectUri,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.access_token) {
+            token = data.access_token;
+            localStorage.setItem('jdconnect_token', token);
+            if (window.history && window.history.replaceState) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          }
+        }
+      } catch {
+        // Fallback to login view
+      }
+    }
+
+    if (token) {
+      showAttendanceView();
+      initAttendanceState();
+    } else {
+      handleSsoRedirect();
+    }
   }
+
+  initApp();
 })();

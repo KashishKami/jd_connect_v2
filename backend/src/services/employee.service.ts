@@ -25,6 +25,10 @@ export class EmployeeService {
     private zulipSvc: ZulipService = defaultZulipService
   ) {}
 
+  async listEmployees(): Promise<EmployeeResponse[]> {
+    return await this.empRepo.findAllEmployees();
+  }
+
   async createEmployee(
     input: CreateEmployeeInput
   ): Promise<EmployeeResponse & { warning?: string }> {
@@ -33,13 +37,24 @@ export class EmployeeService {
       throw new DuplicateEmailError(input.email);
     }
 
+    let roleId = input.role_id;
+    if (!roleId && input.role_key) {
+      const roleRow = await this.empRepo.findRoleByKey(input.role_key);
+      if (roleRow) {
+        roleId = roleRow.id;
+      }
+    }
+
     const passwordHash = await bcrypt.hash(input.password, 12);
     const user = await this.userRepo.createUser({
       email: input.email,
       passwordHash,
     });
 
-    const emp = await this.empRepo.createEmployee(user.id, input);
+    const emp = await this.empRepo.createEmployee(user.id, {
+      ...input,
+      role_id: roleId,
+    });
 
     try {
       const zulipRes = await this.zulipSvc.createUser({

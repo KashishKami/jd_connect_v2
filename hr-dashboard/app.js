@@ -44,6 +44,39 @@
     if (loginOverlay) loginOverlay.style.display = 'none';
   }
 
+  function formatTime(isoString) {
+    if (!isoString) return '-';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return '-';
+      return d.toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+    } catch {
+      return '-';
+    }
+  }
+
+  function formatDate(isoString) {
+    if (!isoString) return '-';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return '-';
+      return d.toLocaleDateString('en-US', {
+        timeZone: 'America/New_York',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    } catch {
+      return '-';
+    }
+  }
+
   async function apiRequest(endpoint, method = 'GET', body = null) {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -52,7 +85,14 @@
     if (body) options.body = JSON.stringify(body);
 
     const res = await fetch(`${BACKEND_URL}${endpoint}`, options);
-    const data = await res.json();
+    const contentType = res.headers.get('content-type');
+    let data;
+    if (contentType && contentType.includes('application/json')) {
+      data = await res.json();
+    } else {
+      data = { error: `Server error (${res.status})` };
+    }
+
     if (!res.ok) {
       if (res.status === 401) {
         token = null;
@@ -79,7 +119,7 @@
       token = res.access_token;
       localStorage.setItem('jdconnect_hr_token', token);
       hideLoginOverlay();
-      if (userInfo) userInfo.textContent = `Logged in: ${res.user.full_name}`;
+      if (userInfo) userInfo.textContent = `Logged in: ${res.user.full_name || res.user.email}`;
       showToast('Sign in successful!', 'success');
       loadEmployees();
     } catch (err) {
@@ -238,20 +278,34 @@
       const records = await apiRequest('/api/attendance');
       if (!Array.isArray(records) || !attendanceTableBody) return;
 
+      if (records.length === 0) {
+        attendanceTableBody.innerHTML = '<tr><td colspan="6">No attendance records found.</td></tr>';
+        return;
+      }
+
       attendanceTableBody.innerHTML = records
-        .map((r) => `
-          <tr>
-            <td>${r.work_date}</td>
-            <td><strong>${r.employee_name || r.employee_id}</strong></td>
-            <td>${r.clock_in_at ? new Date(r.clock_in_at).toLocaleTimeString() : '-'}</td>
-            <td>${r.clock_out_at ? new Date(r.clock_out_at).toLocaleTimeString() : 'Active'}</td>
-            <td>${r.hours_worked || '-'} hrs</td>
-            <td><span class="badge badge-success">${r.status}</span></td>
-          </tr>
-        `)
+        .map((r) => {
+          const empName = r.employee_name || r.employee_email || r.employee_id;
+          const isOngoing = !r.clock_out_at;
+          const statusBadge = isOngoing
+            ? '<span class="badge badge-success">On Shift</span>'
+            : `<span class="badge ${r.status === 'present' ? 'badge-success' : 'badge-warning'}">${r.status}</span>`;
+          return `
+            <tr>
+              <td>${formatDate(r.work_date || r.clock_in_at)}</td>
+              <td><strong>${empName}</strong></td>
+              <td>${formatTime(r.clock_in_at)}</td>
+              <td>${isOngoing ? '-' : formatTime(r.clock_out_at)}</td>
+              <td>${r.hours_worked ? Number(r.hours_worked).toFixed(2) + ' hrs' : '-'}</td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        })
         .join('');
-    } catch {
-      // Graceful fallback
+    } catch (err) {
+      if (attendanceTableBody) {
+        attendanceTableBody.innerHTML = `<tr><td colspan="6" style="color: var(--accent-red);">Error loading attendance logs: ${err.message}</td></tr>`;
+      }
     }
   }
 
@@ -261,23 +315,44 @@
       const records = await apiRequest('/api/breaks');
       if (!Array.isArray(records) || !breakTableBody) return;
 
+      if (records.length === 0) {
+        breakTableBody.innerHTML = '<tr><td colspan="7">No break records found.</td></tr>';
+        return;
+      }
+
       breakTableBody.innerHTML = records
-        .map((b) => `
-          <tr>
-            <td><strong>${b.employee_name || b.employee_id}</strong></td>
-            <td>${b.break_type_key}</td>
-            <td>${new Date(b.start_time).toLocaleTimeString()}</td>
-            <td>${b.end_time ? new Date(b.end_time).toLocaleTimeString() : 'Active'}</td>
-            <td>${b.duration_minutes || '-'}</td>
-            <td>${b.limit_minutes || 'Unlimited'}</td>
-            <td><span class="badge ${b.status === 'exceeded' ? 'badge-danger' : 'badge-success'}">${b.status}</span></td>
-          </tr>
-        `)
+        .map((b) => {
+          const empName = b.employee_name || b.employee_email || b.employee_id;
+          const breakReason = b.break_name || b.break_type_key || 'Break';
+          const startAt = b.start_at || b.start_time;
+          const endAt = b.end_at || b.end_time;
+          const isOngoing = !endAt || b.status === 'active';
+          let statusBadge = '<span class="badge badge-success">completed</span>';
+          if (b.status === 'active' || isOngoing) {
+            statusBadge = '<span class="badge badge-warning">active</span>';
+          } else if (b.status === 'exceeded') {
+            statusBadge = '<span class="badge badge-danger">exceeded</span>';
+          }
+          return `
+            <tr>
+              <td><strong>${empName}</strong></td>
+              <td>${breakReason}</td>
+              <td>${formatTime(startAt)}</td>
+              <td>${isOngoing ? '-' : formatTime(endAt)}</td>
+              <td>${b.duration_minutes !== null && b.duration_minutes !== undefined ? b.duration_minutes : '-'}</td>
+              <td>${b.limit_minutes ? b.limit_minutes + ' min' : 'Unlimited'}</td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        })
         .join('');
-    } catch {
-      // Graceful fallback
+    } catch (err) {
+      if (breakTableBody) {
+        breakTableBody.innerHTML = `<tr><td colspan="7" style="color: var(--accent-red);">Error loading break logs: ${err.message}</td></tr>`;
+      }
     }
   }
+
 
   async function loadMonitor() {
     if (!token) return;
@@ -287,7 +362,7 @@
       if (metricOnBreak) metricOnBreak.textContent = summary.on_break_count || 0;
       if (metricTotal) metricTotal.textContent = summary.total_clocked_in || 0;
     } catch {
-      // Graceful fallback
+      showToast('Failed to refresh monitor stats', 'error');
     }
   }
 

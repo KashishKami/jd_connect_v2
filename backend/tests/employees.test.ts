@@ -125,4 +125,48 @@ describe('POST /api/employees - Employee Creation', () => {
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: 'Email already exists' });
   });
+
+  it('creates employee using role_key instead of role_id', async () => {
+    const res = await supertest(app)
+      .post('/api/employees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        full_name: 'Key User',
+        email: 'keyuser@jdconnect.com',
+        password: 'Password123!',
+        role_key: 'employee',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('id');
+    expect(res.body.email).toBe('keyuser@jdconnect.com');
+  });
+
+  it('GET /api/employees lists all employees with department and role', async () => {
+    await supertest(app)
+      .post('/api/employees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        full_name: 'Listed Agent',
+        email: 'listed@jdconnect.com',
+        password: 'Password123!',
+        role_key: 'employee',
+      });
+
+    const res = await supertest(app)
+      .get('/api/employees')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
+    const emp = res.body[0];
+    expect(emp).toHaveProperty('id');
+    expect(emp).toHaveProperty('full_name');
+    expect(emp).toHaveProperty('email');
+    expect(emp).toHaveProperty('role');
+    expect(emp).toHaveProperty('zulip_provisioned');
+  });
 });
+
+

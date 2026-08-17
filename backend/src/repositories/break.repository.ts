@@ -133,8 +133,9 @@ export class BreakRepository {
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const query = `
-      SELECT br.*, bt.name AS break_name, bt.key AS break_type_key
+      SELECT br.*, e.full_name AS employee_name, e.email AS employee_email, bt.name AS break_name, bt.key AS break_type_key
       FROM break_records br
+      LEFT JOIN employees e ON br.employee_id = e.id
       LEFT JOIN break_types bt ON br.break_type_id = bt.id
       ${whereClause}
       ORDER BY br.start_at DESC

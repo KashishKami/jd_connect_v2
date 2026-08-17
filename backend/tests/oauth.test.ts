@@ -88,4 +88,33 @@ describe('OIDC Server Endpoints Integration (W-402)', () => {
     expect(res.body.name).toBe('SSO User');
     expect(res.body.sub).toBeDefined();
   });
+
+  it('GET /oauth/authorize generates auth code via email query param without Bearer header', async () => {
+    const res = await request(app)
+      .get('/oauth/authorize')
+      .query({
+        client_id: 'attendance-app',
+        response_type: 'code',
+        redirect_uri: 'http://localhost:3300',
+        email: 'sso@company.com',
+      });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toMatch(/^http:\/\/localhost:3300\/?\?code=/);
+  });
+
+  it('GET /oauth/authorize generates auth code via fallback for attendance-app without auth header', async () => {
+    const res = await request(app)
+      .get('/oauth/authorize')
+      .query({
+        client_id: 'attendance-app',
+        response_type: 'code',
+        redirect_uri: 'http://localhost:3300',
+      });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toMatch(/^http:\/\/localhost:3300\/?\?code=/);
+  });
 });
+
+
