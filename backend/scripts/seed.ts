@@ -123,8 +123,8 @@ export async function runSeed() {
 
     await client.query(
       `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_user_id, zulip_provisioned)
-       VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', 11, true)
-       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 11`,
+       VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', 8, true)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 8`,
       [adminUserId, adminEmail, superAdminRoleId, deptId, centreId, shiftId]
     );
 

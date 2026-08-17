@@ -1,4 +1,9 @@
+import dotenv from 'dotenv';
+import path from 'path';
 import { ZulipCreateUserPayload, ZulipUserResponse } from '../types/zulip';
+
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config();
 
 if (process.env.NODE_ENV !== 'production') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -12,11 +17,27 @@ export class ZulipProvisioningError extends Error {
 }
 
 export class ZulipService {
-  constructor(
-    private baseUrl: string = process.env.ZULIP_BASE_URL || 'https://127.0.0.1:9991',
-    private botEmail: string = process.env.ZULIP_BOT_EMAIL || 'jdconnect-bot@company.com',
-    private botApiKey: string = process.env.ZULIP_BOT_API_KEY || 'G8e43VrvWU1x5Llk2Amjtqm3u6FXH7xI'
-  ) {}
+  private customBaseUrl: string | undefined;
+  private customBotEmail: string | undefined;
+  private customBotApiKey: string | undefined;
+
+  constructor(baseUrl?: string, botEmail?: string, botApiKey?: string) {
+    this.customBaseUrl = baseUrl;
+    this.customBotEmail = botEmail;
+    this.customBotApiKey = botApiKey;
+  }
+
+  private get baseUrl(): string {
+    return this.customBaseUrl || process.env.ZULIP_BASE_URL || '';
+  }
+
+  private get botEmail(): string {
+    return this.customBotEmail || process.env.ZULIP_BOT_EMAIL || '';
+  }
+
+  private get botApiKey(): string {
+    return this.customBotApiKey || process.env.ZULIP_BOT_API_KEY || '';
+  }
 
   async fetchUserByEmail(email: string): Promise<{ zulipUserId: number } | null> {
     const authHeader = 'Basic ' + Buffer.from(`${this.botEmail}:${this.botApiKey}`).toString('base64');
@@ -26,9 +47,10 @@ export class ZulipService {
         headers: { Authorization: authHeader },
       });
       if (!response.ok) return null;
-      const data = (await response.json()) as { result: string; user_id?: number };
-      if (data.result === 'success' && typeof data.user_id === 'number') {
-        return { zulipUserId: data.user_id };
+      const data = (await response.json()) as { result: string; user_id?: number; user?: { user_id: number } };
+      const userId = data.user?.user_id ?? data.user_id;
+      if (data.result === 'success' && typeof userId === 'number') {
+        return { zulipUserId: userId };
       }
       return null;
     } catch {

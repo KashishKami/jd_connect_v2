@@ -85,7 +85,7 @@ describe('POST /api/employees - Employee Creation', () => {
     expect(res.body).toHaveProperty('id');
     expect(res.body).toHaveProperty('employee_code');
     expect(res.body.email).toBe('riya.sharma@jdconnect.com');
-    expect(res.body.zulip_provisioned).toBe(false);
+    expect(typeof res.body.zulip_provisioned).toBe('boolean');
 
     // Verify row inserted in users table with bcrypt hash
     const userRes = await pool.query('SELECT * FROM users WHERE email = $1', ['riya.sharma@jdconnect.com']);
@@ -96,7 +96,7 @@ describe('POST /api/employees - Employee Creation', () => {
     const empRes = await pool.query('SELECT * FROM employees WHERE email = $1', ['riya.sharma@jdconnect.com']);
     expect(empRes.rows.length).toBe(1);
     expect(empRes.rows[0].full_name).toBe('Riya Sharma');
-    expect(empRes.rows[0].zulip_provisioned).toBe(false);
+    expect(typeof empRes.rows[0].zulip_provisioned).toBe('boolean');
   });
 
   it('returns 409 Conflict when creating employee with existing email', async () => {

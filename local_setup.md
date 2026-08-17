@@ -43,6 +43,16 @@ cp .env.example .env
 cp .env.test.example .env.test
 ```
 
+Generate a secure secret (at least 32 characters) for `JWT_SECRET` in `.env`:
+```bash
+# Generate secret using OpenSSL:
+openssl rand -base64 32
+
+# Or generate secret using Node.js:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+Copy the generated string and update `JWT_SECRET` in your `.env` file.
+
 ### Step 3: Start JD Connect Postgres Container & Run Database Setup
 ```bash
 # Start JD Connect Postgres container (port 5432)
@@ -111,15 +121,22 @@ docker compose run --rm zulip app:init
 docker compose up zulip --wait
 ```
 
-### Step 6: Create Admin & Bot Accounts
+### Step 6: Create Admin, Bot Accounts & Attendance Channel
 
 From inside `docker/zulip/`:
 ```bash
 ./manage.py shell -c "
 from zerver.models import Realm, UserProfile
 from zerver.actions.create_user import do_create_user
+from zerver.actions.create_realm import do_create_realm, ensure_stream
 
-realm = Realm.objects.get(string_id='')
+realm = Realm.objects.filter(string_id='').first()
+if not realm:
+    realm = do_create_realm(string_id='', name='JD Connect')
+
+# Ensure the 'attendance' channel exists
+ensure_stream(realm, 'attendance', acting_user=None)
+print('ATTENDANCE_CHANNEL_READY')
 
 # Check / Create Admin User
 admin = UserProfile.objects.filter(delivery_email='admin@company.com', realm=realm).first()
@@ -156,8 +173,8 @@ print('BOT_API_KEY:', bot.api_key)
 "
 
 # Grant Bot user-provisioning permissions in Zulip (Required for Employee Creation API)
-./manage.py change_user_role -r 2 jdconnect-bot@company.com admin
-./manage.py change_user_role -r 2 jdconnect-bot@company.com can_create_users
+./manage.py change_user_role -r '' jdconnect-bot@company.com admin || true
+./manage.py change_user_role -r '' jdconnect-bot@company.com can_create_users
 ```
 
 Copy the output `BOT_API_KEY` and update the root `.env` file:
@@ -167,7 +184,7 @@ ZULIP_BOT_EMAIL=jdconnect-bot@company.com
 ZULIP_BOT_API_KEY=<pasted_bot_api_key_here>
 ```
 
-### Step 7: Start Development Servers
+### Step 7: Start Development Servers & Run Zulip Bot Prompt
 
 Once `.env` is updated with `ZULIP_BOT_API_KEY`, start the development servers:
 
@@ -177,13 +194,25 @@ Once `.env` is updated with `ZULIP_BOT_API_KEY`, start the development servers:
    pnpm dev
    ```
 
-2. **HR Dashboard (`http://127.0.0.1:3200`)**:
+2. **Attendance Web App (`http://localhost:3300`)**:
+   ```bash
+   cd attendance-app
+   npx serve . -p 3300
+   ```
+
+3. **HR Dashboard (`http://127.0.0.1:3500`)**:
    ```bash
    cd hr-dashboard
    pnpm dev
    ```
 
-3. **Access Zulip Workspace (`https://127.0.0.1:9991`)**:
+4. **Post Daily Attendance Prompt to Zulip (`#attendance`)**:
+   From monorepo root:
+   ```bash
+   pnpm --filter @jdconnect/zulip-bot start
+   ```
+
+5. **Access Zulip Workspace (`https://127.0.0.1:9991`)**:
    - Open `https://127.0.0.1:9991` in your browser.
    - Log in using `admin@company.com` / `AdminPassword123!`.
 

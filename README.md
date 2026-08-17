@@ -64,8 +64,8 @@ The **Zulip Bot** (`zulip-bot/`) is a lightweight, stateless Node.js service tha
 
 | Service / App | Role | Email | Password | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
-| **Attendance, HR & Zulip** | Standard Employee | `john.doe@jdconnect.com` | `Employee123!` | Employee attendance & break tracking |
-| **Attendance, HR & Zulip** | Department Manager | `jane.mgr@jdconnect.com` | `Manager123!` | Department manager reports |
+| **Attendance & HR Dashboard** | Standard Employee | `john.doe@jdconnect.com` | `Employee123!` | Employee attendance & break tracking |
+| **Attendance & HR Dashboard** | Department Manager | `jane.mgr@jdconnect.com` | `Manager123!` | Department manager reports |
 | **Attendance, HR & Zulip** | Super Admin / Realm Admin | `admin@company.com` | `AdminPassword123!` | Full system & HR Operations management |
 | **Zulip Platform** | System Bot | `jdconnect-bot@company.com` | API Key in `.env` | Automation bot for daily prompts |
 

@@ -54,9 +54,9 @@ export async function postDailyAttendancePrompt(config: PosterConfig): Promise<{
 // Standalone execution wrapper
 if (require.main === module) {
   const config: PosterConfig = {
-    baseUrl: process.env.ZULIP_BASE_URL || 'https://127.0.0.1:9991',
-    botEmail: process.env.ZULIP_BOT_EMAIL || 'jdconnect-bot@company.com',
-    botApiKey: process.env.ZULIP_BOT_API_KEY || 'zulip_bot_api_key_here',
+    baseUrl: process.env.ZULIP_BASE_URL || '',
+    botEmail: process.env.ZULIP_BOT_EMAIL || '',
+    botApiKey: process.env.ZULIP_BOT_API_KEY || '',
     streamName: process.env.ZULIP_ATTENDANCE_STREAM || 'attendance',
     clockAppUrl: process.env.CLOCK_APP_URL || 'http://localhost:3300',
   };

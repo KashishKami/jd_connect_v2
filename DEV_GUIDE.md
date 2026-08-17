@@ -24,8 +24,8 @@ Use these credentials to test user flows across the system out-of-the-box:
 | Service / App | Role | Email | Password | Privileges |
 | :--- | :--- | :--- | :--- | :--- |
 | **Attendance, HR & Zulip** | Super Admin / Realm Admin | `admin@company.com` | `AdminPassword123!` | Full system access, Zulip workspace admin, HR management |
-| **Attendance, HR & Zulip** | Department Manager | `jane.mgr@jdconnect.com` | `Manager123!` | Department manager, attendance & break reporting |
-| **Attendance, HR & Zulip** | Standard Employee | `john.doe@jdconnect.com` | `Employee123!` | Standard employee clock-in/out & break tracking |
+| **Attendance & HR Dashboard** | Department Manager | `jane.mgr@jdconnect.com` | `Manager123!` | Department manager, attendance & break reporting |
+| **Attendance & HR Dashboard** | Standard Employee | `john.doe@jdconnect.com` | `Employee123!` | Standard employee clock-in/out & break tracking |
 | **Zulip Platform** | Realm Admin | `admin@company.com` | `AdminPassword123!` | Zulip workspace administrator |
 | **Zulip Platform** | System Bot | `jdconnect-bot@company.com` | API Key in `.env` | Posts daily attendance prompts to `#attendance` |
 
