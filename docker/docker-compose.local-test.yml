@@ -71,7 +71,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://jduser:jdpassword@postgres:5432/jdconnect
+      DATABASE_URL: postgresql://jduser:jdpassword@host.docker.internal:5432/jdconnect
       JWT_SECRET: local-docker-test-jwt-secret-32-chars!!
       JWT_EXPIRATION: 15m
 

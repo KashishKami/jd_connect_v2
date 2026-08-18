@@ -6,12 +6,14 @@ import { runSeed } from '../scripts/seed';
 describe('Postgres Database Seeder Unit Test', () => {
   beforeAll(async () => {
     await runMigrations();
+    // Truncate reference tables to ensure isolation from other integration tests
+    await pool.query('TRUNCATE roles, permissions, role_permissions, departments, centres, shifts, break_types CASCADE');
     await runSeed();
   });
 
-  it('seeds 5 application roles', async () => {
+  it('seeds 6 application roles', async () => {
     const res = await pool.query('SELECT COUNT(*)::int as count FROM roles');
-    expect(res.rows[0].count).toBe(5);
+    expect(res.rows[0].count).toBe(6);
   });
 
   it('seeds 11 permission keys', async () => {

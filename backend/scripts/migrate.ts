@@ -31,13 +31,14 @@ export async function runMigrations() {
         const filePath = path.join(migrationsDir, file);
         const sql = fs.readFileSync(filePath, 'utf-8');
 
-        await client.query('BEGIN');
+        const useTx = !sql.includes('-- NO_TRANSACTION');
+        if (useTx) await client.query('BEGIN');
         await client.query(sql);
         await client.query(
           'INSERT INTO schema_migrations (filename) VALUES ($1)',
           [file]
         );
-        await client.query('COMMIT');
+        if (useTx) await client.query('COMMIT');
         console.log(`Successfully applied: ${file}`);
       }
     }

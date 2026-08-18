@@ -36,6 +36,7 @@ export function validateAddEmployeePayload(payload: AddEmployeePayloadInput): { 
 
 export function formatRoleLabel(roleKey: string): string {
   if (!roleKey) return '';
+  if (roleKey.toLowerCase() === 'hr') return 'HR';
   return roleKey
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())

@@ -11,6 +11,7 @@ export async function runSeed() {
     const roles = [
       { key: 'super_admin', name: 'Super Admin', desc: 'Full system access' },
       { key: 'admin', name: 'Admin', desc: 'Administrative access' },
+      { key: 'hr', name: 'HR', desc: 'Human Resources' },
       { key: 'manager', name: 'Manager', desc: 'Department manager access' },
       { key: 'team_leader', name: 'Team Leader', desc: 'Team supervisor access' },
       { key: 'employee', name: 'Employee', desc: 'Standard employee access' },
@@ -60,6 +61,12 @@ export async function runSeed() {
       ],
       admin: [
         'employees.view', 'employees.manage',
+        'attendance.view_own', 'attendance.view_team', 'attendance.view_all', 'attendance.correct',
+        'breaks.view_own', 'breaks.view_team', 'breaks.view_all',
+        'hr.reset_password',
+      ],
+      hr: [
+        'employees.view',
         'attendance.view_own', 'attendance.view_team', 'attendance.view_all', 'attendance.correct',
         'breaks.view_own', 'breaks.view_team', 'breaks.view_all',
         'hr.reset_password',
