@@ -1,0 +1,69 @@
+---
+# docker/zulip-prod.override.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCTION Zulip override — adds Traefik routing.
+# This file is stored in git. Copy it to /opt/jdconnect/zulip/compose.override.yaml
+# on the VPS after cloning the Zulip official repo there.
+#
+# HOW IT WORKS:
+#   Traefik terminates SSL (issues Let's Encrypt cert for chat.YOURDOMAIN.com).
+#   Traefik forwards HTTPS traffic to Zulip's internal port 443, trusting
+#   Zulip's own self-signed cert (requires insecureSkipVerify in Traefik config
+#   — see the VPS deployment guide Step 5 for the one-time Traefik config edit).
+#
+# BEFORE DEPLOYING: Replace YOURDOMAIN.com with your actual domain everywhere below.
+# ─────────────────────────────────────────────────────────────────────────────
+
+secrets:
+  zulip__postgres_password:
+    environment: "ZULIP__POSTGRES_PASSWORD"
+  zulip__memcached_password:
+    environment: "ZULIP__MEMCACHED_PASSWORD"
+  zulip__rabbitmq_password:
+    environment: "ZULIP__RABBITMQ_PASSWORD"
+  zulip__redis_password:
+    environment: "ZULIP__REDIS_PASSWORD"
+  zulip__secret_key:
+    environment: "ZULIP__SECRET_KEY"
+  zulip__email_password:
+    environment: "ZULIP__EMAIL_PASSWORD"
+
+services:
+  zulip:
+    # No direct port binding — Traefik routes from root_default network
+    environment:
+      # !! Replace YOURDOMAIN.com with your actual domain
+      SETTING_EXTERNAL_HOST: "chat.YOURDOMAIN.com"
+      SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"
+      SETTING_FAKE_EMAIL_DOMAIN: "localhost"
+      CERTIFICATES: "self-signed"   # Zulip manages its own cert internally (Traefik ignores it)
+    networks:
+      - default       # Zulip's internal network (database, memcached, rabbitmq, redis)
+      - root_default  # Traefik's network — allows Traefik to discover this container
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+
+      # ── HTTPS router (Traefik issues and terminates the real Let's Encrypt cert) ──
+      # !! Replace YOURDOMAIN.com
+      - "traefik.http.routers.zulip.rule=Host(`chat.YOURDOMAIN.com`)"
+      - "traefik.http.routers.zulip.entrypoints=websecure"
+      - "traefik.http.routers.zulip.tls.certresolver=mytlschallenge"
+
+      # Traefik connects to Zulip's internal port 443 via HTTPS.
+      # insecureSkipVerify must be enabled in Traefik's static config
+      # (see VPS guide Step 5). This is safe because the connection is
+      # internal (container-to-container) — not exposed to the internet.
+      - "traefik.http.services.zulip.loadbalancer.server.port=443"
+      - "traefik.http.services.zulip.loadbalancer.server.scheme=https"
+
+      # ── HTTP → HTTPS redirect ──
+      # !! Replace YOURDOMAIN.com
+      - "traefik.http.routers.zulip-http.rule=Host(`chat.YOURDOMAIN.com`)"
+      - "traefik.http.routers.zulip-http.entrypoints=web"
+      - "traefik.http.routers.zulip-http.middlewares=redirect-to-https@docker"
+
+networks:
+  default: {}           # Keep Zulip's existing internal network as-is
+  root_default:
+    external: true      # Traefik's network — must already exist on the VPS

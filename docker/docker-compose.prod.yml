@@ -1,0 +1,111 @@
+# docker/docker-compose.prod.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3: PRODUCTION — Traefik routes all traffic (no direct port exposure).
+# All services are pre-built Docker images stored in GitHub Container Registry.
+# Required external network `root_default` (Traefik's) must already exist.
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  jdconnect_net:
+    driver: bridge
+    name: jdconnect_net
+  root_default:
+    external: true        # Traefik's network — already exists on the VPS
+
+volumes:
+  pgdata:                 # JD Connect Postgres data (NEVER deleted by CI/CD)
+
+services:
+
+  # ── JD Connect Postgres ──────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: jdconnect_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: jdconnect
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - jdconnect_net     # Internal only — Postgres is NEVER exposed to the internet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d jdconnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Backend API ───────────────────────────────────────────────────────────
+  api:
+    image: ghcr.io/${REPO_LOWER}/backend:latest
+    container_name: jdconnect_api
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/jdconnect
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: 15m
+      ZULIP_BASE_URL: ${ZULIP_BASE_URL}
+      ZULIP_BOT_EMAIL: ${ZULIP_BOT_EMAIL}
+      ZULIP_BOT_API_KEY: ${ZULIP_BOT_API_KEY}
+      ZULIP_ATTENDANCE_STREAM: attendance
+      HR_DASHBOARD_URL: ${HR_DASHBOARD_URL}
+      CLOCK_APP_URL: ${CLOCK_APP_URL}
+      ALLOWED_CORS_ORIGINS: ${ALLOWED_CORS_ORIGINS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - jdconnect_net     # Reaches Postgres
+      - root_default      # Traefik discovers and routes to this container
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      # HTTPS router
+      - "traefik.http.routers.jdconnect-api.rule=Host(`api.${DOMAIN}`)"
+      - "traefik.http.routers.jdconnect-api.entrypoints=websecure"
+      - "traefik.http.routers.jdconnect-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.jdconnect-api.loadbalancer.server.port=4000"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.jdconnect-api-http.rule=Host(`api.${DOMAIN}`)"
+      - "traefik.http.routers.jdconnect-api-http.entrypoints=web"
+      - "traefik.http.routers.jdconnect-api-http.middlewares=redirect-to-https@docker"
+
+  # ── Attendance Web App ────────────────────────────────────────────────────
+  attendance-app:
+    image: ghcr.io/${REPO_LOWER}/attendance-app:latest
+    container_name: jdconnect_attendance
+    restart: always
+    networks:
+      - root_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      - "traefik.http.routers.jdconnect-clock.rule=Host(`clock.${DOMAIN}`)"
+      - "traefik.http.routers.jdconnect-clock.entrypoints=websecure"
+      - "traefik.http.routers.jdconnect-clock.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.jdconnect-clock.loadbalancer.server.port=80"
+      - "traefik.http.routers.jdconnect-clock-http.rule=Host(`clock.${DOMAIN}`)"
+      - "traefik.http.routers.jdconnect-clock-http.entrypoints=web"
+      - "traefik.http.routers.jdconnect-clock-http.middlewares=redirect-to-https@docker"
+
+  # ── HR & Admin Dashboard ──────────────────────────────────────────────────
+  hr-dashboard:
+    image: ghcr.io/${REPO_LOWER}/hr-dashboard:latest
+    container_name: jdconnect_hr
+    restart: always
+    networks:
+      - root_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      - "traefik.http.routers.jdconnect-hr.rule=Host(`hr.${DOMAIN}`)"
+      - "traefik.http.routers.jdconnect-hr.entrypoints=websecure"
+      - "traefik.http.routers.jdconnect-hr.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.jdconnect-hr.loadbalancer.server.port=80"
+      - "traefik.http.routers.jdconnect-hr-http.rule=Host(`hr.${DOMAIN}`)"
+      - "traefik.http.routers.jdconnect-hr-http.entrypoints=web"
+      - "traefik.http.routers.jdconnect-hr-http.middlewares=redirect-to-https@docker"

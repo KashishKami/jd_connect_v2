@@ -1,0 +1,91 @@
+# docker/docker-compose.vps-test.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 2: VPS IP TEST — Direct port exposure, NO Traefik, NO SSL.
+# Use this to verify all containers boot and communicate correctly on the VPS
+# before pointing your real domain and enabling HTTPS.
+#
+# Access after deploying:
+#   Backend API:     http://<VPS_IP>:4000
+#   Attendance App:  http://<VPS_IP>:3300
+#   HR Dashboard:    http://<VPS_IP>:3500
+#   Zulip:           https://<VPS_IP>:9991  (its own self-signed cert — accept warning)
+#
+# NOTE: Zulip is managed by its own separate compose stack in /opt/jdconnect/zulip/
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  jdconnect_net:
+    driver: bridge
+    name: jdconnect_net_test
+
+volumes:
+  pgdata_test:
+
+services:
+
+  # ── JD Connect Postgres ──────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: jdconnect_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jdconnect
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata_test:/var/lib/postgresql/data
+    networks:
+      - jdconnect_net
+    # Postgres NOT exposed to host in any phase — internal only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d jdconnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Backend API ───────────────────────────────────────────────────────────
+  api:
+    image: ghcr.io/${REPO_LOWER}/backend:latest
+    container_name: jdconnect_api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/jdconnect
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: 15m
+      ZULIP_BASE_URL: ${ZULIP_BASE_URL}
+      ZULIP_BOT_EMAIL: ${ZULIP_BOT_EMAIL}
+      ZULIP_BOT_API_KEY: ${ZULIP_BOT_API_KEY}
+      ZULIP_ATTENDANCE_STREAM: attendance
+      HR_DASHBOARD_URL: http://${VPS_IP}:3500
+      CLOCK_APP_URL: http://${VPS_IP}:3300
+      ALLOWED_CORS_ORIGINS: http://${VPS_IP}:3300,http://${VPS_IP}:3500,https://${VPS_IP}:9991
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - jdconnect_net
+
+  # ── Attendance Web App ────────────────────────────────────────────────────
+  attendance-app:
+    image: ghcr.io/${REPO_LOWER}/attendance-app:latest
+    container_name: jdconnect_attendance
+    restart: unless-stopped
+    ports:
+      - "3300:80"
+    networks:
+      - jdconnect_net
+
+  # ── HR & Admin Dashboard ──────────────────────────────────────────────────
+  hr-dashboard:
+    image: ghcr.io/${REPO_LOWER}/hr-dashboard:latest
+    container_name: jdconnect_hr
+    restart: unless-stopped
+    ports:
+      - "3500:80"
+    networks:
+      - jdconnect_net
