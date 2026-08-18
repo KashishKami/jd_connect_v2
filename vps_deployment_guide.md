@@ -1,15 +1,19 @@
 # JD Connect v2 — VPS Deployment Guide
 ### A complete, beginner-friendly guide to running JD Connect in production
 
-This guide follows the same three-phase approach used by other JD projects:
+This guide follows the same four-phase approach used by other JD projects:
 
 | Phase | What | When |
 |---|---|---|
-| **Phase 1** | Local development (current) | Already done — you are here |
+| **Phase 0** | Local Docker image test (this is the gate) | **Must pass before touching VPS** |
+| **Phase 1** | Local development | Already done |
 | **Phase 2** | VPS deploy, accessed via raw VPS IP address | Prove the stack works on the server |
 | **Phase 3** | Point your real domain + enable HTTPS via Traefik | Final production-ready state |
 
 > **Key principle:** The VPS never holds your source code. Your code runs inside Docker images stored in GitHub Container Registry (GHCR). The VPS only has a `docker-compose.prod.yml` file and a `.env` file. Everything else is automated.
+
+> [!IMPORTANT]
+> **Do not proceed to Phase 2 until Phase 0 passes completely.** Phase 0 builds the exact same Docker images that will run on the VPS. If images don't build or boot locally, they won't work on the VPS either. Catching this locally saves you hours of VPS debugging.
 
 ---
 
@@ -17,7 +21,8 @@ This guide follows the same three-phase approach used by other JD projects:
 
 1. [Concept: How This Stack Works](#1-concept-how-this-stack-works)
 2. [Prerequisites](#2-prerequisites)
-3. [Phase 2 — VPS Setup & Testing via IP](#phase-2--vps-setup--testing-via-ip)
+3. [Phase 0 — Local Docker Image Test (Required Gate)](#phase-0--local-docker-image-test-required-gate)
+4. [Phase 2 — VPS Setup & Testing via IP](#phase-2--vps-setup--testing-via-ip)
    - [Step 1: Generate SSH Keys](#step-1-generate-ssh-keys-on-windows)
    - [Step 2: Add SSH Key to Hostinger](#step-2-add-ssh-key-to-hostinger)
    - [Step 3: Connect & Install Docker](#step-3-connect-to-vps--install-docker)
@@ -28,15 +33,15 @@ This guide follows the same three-phase approach used by other JD projects:
    - [Step 8: Configure GitHub Secrets & First Deploy](#step-8-configure-github-secrets--trigger-first-deploy)
    - [Step 9: Run First-Time DB Setup](#step-9-run-first-time-database-setup)
    - [Step 10: Verify Everything Works](#step-10-verify-everything-works-via-ip)
-4. [Phase 3 — DNS & HTTPS via Traefik](#phase-3--dns--https-via-traefik)
+5. [Phase 3 — DNS & HTTPS via Traefik](#phase-3--dns--https-via-traefik)
    - [Step 11: Add DNS Records](#step-11-add-dns-records-in-hostinger)
    - [Step 12: Switch to Production Compose](#step-12-switch-to-production-compose)
    - [Step 13: Switch Zulip to Production Override](#step-13-switch-zulip-to-production-override)
    - [Step 14: Update GitHub Secrets & Deploy](#step-14-update-github-secrets--redeploy)
    - [Step 15: Verify HTTPS & SSL Certs](#step-15-verify-https--ssl-certs)
-5. [GitHub Secrets Reference](#5-github-secrets-reference)
-6. [Maintenance & Operations](#6-maintenance--operations)
-7. [FAQ](#7-faq)
+6. [GitHub Secrets Reference](#5-github-secrets-reference)
+7. [Maintenance & Operations](#6-maintenance--operations)
+8. [FAQ](#7-faq)
 
 ---
 

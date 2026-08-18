@@ -2084,6 +2084,32 @@ Deploy a root `docker-compose.traefik.yml` file creating the 3 scoped networks a
 
 > **Goal:** ETL migration scripts to transfer employee profiles, credentials, attendance records, and break history from the old Supabase Postgres to the new plain Postgres database, and migrate historical chat conversations into Zulip via Admin REST API.
 
+#### Detailed Phase 7 Data Migration Plan
+
+The migration will be executed as a script `backend/scripts/migrate-phase7.ts` run after Phase 3 (when VPS is live and Zulip is running).
+The source data is the SQL dump located at `C:\Users\Administrator\Desktop\jdconnect_public_data.sql`.
+
+##### 1. Sequence of Execution
+1. **Load Dump:** Start a temporary Postgres container (`jdc_migration_source` on port 5454) and load `jdconnect_public_data.sql`.
+2. **Reference Data:** Migrate departments, centres, and shifts (map names to new integer IDs, skip if already exists).
+3. **Employees:** Migrate employees to new Postgres `users` (with bcrypt hashed temp passwords) and `employees` tables. Dual-write by calling Zulip Bot API (`POST /api/v1/users`) to create Zulip accounts and retrieve/store `zulip_user_id`. Build an in-memory mapping: `old_employee_uuid -> new_zulip_user_id`.
+4. **Attendance & Breaks:** Migrate historical attendance logs and break logs, resolving `employee_id` via email lookup.
+5. **Channels:** Create matching Zulip streams (`department` -> public streams, `custom` -> private streams). Build mapping: `old_channel_uuid -> zulip_stream_name`.
+6. **Channel Messages:** Post messages chronologically to streams via bot API with sender attribution header:
+   ```
+   > **Sender Name** · 24 Jun 2026, 11:06pm
+
+   Original message text
+   ```
+   Group messages under a single topic called **"Migrated History"** inside each stream.
+7. **Direct Messages:** Post DM history using the bot API to the DM threads between participants with the same attribution format.
+8. **Verify & Cleanup:** Run SQL verification queries to check counts, print temp password list for HR, stop/delete temporary container, and delete the dump file.
+
+##### 2. Field Mapping Summary
+- **Employees:** `email` -> `users.email`, `full_name` -> `users.full_name`, `password` -> `bcrypt("TempPass@{last4charsOfOldUUID}!")`.
+- **Attendance/Breaks:** Map legacy IDs to new integer IDs via email/code lookups.
+- **Messages:** Skip file attachments (migrate text only; new attachments work natively in Zulip). Add 650ms rate limit pause between message posts to Zulip to avoid API throttling.
+
 ---
 
 #### W-701 — ETL Migration Script: Employees & User Credentials
@@ -2168,38 +2194,50 @@ Deploy a root `docker-compose.traefik.yml` file creating the 3 scoped networks a
 
 #### W-703 — Chat History Import via Zulip REST API
 
-**Root cause:** Historical group channel conversations and direct messages from the old platform need to be imported into Zulip streams.
+**Root cause:** Historical group channel conversations and direct messages from the old platform need to be imported into Zulip streams and DMs, but the Zulip API does not allow posting messages directly *as* another user or backdating timestamps.
 
-**Goal:** Write `backend/scripts/migrate-chat.ts` that reads legacy conversation threads, maps user accounts via `employees.zulip_user_id`, and uses Zulip REST API (`POST /api/v1/messages`) to populate Zulip streams and topics.
+**Goal:** Write `backend/scripts/migrate-chat.ts` to:
+1. Map old channels to streams: `department` -> public streams, `custom` -> private streams.
+2. Build an in-memory `oldChannelUUID -> zulipStreamName` map.
+3. Import channel messages to Zulip streams under a single topic **"Migrated History"** with chronological ordering.
+4. Format all messages using a standardized attribution header:
+   ```
+   > **Sender Name** · 24 Jun 2026, 11:06pm
 
-**Approach:** Read legacy chat messages sorted by timestamp. Map sender IDs to Zulip user IDs. Call Zulip REST API endpoints programmatically preserving original sender identities and topics.
+   Original message text
+   ```
+5. Skip file/image attachments (migrate text only; insert comment `*(attachment not migrated)*` if any attachment existed).
+6. Implement a **650ms delay** between message posts to comply with Zulip API rate limits.
+7. Import DM history using the bot API to post direct messages to the target participant pairs (`to: [zulipUserId1, zulipUserId2]`) with the same sender attribution format.
+
+**Approach:** Connect to `jdc_migration_source` (temp container) to read `channels` and `messages`. Resolve original sender names. Build user mapping via `employees.zulip_user_id`. Iterate chronologically. Call Zulip REST API `POST /api/v1/messages`.
 
 ---
 
 - [ ] **RED — Integration (`backend/tests/migration_chat.test.ts`):**
-  - [ ] Test: Execute `migrate-chat.ts` against test Zulip instance → assert target streams exist and messages are visible with correct sender attribution.
+  - [ ] Test: Execute `migrate-chat.ts` against a test Zulip instance.
+  - [ ] Test: Assert streams are created (`is_private` matches channel type).
+  - [ ] Test: Assert stream messages have correct attribution header, are under topic "Migrated History", and attachments are skipped.
+  - [ ] Test: Assert DMs are delivered to the correct Zulip user IDs with bot sender attribution.
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Chat Migration Script:**
-  - [ ] [Script] Create `backend/scripts/migrate-chat.ts`:
-        - Read legacy channels and message history.
-        - Map legacy sender IDs to `employees.zulip_user_id`.
-        - Call Zulip REST API to create missing streams.
-        - Post historical messages in chronological order via Zulip REST API.
-        - Log import statistics (streams created, messages imported, missing user skips).
+  - [ ] [Script] Create `backend/scripts/migrate-chat.ts` implementing the mappings, formatting, DMs, rate-limiting delay, and attachment skips.
   - [ ] Run `npx ts-node backend/scripts/migrate-chat.ts`.
   - [ ] Run integration test — **confirm GREEN.**
 
 - [ ] **RED — Unit (`backend/tests/chat_transformer.unit.test.ts`):**
-  - [ ] Test chat message payload transformer formatting for Zulip REST API.
+  - [ ] Test message payload formatting logic (checks correct header generation, markdown blockquote, and timestamp translation).
   - [ ] **Run — confirm RED.**
 
 - [ ] **GREEN — Chat Transformer Unit Test:**
-  - [ ] Verify message payload structure — **confirm GREEN.**
+  - [ ] Verify transformer outputs correct shapes — **confirm GREEN.**
 
 - [ ] **Verification chain:**
   - [ ] Run migration script -> open Zulip web app.
-  - [ ] Navigate to imported streams -> verify historical messages and topics are intact.
+  - [ ] Navigate to stream `#Backend` -> select topic "Migrated History" -> verify messages from John, Jane, etc. show up in order with correct attribution.
+  - [ ] Open DMs in Zulip -> verify bot has posted DM history between participants with correct attribution.
+  - [ ] Check console output -> verify rate-limiting delay did not cause timeouts and all statistics are logged.
   - [ ] ✅ Done.
 
 ---

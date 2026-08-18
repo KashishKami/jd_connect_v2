@@ -444,4 +444,154 @@ All services would be accessed via custom `.jdconnect.local` hostnames over HTTP
 
 ---
 
-*This document references: `CONTEXT/project_data.md`, `CONTEXT/database_schema.md`, `CONTEXT/decision_log.md`, `CONTEXT/current_state.md`, `CONTEXT/TDD_INSTRUCTION_GUIDE.md`, `DEV_GUIDE.md`, `local_setup.md`*
+## 15. Phase 7 — Data Migration Plan
+
+### What Phase 7 Is
+
+A **one-time migration** that moves all data from the old JD Connect platform (Supabase + custom messaging) into the new JD Connect v2 system (Postgres + Zulip). It runs **after** Phase 3 (VPS fully live with real domain and Zulip running). It is executed as a single TypeScript script: `backend/scripts/migrate-phase7.ts`.
+
+The source data is a `pg_dump` export (`jdconnect_public_data.sql`, ~49MB) from the old system's Supabase Postgres `public` schema. It is already saved at `C:\Users\Administrator\Desktop\jdconnect_public_data.sql`.
+
+---
+
+### What Gets Migrated
+
+| Data | Destination | Notes |
+|---|---|---|
+| Departments, Centres, Shifts | Postgres | Reference data — migrated first |
+| Employees (profile data) | Postgres + Zulip | Dual write — same as normal employee creation |
+| Attendance history | Postgres | Historical session records |
+| Break history | Postgres | Historical break records |
+| Channels | Zulip (streams) | `department` type → public, `custom` type → private |
+| Channel messages (text only) | Zulip (stream messages) | Sender attribution header in each message |
+| Direct messages (text only) | Zulip (DMs) | Sender attribution header in each message |
+| File / image attachments | ❌ Skipped | Old files not migrated — new Zulip stores files natively from day 1 |
+
+**Confirmed from dump inspection:** There are 15+ real channels (Backend: 99+ msgs, Breaks: 99+, PO-&-Invoice: 99+, Logistics: 51, etc.) and multiple DM conversations between employees. This is live production data, not test data.
+
+---
+
+### Migration Sequence (Order Is Critical)
+
+```
+Step 1  Load old dump into a queryable temporary Postgres container
+Step 2  Migrate reference data (departments, centres, shifts)
+Step 3  Migrate employees → Postgres users/employees tables + Zulip accounts
+        ↳ Builds mapping: old UUID → new Zulip user_id
+Step 4  Migrate attendance and break history → Postgres
+Step 5  Migrate channels → Zulip streams
+        ↳ Builds mapping: old channel UUID → Zulip stream name
+Step 6  Migrate channel messages → Zulip stream messages (text only)
+Step 7  Migrate direct messages → Zulip DMs (text only)
+Step 8  Verify counts, zulip_user_id completeness, spot-check streams
+Step 9  Cleanup: remove temp container, delete dump from VPS
+```
+
+Steps 3 and 5 must run before Steps 6 and 7 because the message migration needs both mappings.
+
+---
+
+### Step 1: Load Old Dump Into Temp Postgres
+
+The dump is loaded into a temporary container so the migration script can query it with SQL — far cleaner than parsing the `.sql` file line by line.
+
+```bash
+docker run -d --name jdc_migration_source \
+  -e POSTGRES_DB=jdc_old \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=migrationpassword \
+  -p 5454:5432 \
+  postgres:16-alpine
+
+sleep 5
+
+docker exec -i jdc_migration_source psql -U postgres -d jdc_old \
+  < /path/to/jdconnect_public_data.sql
+```
+
+The migration script connects to two databases simultaneously:
+- `DATABASE_URL_OLD=postgresql://postgres:migrationpassword@localhost:5454/jdc_old`
+- `DATABASE_URL=postgresql://...` (the new JD Connect v2 Postgres)
+
+---
+
+### Step 3: Employee Migration — Field Mapping
+
+For each employee, the script:
+1. Inserts into `users` (hashed temp password) + `employees` (with FK lookups for dept/centre/shift by name)
+2. Calls Zulip Bot API → creates Zulip account → stores returned `zulip_user_id`
+
+| Old field | New table.field | Notes |
+|---|---|---|
+| `email` | `users.email` | Direct |
+| `full_name` | `users.full_name` | Direct |
+| *(none)* | `users.password_hash` | `bcrypt("TempPass@{last4ofOldUUID}!")` |
+| `role` (enum) | `users.role_key` | Direct map — same enum values |
+| `department_id` (UUID) | `employees.department_id` (int) | Looked up by department name |
+| `centre_id` (UUID) | `employees.centre_id` (int) | Looked up by centre name |
+| `shift_id` (UUID) | `employees.shift_id` (int) | Looked up by shift name |
+| `employment_status` | `employees.employment_status` | Direct |
+| `employee_code` | `employees.employee_code` | Direct |
+| `phone` | `employees.phone` | Direct |
+| `joined_at` | `employees.joined_at` | Direct |
+| *(Zulip API response)* | `employees.zulip_user_id` | Integer from `POST /api/v1/users` |
+
+**Password strategy:** Passwords cannot be extracted from Supabase auth. Every employee gets a temporary password: `TempPass@{last4charsOfOldUUID}!`. The script prints a full list of temp passwords. HR distributes them and forces resets on day one.
+
+---
+
+### Steps 5–7: Zulip Channel & Message Migration
+
+**Channels → Zulip Streams:**
+- `department` type channels → public streams
+- `custom` type channels → private streams
+- The script creates the stream and builds a `{ oldChannelUUID → zulipStreamName }` map
+
+**Channel messages → Zulip stream messages:**
+Each message is posted by the bot with an attribution header:
+```
+> **John Doe** · 24 Jun 2026, 11:06pm
+
+Original message text here
+```
+All historical messages go into a single topic called **"Migrated History"** within each stream, keeping them separate from new day-one conversations.
+
+**Direct messages → Zulip DMs:**
+Same attribution format, posted to the DM thread between the two participants via the bot.
+
+**Rate limiting:** Zulip allows ~100 API requests/minute. The script adds a 650ms delay between message posts for large volumes.
+
+---
+
+### Post-Migration Verification
+
+```sql
+-- All employees should have a zulip_user_id
+SELECT COUNT(*) FROM employees WHERE zulip_user_id IS NULL;  -- Must be 0
+
+-- Employee count should match old system
+SELECT COUNT(*) FROM employees;
+```
+
+From the Zulip admin UI: verify stream count, spot-check message history in a few streams.
+
+---
+
+### Cleanup After Verification
+
+```bash
+docker stop jdc_migration_source && docker rm jdc_migration_source
+rm /tmp/jdconnect_public_data.sql   # Remove sensitive dump from VPS
+```
+
+---
+
+### Important Notes
+
+- The script is **idempotent** — safe to re-run. Uses `ON CONFLICT DO NOTHING` / existence checks.
+- The local test run (against local Docker Postgres + local Zulip) validates the script logic. The actual production run happens on the VPS with the real domain.
+- After migration, both the old system's Zulip user IDs (from local test) and new ones (from VPS run) exist. Only the VPS run produces the real `zulip_user_id` values that are kept in production.
+
+---
+
+*This document references: `CONTEXT/project_data.md`, `CONTEXT/database_schema.md`, `CONTEXT/decision_log.md`, `CONTEXT/current_state.md`, `CONTEXT/TDD_INSTRUCTION_GUIDE.md`, `DEV_GUIDE.md`, `local_setup.md`, `vps_deployment_guide.md`, `local-docker-guide.md`*
