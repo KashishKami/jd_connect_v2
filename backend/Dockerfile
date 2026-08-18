@@ -24,9 +24,10 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 WORKDIR /monorepo
 
-COPY --from=deps /monorepo/node_modules ./node_modules
 COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY backend/ ./backend/
+COPY --from=deps /monorepo/node_modules ./node_modules
+COPY --from=deps /monorepo/backend/node_modules ./backend/node_modules
 
 # tsc compiles src/ → backend/dist/
 RUN pnpm --filter @jdconnect/backend run build

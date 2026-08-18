@@ -25,8 +25,9 @@ The Docker test has its own isolated Postgres volume (`pgdata_local_test`). Your
 ## Prerequisites
 
 - **Docker Desktop** must be running on your Windows machine.
-- Your **existing local Zulip** should be running (`https://127.0.0.1:9991`) — the Backend API container will call it.
-- Your root **`.env`** must have `ZULIP_BOT_API_KEY` set (used by the Backend API container).
+- Your **local Zulip stack** must be started and fully initialized first (running at `https://127.0.0.1:9991`), as described in the [local_setup.md](local_setup.md) guide. 
+  - *This means the realm, attendance channel, admin user, and the bot user must be created, and the bot must be granted permissions before building the test images.*
+- Your root **`.env`** must have `ZULIP_BOT_API_KEY` set to the bot's API key.
 
 ---
 
@@ -35,8 +36,11 @@ The Docker test has its own isolated Postgres volume (`pgdata_local_test`). Your
 Run from the **repo root**:
 
 ```powershell
-docker compose -f docker/docker-compose.local-test.yml up -d --build
+docker compose --env-file .env -f docker/docker-compose.local-test.yml up -d --build
 ```
+
+> [!IMPORTANT]
+> You must run the command with the `--env-file .env` flag so that Docker Compose loads and resolves the `ZULIP_BOT_API_KEY` from your root `.env` file instead of resolving it to the fallback placeholder value.
 
 **What this does:**
 - `--build` — compiles the TypeScript Backend API (multi-stage Docker build) and packages the Attendance App + HR Dashboard into nginx containers. This takes **3–8 minutes** on the first run because it downloads base images and compiles code.
@@ -143,7 +147,27 @@ Log in with the same credentials — you should see the employee list load.
 
 ---
 
-## Step 5: Check Container Logs (If Something Doesn't Work)
+## Step 5: Running the Zulip Bot (Optional)
+
+The `docker-compose.local-test.yml` file only launches the databases and web application containers; it **does not** automatically start the Zulip Bot. The bot is a host-only Node.js process and does not run inside a container.
+
+You do **not** need the bot running to test the Attendance Web App or the HR Dashboard UI. However, if you want to test clocking in/out by sending chat messages/commands inside Zulip, you must start the bot manually from your host machine.
+
+Because the dockerized API runs on port **`4001`** (rather than the default local development port `4000`), and the dockerized Attendance App runs on port **`3301`** (rather than `3300`), you must specify both the `BACKEND_URL` and `CLOCK_APP_URL` overrides when launching the bot:
+
+**In PowerShell:**
+```powershell
+$env:BACKEND_URL="http://localhost:4001"; $env:CLOCK_APP_URL="http://localhost:3301"; pnpm --filter @jdconnect/zulip-bot start
+```
+
+**In Git Bash / Linux Shell:**
+```bash
+BACKEND_URL=http://localhost:4001 CLOCK_APP_URL=http://localhost:3301 pnpm --filter @jdconnect/zulip-bot start
+```
+
+---
+
+## Step 6: Check Container Logs (If Something Doesn't Work)
 
 **Backend API logs:**
 ```powershell
@@ -192,7 +216,7 @@ docker compose -f docker/docker-compose.local-test.yml up -d --build
 docker compose -f docker/docker-compose.local-test.yml down
 ```
 
-**Stop AND delete all test data** (full clean slate — you'll need to re-run Step 2):
+**Stop AND delete all test data** (full clean slate for the test database — you'll need to re-run Step 2):
 ```powershell
 docker compose -f docker/docker-compose.local-test.yml down -v
 ```
@@ -201,6 +225,34 @@ docker compose -f docker/docker-compose.local-test.yml down -v
 ```powershell
 docker rmi $(docker images -q --filter "reference=*jdconnect*local*")
 ```
+
+### Complete Wipe & Start From Scratch (Full Reset)
+
+If you need to completely wipe both the JD Connect test environment and the local Zulip environment to start with a fresh slate, run the following:
+
+1. **Stop and wipe JD Connect volumes:**
+   ```powershell
+   docker compose -f docker/docker-compose.local-test.yml down -v
+   ```
+2. **Stop and wipe Zulip volumes:**
+   ```powershell
+   docker compose -f docker/zulip/compose.yaml -f docker/zulip/compose.override.yaml down -v
+   ```
+3. **Start the fresh Zulip stack:**
+   ```powershell
+   docker compose -f docker/zulip/compose.yaml -f docker/zulip/compose.override.yaml up -d
+   ```
+4. **Re-initialize Zulip (Admin, Bot, Channel, Roles) by running the setup script:**
+   Follow the configuration script in the [local_setup.md](local_setup.md) guide. If the bot generates a new API key, make sure to update it in your root `.env` file under `ZULIP_BOT_API_KEY`.
+5. **Start and rebuild JD Connect:**
+   ```powershell
+   docker compose --env-file .env -f docker/docker-compose.local-test.yml up -d --build
+   ```
+6. **Re-run migrations and seeding:**
+   ```powershell
+   docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/migrate.ts
+   docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/seed.ts
+   ```
 
 ---
 
@@ -242,10 +294,12 @@ docker inspect jdconnect_test_postgres --format "{{.State.Health.Status}}"
 ```
 
 ### `ZULIP_BOT_API_KEY not set` or Zulip API calls failing
-The compose file reads `ZULIP_BOT_API_KEY` from your root `.env` via `${ZULIP_BOT_API_KEY}`. Make sure your root `.env` has this value set correctly. After editing `.env`, restart the API container:
-```powershell
-docker compose -f docker/docker-compose.local-test.yml restart api
-```
+The compose file reads `ZULIP_BOT_API_KEY` from your root `.env` via `${ZULIP_BOT_API_KEY}`. 
+1. Make sure you started the stack using the `--env-file .env` flag as described in Step 1.
+2. If you need to restart the API container after updating your key, run:
+   ```powershell
+   docker compose --env-file .env -f docker/docker-compose.local-test.yml up -d --build --no-deps api
+   ```
 
 ### TypeScript compilation error during build
 If the backend build fails, you'll see a TypeScript error in the build output. Fix the error in the source code, then rebuild:

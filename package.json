@@ -2,6 +2,7 @@
   "name": "jd-connect-monorepo",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@9.15.4",
   "description": "JD Connect — BPO Operations Platform built around Rocket.Chat, Postgres, and HR Dashboard",
   "author": "JD Connect Team",
   "license": "UNLICENSED",

@@ -1,0 +1,28 @@
+# Ignore package manager directories
+node_modules
+**/node_modules
+.pnpm-store
+
+# Ignore build outputs
+dist
+**/dist
+build
+**/build
+.next
+out
+
+# Ignore logs
+*.log
+logs
+
+# Ignore OS & IDE settings
+.DS_Store
+.idea
+.vscode
+.git
+
+# Ignore Docker volumes & specific folders
+docker/pgdata
+docker/mongodata
+docker/rc_uploads
+docker/zulip
