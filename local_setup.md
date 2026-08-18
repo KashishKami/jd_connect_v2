@@ -54,8 +54,17 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 Copy the generated string and update `JWT_SECRET` in your `.env` file.
 
 ### Step 3: Start JD Connect Postgres Container & Run Database Setup
+
+> [!IMPORTANT]
+> **Always use `--project-name jdconnect-dev` when starting the dev Postgres container.**
+>
+> **Why?** Both `docker/docker-compose.yml` (dev stack) and `docker/docker-compose.local-test.yml` (Docker image test stack) are in the same `docker/` directory. Docker Compose derives its internal project name from the compose file's parent directory — so both files default to the project name `docker`. When two compose files share the same project name and both define a service called `postgres`, Docker Compose treats them as the **same service** in the **same project**. Running one will stop and replace the other's postgres container.
+>
+> Using `--project-name` gives each stack a unique identity so Docker Compose keeps them completely isolated and can never confuse one for the other.
+
 ```bash
 # Start JD Connect Postgres container (port 5432)
+# IMPORTANT: --project-name jdconnect-dev is required — see note above
 pnpm docker:dev:up
 
 # Run SQL database migrations and seed core domain constants

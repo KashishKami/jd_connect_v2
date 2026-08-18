@@ -22,9 +22,34 @@ The Docker test has its own isolated Postgres volume (`pgdata_local_test`). Your
 
 ---
 
+## ⚠️ Critical: Always Use `--project-name` Flags
+
+> [!CAUTION]
+> **Never run either Docker Compose stack without its `--project-name` flag.**
+>
+> **Why this matters:** Both `docker/docker-compose.yml` (dev stack) and `docker/docker-compose.local-test.yml` (this test stack) live in the same `docker/` directory. Docker Compose derives its internal **project name** from the compose file's parent directory — so without an explicit flag, both files default to the project name `docker`.
+>
+> When two compose files share the same project name AND both define a service called `postgres`, Docker Compose treats them as the **same service in the same project**. Running the test stack will then **stop and replace your dev Postgres container** — taking down your dev database mid-session.
+>
+> The fix is permanent and simple: always use `--project-name` to give each stack a unique identity:
+>
+> | Stack | Project Name | Postgres Container | Port |
+> |---|---|---|---|
+> | Dev stack | `jdconnect-dev` | `jdconnect_postgres` | `5432` |
+> | Docker test stack | `jdconnect-test` | `jdconnect_test_postgres` | `5433` |
+>
+> With different project names, Docker Compose treats them as completely separate applications and can never confuse one for the other.
+
+---
+
 ## Prerequisites
 
 - **Docker Desktop** must be running on your Windows machine.
+- Your **dev Postgres container must be running first** — the Docker test API connects to it via `host.docker.internal:5432`. Start it with:
+  ```powershell
+  pnpm docker:dev:up
+  ```
+  (`pnpm docker:dev:up` already includes `--project-name jdconnect-dev` — see `package.json` scripts.)
 - Your **local Zulip stack** must be started and fully initialized first (running at `https://127.0.0.1:9991`), as described in the [local_setup.md](local_setup.md) guide. 
   - *This means the realm, attendance channel, admin user, and the bot user must be created, and the bot must be granted permissions before building the test images.*
 - Your root **`.env`** must have `ZULIP_BOT_API_KEY` set to the bot's API key.
@@ -36,11 +61,15 @@ The Docker test has its own isolated Postgres volume (`pgdata_local_test`). Your
 Run from the **repo root**:
 
 ```powershell
-docker compose --env-file .env -f docker/docker-compose.local-test.yml up -d --build
+# REQUIRED: --project-name jdconnect-test prevents this stack from conflicting with
+# the dev Postgres stack (jdconnect-dev). See the ⚠️ section above for full explanation.
+docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d --build
 ```
 
 > [!IMPORTANT]
-> You must run the command with the `--env-file .env` flag so that Docker Compose loads and resolves the `ZULIP_BOT_API_KEY` from your root `.env` file instead of resolving it to the fallback placeholder value.
+> Both `--project-name jdconnect-test` AND `--env-file .env` are required:
+> - `--project-name jdconnect-test` — isolates this stack from the dev stack so they never conflict
+> - `--env-file .env` — injects your `ZULIP_BOT_API_KEY` instead of the fallback placeholder
 
 **What this does:**
 - `--build` — compiles the TypeScript Backend API (multi-stage Docker build) and packages the Attendance App + HR Dashboard into nginx containers. This takes **3–8 minutes** on the first run because it downloads base images and compiles code.
@@ -49,41 +78,18 @@ docker compose --env-file .env -f docker/docker-compose.local-test.yml up -d --b
 
 Watch the build logs as it runs:
 ```powershell
-docker compose -f docker/docker-compose.local-test.yml logs -f
+docker compose --project-name jdconnect-test -f docker/docker-compose.local-test.yml logs -f
 ```
 Press `Ctrl+C` to stop following logs (containers keep running).
 
 ---
 
-## Step 2: First-Time Database Setup
+## Step 2: No Database Setup Needed
 
-This is only done **once** when you first boot the test containers. The test Postgres starts empty — you need to create all tables and seed the initial data.
-
-**Run database migrations** (creates all tables):
-```powershell
-docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/migrate.ts
-```
-
-Expected output:
-```
-Applying migration: 001_create_users.sql...
-Successfully applied: 001_create_users.sql
-Applying migration: 002_create_roles_permissions.sql...
-...
-All migrations up to date.
-```
-
-**Run seed data** (creates roles, permissions, departments, shifts, break types, and the initial `admin@company.com` super-admin account):
-```powershell
-docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/seed.ts
-```
-
-Expected output:
-```
-Seeding completed successfully.
-```
-
-> **Important:** Only run the seed script once. Running it again is safe (it uses `ON CONFLICT DO NOTHING`) but unnecessary.
+> [!NOTE]
+> The Docker test API connects to your **dev Postgres** at `host.docker.internal:5432` — the same database your dev backend uses. All your migrations and real employee data are already there. **You do not need to run migrations or seed inside the test containers.**
+>
+> The `jdconnect_test_postgres` container (port 5433) that starts alongside the stack is not used by the API — it exists as a placeholder but the API bypasses it and goes straight to your dev postgres.
 
 ---
 
@@ -91,7 +97,7 @@ Seeding completed successfully.
 
 ```powershell
 # Check container status — all four should show "Up" or "healthy"
-docker compose -f docker/docker-compose.local-test.yml ps
+docker compose --project-name jdconnect-test -f docker/docker-compose.local-test.yml ps
 ```
 
 Expected output:
@@ -197,12 +203,12 @@ Once you have run Step 2 once, subsequent starts are much faster (no rebuild unl
 
 **Start without rebuilding** (fast — just starts existing containers):
 ```powershell
-docker compose -f docker/docker-compose.local-test.yml up -d
+docker compose --project-name jdconnect-test -f docker/docker-compose.local-test.yml up -d
 ```
 
 **Start AND rebuild** (when you've made code changes and want to test the new build):
 ```powershell
-docker compose -f docker/docker-compose.local-test.yml up -d --build
+docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d --build
 ```
 
 > After a rebuild, migrations run automatically in the CI/CD pipeline, but locally you do **not** need to re-run them — the data volume persists and the migration script is idempotent (checks `schema_migrations` table and skips already-applied files).
@@ -211,28 +217,28 @@ docker compose -f docker/docker-compose.local-test.yml up -d --build
 
 ## Stopping & Cleaning Up
 
-**Stop all containers** (data volume is preserved — you can start again without re-seeding):
+**Stop all containers** (data volumes are preserved — you can start again instantly):
 ```powershell
-docker compose -f docker/docker-compose.local-test.yml down
+docker compose --project-name jdconnect-test -f docker/docker-compose.local-test.yml down
 ```
 
-**Stop AND delete all test data** (full clean slate for the test database — you'll need to re-run Step 2):
+**Stop AND delete the test Postgres volume** (the `pgdata_local_test` volume — dev postgres data is unaffected):
 ```powershell
-docker compose -f docker/docker-compose.local-test.yml down -v
+docker compose --project-name jdconnect-test -f docker/docker-compose.local-test.yml down -v
 ```
 
 **Remove just the built images** (forces a full rebuild on next `up --build`):
 ```powershell
-docker rmi $(docker images -q --filter "reference=*jdconnect*local*")
+docker rmi $(docker images -q --filter "reference=*jdconnect*")
 ```
 
 ### Complete Wipe & Start From Scratch (Full Reset)
 
-If you need to completely wipe both the JD Connect test environment and the local Zulip environment to start with a fresh slate, run the following:
+If you need to completely wipe the test environment and start fresh:
 
-1. **Stop and wipe JD Connect volumes:**
+1. **Stop and wipe JD Connect test stack:**
    ```powershell
-   docker compose -f docker/docker-compose.local-test.yml down -v
+   docker compose --project-name jdconnect-test -f docker/docker-compose.local-test.yml down -v
    ```
 2. **Stop and wipe Zulip volumes:**
    ```powershell
@@ -242,16 +248,11 @@ If you need to completely wipe both the JD Connect test environment and the loca
    ```powershell
    docker compose -f docker/zulip/compose.yaml -f docker/zulip/compose.override.yaml up -d
    ```
-4. **Re-initialize Zulip (Admin, Bot, Channel, Roles) by running the setup script:**
-   Follow the configuration script in the [local_setup.md](local_setup.md) guide. If the bot generates a new API key, make sure to update it in your root `.env` file under `ZULIP_BOT_API_KEY`.
-5. **Start and rebuild JD Connect:**
+4. **Re-initialize Zulip (Admin, Bot, Channel, Roles):**
+   Follow the configuration script in the [local_setup.md](local_setup.md) guide. If the bot generates a new API key, update it in your root `.env` file under `ZULIP_BOT_API_KEY`.
+5. **Rebuild and start JD Connect test stack:**
    ```powershell
-   docker compose --env-file .env -f docker/docker-compose.local-test.yml up -d --build
-   ```
-6. **Re-run migrations and seeding:**
-   ```powershell
-   docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/migrate.ts
-   docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/seed.ts
+   docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d --build
    ```
 
 ---
@@ -294,19 +295,26 @@ docker inspect jdconnect_test_postgres --format "{{.State.Health.Status}}"
 ```
 
 ### `ZULIP_BOT_API_KEY not set` or Zulip API calls failing
-The compose file reads `ZULIP_BOT_API_KEY` from your root `.env` via `${ZULIP_BOT_API_KEY}`. 
+The compose file reads `ZULIP_BOT_API_KEY` from your root `.env` via `${ZULIP_BOT_API_KEY}`.
 1. Make sure you started the stack using the `--env-file .env` flag as described in Step 1.
 2. If you need to restart the API container after updating your key, run:
    ```powershell
-   docker compose --env-file .env -f docker/docker-compose.local-test.yml up -d --build --no-deps api
+   docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d --build --no-deps api
    ```
 
 ### TypeScript compilation error during build
 If the backend build fails, you'll see a TypeScript error in the build output. Fix the error in the source code, then rebuild:
 ```powershell
-docker compose -f docker/docker-compose.local-test.yml up -d --build --no-deps api
+docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d --build --no-deps api
 ```
 `--no-deps` rebuilds only the API image without restarting Postgres.
+
+### Dev Postgres disappeared / 500 errors on login
+The API container connects to your dev Postgres at `host.docker.internal:5432`. If `jdconnect_postgres` is not running, every API call fails with a 500. Fix:
+```powershell
+pnpm docker:dev:up
+```
+Then retry login — it will work immediately without any rebuild.
 
 ### Port already in use
 If another process is using 4001, 3301, or 3502, find and stop it:
