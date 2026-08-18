@@ -1,0 +1,134 @@
+# docker/docker-compose.local-test.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# LOCAL DOCKER IMAGE TEST — No HTTPS, no Traefik, no external dependencies.
+#
+# Purpose: Verify that all three Docker images build and run correctly
+# BEFORE pushing to production. This is the local equivalent of Phase 2.
+#
+# IMPORTANT:
+#   - This uses DIFFERENT ports so it runs alongside your dev servers (no conflict).
+#   - Zulip SSO will NOT work (requires HTTPS + matching domain). That's expected.
+#   - JWT login, clock-in, clock-out, HR dashboard — everything else works fine.
+#   - Your existing local Zulip (127.0.0.1:9991) is still used by the Backend API.
+#
+# HOW TO RUN (from the repo root):
+#   docker compose -f docker/docker-compose.local-test.yml up -d --build
+#
+# HOW TO STOP AND CLEAN UP:
+#   docker compose -f docker/docker-compose.local-test.yml down
+#
+# ACCESS (while running):
+#   Backend API health:  http://localhost:4001/health
+#   Attendance App:      http://localhost:3301
+#   HR Dashboard:        http://localhost:3502
+#
+# FIRST TIME SETUP (after first `up --build`):
+#   docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/migrate.ts
+#   docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/seed.ts
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  jdconnect_local_test:
+    driver: bridge
+
+volumes:
+  pgdata_local_test:
+
+services:
+
+  # ── JD Connect Postgres (test instance — isolated from dev Postgres) ──────
+  postgres:
+    image: postgres:16-alpine
+    container_name: jdconnect_test_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jdconnect
+      POSTGRES_USER: jduser
+      POSTGRES_PASSWORD: jdpassword
+    volumes:
+      - pgdata_local_test:/var/lib/postgresql/data
+    networks:
+      - jdconnect_local_test
+    # Port 5433 to avoid conflict with dev Postgres on 5432
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jduser -d jdconnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Backend API — built from source, NOT pulled from GHCR ────────────────
+  api:
+    build:
+      context: ..             # Monorepo root (Dockerfile needs pnpm workspace context)
+      dockerfile: backend/Dockerfile
+    container_name: jdconnect_test_api
+    restart: unless-stopped
+    ports:
+      - "4001:4000"           # 4001 avoids conflict with dev backend on 4000
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://jduser:jdpassword@postgres:5432/jdconnect
+      JWT_SECRET: local-docker-test-jwt-secret-32-chars!!
+      JWT_EXPIRATION: 15m
+
+      # host.docker.internal resolves to the Windows host machine from inside Docker.
+      # This lets the containerised backend reach your locally running Zulip (127.0.0.1:9991).
+      ZULIP_BASE_URL: https://host.docker.internal:9991
+
+      ZULIP_BOT_EMAIL: jdconnect-bot@company.com
+      # Reads the bot API key from the root .env file on the host.
+      # Copy-paste your ZULIP_BOT_API_KEY value here for local docker testing:
+      ZULIP_BOT_API_KEY: ${ZULIP_BOT_API_KEY:-replace-with-your-bot-api-key}
+
+      ZULIP_ATTENDANCE_STREAM: attendance
+
+      # URLs as the BROWSER will see them (host machine ports)
+      HR_DASHBOARD_URL: http://localhost:3502
+      CLOCK_APP_URL: http://localhost:3301
+      ALLOWED_CORS_ORIGINS: http://localhost:3301,http://localhost:3502,https://127.0.0.1:9991
+
+      # Required: accept Zulip's self-signed cert for internal API calls.
+      # (Safe here — this is dev-only. Never set this in production.)
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - jdconnect_local_test
+    extra_hosts:
+      # Makes host.docker.internal resolve correctly on all platforms including Linux
+      - "host.docker.internal:host-gateway"
+
+  # ── Attendance Web App — built from source ────────────────────────────────
+  attendance-app:
+    build:
+      context: ../attendance-app
+      dockerfile: Dockerfile
+      args:
+        # The browser talks to the backend via the HOST port (4001), not the container port
+        BACKEND_URL: http://localhost:4001
+    container_name: jdconnect_test_attendance
+    restart: unless-stopped
+    ports:
+      - "3301:80"             # 3301 avoids conflict with dev server on 3300
+    networks:
+      - jdconnect_local_test
+
+  # ── HR & Admin Dashboard — built from source ─────────────────────────────
+  hr-dashboard:
+    build:
+      context: ../hr-dashboard
+      dockerfile: Dockerfile
+      args:
+        BACKEND_URL: http://localhost:4001
+    container_name: jdconnect_test_hr
+    restart: unless-stopped
+    ports:
+      - "3502:80"             # 3502 avoids conflict with dev server on 3500
+    networks:
+      - jdconnect_local_test
