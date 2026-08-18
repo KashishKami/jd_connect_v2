@@ -49,7 +49,58 @@ export async function runSeed() {
       );
     }
 
-    // 3. Departments
+    // 3. Role ↔ Permission Assignments (from CONTEXT/project_data.md Section 5)
+    // super_admin bypasses all checks in middleware, but seed anyway for completeness.
+    const rolePermissionMatrix: Record<string, string[]> = {
+      super_admin: [
+        'employees.view', 'employees.manage',
+        'attendance.view_own', 'attendance.view_team', 'attendance.view_all', 'attendance.correct',
+        'breaks.view_own', 'breaks.view_team', 'breaks.view_all',
+        'hr.reset_password', 'hr.manage_roles',
+      ],
+      admin: [
+        'employees.view', 'employees.manage',
+        'attendance.view_own', 'attendance.view_team', 'attendance.view_all', 'attendance.correct',
+        'breaks.view_own', 'breaks.view_team', 'breaks.view_all',
+        'hr.reset_password',
+      ],
+      manager: [
+        'employees.view',
+        'attendance.view_own', 'attendance.view_team', 'attendance.correct',
+        'breaks.view_own', 'breaks.view_team',
+      ],
+      team_leader: [
+        'employees.view',
+        'attendance.view_own', 'attendance.view_team',
+        'breaks.view_own', 'breaks.view_team',
+      ],
+      employee: [
+        'employees.view',
+        'attendance.view_own',
+        'breaks.view_own',
+      ],
+    };
+
+    for (const [roleKey, permKeys] of Object.entries(rolePermissionMatrix)) {
+      const roleRes = await client.query(`SELECT id FROM roles WHERE key = $1`, [roleKey]);
+      const roleId = roleRes.rows[0]?.id;
+      if (!roleId) continue;
+
+      for (const permKey of permKeys) {
+        const permRes = await client.query(`SELECT id FROM permissions WHERE key = $1`, [permKey]);
+        const permId = permRes.rows[0]?.id;
+        if (!permId) continue;
+
+        await client.query(
+          `INSERT INTO role_permissions (role_id, permission_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [roleId, permId]
+        );
+      }
+    }
+
+    // 4. Departments
     const departments = ['Sales', 'Backend', 'HR', 'Training', 'Management', 'Marketing', 'Logistics'];
     for (const d of departments) {
       await client.query(

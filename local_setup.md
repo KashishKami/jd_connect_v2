@@ -123,8 +123,14 @@ docker compose up zulip --wait
 
 ### Step 6: Create Admin, Bot Accounts & Attendance Channel
 
+> [!NOTE]
+> **Windows (Git Bash) Users:** Before running `./manage.py` commands in Git Bash, run `export MSYS_NO_PATHCONV=1` in your terminal session to prevent Git Bash from automatically modifying container Linux paths to Windows file system paths.
+
 From inside `docker/zulip/`:
 ```bash
+# Required for Git Bash on Windows:
+export MSYS_NO_PATHCONV=1
+
 ./manage.py shell -c "
 from zerver.models import Realm, UserProfile
 from zerver.actions.create_user import do_create_user
