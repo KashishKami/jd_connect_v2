@@ -27,15 +27,15 @@ This guide follows the same four-phase approach used by other JD projects:
    - [Step 2: Add SSH Key to Hostinger](#step-2-add-ssh-key-to-hostinger)
    - [Step 3: Connect & Install Docker](#step-3-connect-to-vps--install-docker)
    - [Step 4: Create Project Directory](#step-4-create-the-project-directory)
-   - [Step 5: One-time Traefik Config](#step-5-one-time-traefik-config-enable-insecureskipverify)
-   - [Step 6: Create the Internal Network](#step-6-create-the-internal-network)
-   - [Step 7: Set Up Zulip on VPS](#step-7-set-up-zulip-on-the-vps)
-   - [Step 8: Configure GitHub Secrets & First Deploy](#step-8-configure-github-secrets--trigger-first-deploy)
-   - [Step 9: Run First-Time DB Setup](#step-9-run-first-time-database-setup)
-   - [Step 10: Verify Everything Works](#step-10-verify-everything-works-via-ip)
+   - [Step 5: Create the Internal Network](#step-5-create-the-internal-network)
+   - [Step 6: Set Up Zulip on VPS](#step-6-set-up-zulip-on-the-vps)
+   - [Step 7: Configure GitHub Secrets & First Deploy](#step-7-configure-github-secrets--trigger-first-deploy)
+   - [Step 8: Run First-Time DB Setup](#step-8-run-first-time-database-setup)
+   - [Step 9: Verify Everything Works](#step-9-verify-everything-works-via-ip)
 5. [Phase 3 — DNS & HTTPS via Traefik](#phase-3--dns--https-via-traefik)
-   - [Step 11: Add DNS Records](#step-11-add-dns-records-in-hostinger)
-   - [Step 12: Switch to Production Compose](#step-12-switch-to-production-compose)
+   - [Step 10: Add DNS Records](#step-10-add-dns-records-in-hostinger)
+   - [Step 11: Switch to Production Compose](#step-11-switch-to-production-compose)
+   - [Step 12: Add Scoped `insecureSkipVerify` for Zulip](#step-12-add-scoped-insecureskipverify-for-zulip)
    - [Step 13: Switch Zulip to Production Override](#step-13-switch-zulip-to-production-override)
    - [Step 14: Update GitHub Secrets & Deploy](#step-14-update-github-secrets--redeploy)
    - [Step 15: Verify HTTPS & SSL Certs](#step-15-verify-https--ssl-certs)
@@ -188,47 +188,17 @@ That's it. GitHub Actions will populate this directory on your first push.
 
 ---
 
-### Step 5: One-Time Traefik Config: Enable `insecureSkipVerify`
+### Step 5: Create the Internal Network
 
-> **Why this is needed:** Zulip runs its own internal nginx that only serves HTTPS on port 443. When Traefik routes traffic to Zulip, it connects to Zulip's port 443 — but Zulip uses a self-signed certificate internally. Traefik refuses to trust self-signed certs by default. `insecureSkipVerify` tells Traefik to accept the backend connection without checking the cert. This is safe because the connection is internal (container-to-container inside Docker), not exposed to the internet.
+The JD Connect v2 containers need an internal network to communicate (API ↔ Postgres). This is intentionally named `jdconnect_v2_net` (not `jdconnect_net`) to be completely separate from the old v1 stack's network, which may still exist on the VPS.
 
-Your VPS already runs Traefik (confirmed: network `root_default`, certresolver `mytlschallenge`).
-
-Find the Traefik static config file:
-```bash
-# Find where Traefik's config is
-docker inspect $(docker ps --filter "name=traefik" --format "{{.Names}}" | head -1) \
-  --format '{{range .Mounts}}{{.Source}} → {{.Destination}}{{"\n"}}{{end}}'
-```
-
-Look for a mount to `/etc/traefik/` or `/traefik.yml`. Edit the file:
-```bash
-# Example — adjust path to what you found above
-nano /path/to/traefik.yml
-```
-
-Add or update the `serversTransport` section:
-```yaml
-serversTransport:
-  insecureSkipVerify: true
-```
-
-Restart Traefik to apply:
-```bash
-docker restart $(docker ps --filter "name=traefik" --format "{{.Names}}" | head -1)
-```
-
-> **Note:** `insecureSkipVerify` is a global setting. It only affects Traefik's internal backend connections (container-to-container). External HTTPS (browser ↔ Traefik) is never affected and always uses valid Let's Encrypt certs.
-
----
-
-### Step 6: Create the Internal Network
-
-The JD Connect containers need an internal network to communicate (API ↔ Postgres). Run once:
+Run once:
 
 ```bash
-docker network create jdconnect_net
+docker network create jdconnect_v2_net
 ```
+
+> **Note:** If the old v1 `jdconnect_net` already exists on the VPS, that is fine — ignore it. v2 never touches it.
 
 Verify `root_default` (Traefik's network) already exists:
 ```bash
@@ -238,7 +208,7 @@ docker network ls | grep root_default
 
 ---
 
-### Step 7: Set Up Zulip on the VPS
+### Step 6: Set Up Zulip on the VPS
 
 Zulip is set up manually once. It is never managed by the CI/CD pipeline.
 
@@ -251,25 +221,49 @@ cd /opt/jdconnect_v2/zulip
 git clone https://github.com/zulip/docker-zulip.git .
 ```
 
-Create the Zulip environment file:
+**Which fields need a password:**
+
+| Variable | Generate? | Notes |
+|---|---|---|
+| `ZULIP__POSTGRES_PASSWORD` | ✅ Yes | Zulip's internal database |
+| `ZULIP__MEMCACHED_PASSWORD` | ✅ Yes | Memcached SASL auth |
+| `ZULIP__RABBITMQ_PASSWORD` | ✅ Yes | RabbitMQ message queue |
+| `ZULIP__REDIS_PASSWORD` | ✅ Yes | Redis auth |
+| `ZULIP__SECRET_KEY` | ✅ Yes | Django secret key (min 32 chars) |
+| `ZULIP__EMAIL_PASSWORD` | ❌ **Leave blank** | JD Connect has no SMTP — email disabled. HR resets passwords via API. |
+
+Generate all 5 values at once:
+```bash
+for i in 1 2 3 4 5; do openssl rand -hex 20; done
+```
+
+Copy the 5 output lines. Then create the `.env` file replacing the placeholders:
 ```bash
 cat > /opt/jdconnect_v2/zulip/.env << 'EOF'
-ZULIP__POSTGRES_PASSWORD=<generate-a-strong-password>
-ZULIP__MEMCACHED_PASSWORD=<generate-a-strong-password>
-ZULIP__RABBITMQ_PASSWORD=<generate-a-strong-password>
-ZULIP__REDIS_PASSWORD=<generate-a-strong-password>
-ZULIP__SECRET_KEY=<generate-min-32-char-random-string>
+ZULIP__POSTGRES_PASSWORD=<line-1>
+ZULIP__MEMCACHED_PASSWORD=<line-2>
+ZULIP__RABBITMQ_PASSWORD=<line-3>
+ZULIP__REDIS_PASSWORD=<line-4>
+ZULIP__SECRET_KEY=<line-5>
 ZULIP__EMAIL_PASSWORD=
 EOF
 ```
 
-Generate random passwords (run for each line above):
-```bash
-openssl rand -hex 20
-# Use a different value for each password field
-```
+> [!CAUTION]
+> Save these 5 values in a password manager. If you ever lose the `.env` file and the Zulip Docker volume is intact, you will need these exact values to restart Zulip.
 
 **For Phase 2 (VPS IP access):** Create the override with the VPS IP:
+
+> [!IMPORTANT]
+> **Two values to replace in this block before running:**
+>
+> | Placeholder | Replace with | Example |
+> |---|---|---|
+> | `<VPS_IP>` | Your actual VPS IP address | `82.29.165.21` |
+> | `admin@company.com` | Your real Zulip admin email | `admin@jdfusion.in` |
+>
+> Everything else (`localhost`, `self-signed`, `9991`, all `ZULIP__*` keys) — **leave exactly as written**.
+
 ```bash
 cat > /opt/jdconnect_v2/zulip/compose.override.yaml << EOF
 ---
@@ -292,14 +286,12 @@ services:
     ports:
       - "9991:443"
     environment:
-      SETTING_EXTERNAL_HOST: "<VPS_IP>:9991"
-      SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"
-      SETTING_FAKE_EMAIL_DOMAIN: "localhost"
-      CERTIFICATES: "self-signed"
+      SETTING_EXTERNAL_HOST: "<VPS_IP>:9991"             # ← REPLACE: your VPS IP
+      SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"   # ← REPLACE: your real admin email
+      SETTING_FAKE_EMAIL_DOMAIN: "localhost"             # ← leave as-is
+      CERTIFICATES: "self-signed"                        # ← leave as-is (Phase 2 only)
 EOF
 ```
-
-> Replace `<VPS_IP>` with your actual VPS IP address.
 
 **Initialize and start Zulip** (one-time — takes ~5 minutes):
 ```bash
@@ -307,8 +299,46 @@ cd /opt/jdconnect_v2/zulip
 
 # Pull all Zulip images
 docker compose pull
+```
 
+**One-time fix: Remove default ports from the base `compose.yaml` (do this right after pull, before starting)**
+
+> **Why this is needed:** The official `compose.yaml` base file declares three ports for the Zulip service: `25` (smtp), `80` (http), and `443` (https). Docker Compose **merges** port arrays when combining a base file with an override — it does not replace them. This means your override's `9991:443` gets added ON TOP of the base's `80:80` and `443:443`. Since Traefik already owns ports 80 and 443 on this VPS, Docker fails to start the container.
+>
+> **Why removing them is safe:**
+>
+> | Port | Why safe to remove |
+> |---|---|
+> | **25 (smtp)** | Email is disabled in JD Connect. `ZULIP__EMAIL_PASSWORD` is blank. Nothing uses this. |
+> | **80 (http)** | Phase 2: you access Zulip on `9991` directly. Phase 3: Traefik handles HTTP→HTTPS, not Zulip. |
+> | **443 (https)** | Phase 2: remapped to `9991:443` by your override. Phase 3: Traefik reaches Zulip's port 443 through the **internal Docker network** — no host-level port binding needed. |
+>
+> `ports:` only controls external (host-level) access. Zulip **still listens on port 443 inside the container** — that internal port is what Traefik connects to in Phase 3. This is not a destructive change.
+
+```bash
+# Remove the three default port bindings from the base compose.yaml
+sed -i '71,83d' /opt/jdconnect_v2/zulip/compose.yaml
+
+# Verify: line after 'build: context: .' should now be 'secrets:' (no ports in between)
+sed -n '69,75p' /opt/jdconnect_v2/zulip/compose.yaml
+```
+
+Expected output (no `ports:` block):
+```yaml
+    build:
+      context: .
+    secrets:
+      - zulip__postgres_password
+      - zulip__memcached_password
+```
+
+> [!IMPORTANT]
+> If you ever run `git pull` inside `/opt/jdconnect_v2/zulip/` to update the Zulip Docker stack, `compose.yaml` will be restored with the ports. Re-run the `sed` command above before restarting Zulip.
+
+```bash
 # Run one-time initialization (MUST complete with "=== End Initial Configuration Phase ===")
+# ⚠ DO NOT re-run this if it already completed successfully — it writes to the Zulip volume.
+# Re-running on an already-initialized volume can corrupt data.
 docker compose run --rm zulip app:init
 
 # Start Zulip stack and wait until healthy
@@ -316,6 +346,20 @@ docker compose up zulip --wait
 ```
 
 **Create admin, bot accounts and attendance channel:**
+
+> [!IMPORTANT]
+> **Values to customise in this script before running:**
+>
+> | Value | Replace with | Appears where |
+> |---|---|---|
+> | `admin@company.com` | Your real admin email (same as `SETTING_ZULIP_ADMINISTRATOR` above) | **2 places in admin block:** (1) `delivery_email=` in the filter line, (2) `email=` in `do_create_user` — **both must be the same value** |
+> | `AdminPassword123!` | A strong admin password — **write this down**, you'll use it to log into Zulip | `password=` in `do_create_user` |
+> | `jdconnect-bot@company.com` | Can stay as-is — internal bot, never receives real email | Filter line + `email=` in bot block + both `change_user_role` commands |
+>
+> **`delivery_email` and `email=` are the same field** — `delivery_email` is what Zulip calls it internally, `email=` is the parameter name in `do_create_user`. They must always match.
+>
+> **What to leave unchanged:** `string_id=''`, `name='JD Connect'`, `'attendance'`, `full_name='JD Connect Admin'`, `full_name='JD Connect Bot'`, all role constants, and the `change_user_role` commands structure.
+
 ```bash
 cd /opt/jdconnect_v2/zulip
 
@@ -331,13 +375,14 @@ if not realm:
 ensure_stream(realm, 'attendance', acting_user=None)
 print('ATTENDANCE_CHANNEL_READY')
 
-admin = UserProfile.objects.filter(delivery_email='admin@company.com', realm=realm).first()
+# ── Admin account ── REPLACE email in BOTH lines below ──────────────────────
+admin = UserProfile.objects.filter(delivery_email='admin@company.com', realm=realm).first()  # ← REPLACE (same email as below)
 if not admin:
     admin = do_create_user(
-        email='admin@company.com',
-        password='AdminPassword123!',
+        email='admin@company.com',        # ← REPLACE with your real admin email
+        password='AdminPassword123!',      # ← REPLACE with a strong password
         realm=realm,
-        full_name='JD Connect Admin',
+        full_name='JD Connect Admin',      # ← leave as-is
         role=UserProfile.ROLE_REALM_ADMINISTRATOR,
         acting_user=None,
     )
@@ -345,13 +390,14 @@ if not admin:
 else:
     print('ADMIN_EXISTS')
 
+# ── Bot account ── email can stay as-is (internal bot, no real email needed) ─
 bot = UserProfile.objects.filter(delivery_email='jdconnect-bot@company.com', realm=realm).first()
 if not bot:
     bot = do_create_user(
-        email='jdconnect-bot@company.com',
+        email='jdconnect-bot@company.com', # ← leave as-is (or change to match your domain)
         password=None,
         realm=realm,
-        full_name='JD Connect Bot',
+        full_name='JD Connect Bot',         # ← leave as-is
         bot_type=UserProfile.DEFAULT_BOT,
         role=UserProfile.ROLE_REALM_ADMINISTRATOR,
         acting_user=None,
@@ -363,6 +409,7 @@ else:
 print('BOT_API_KEY:', bot.api_key)
 "
 
+# ── Grant bot admin + user-creation rights (leave these commands unchanged) ──
 ./manage.py change_user_role -r '' jdconnect-bot@company.com admin || true
 ./manage.py change_user_role -r '' jdconnect-bot@company.com can_create_users
 ```
@@ -378,7 +425,7 @@ curl -k https://<VPS_IP>:9991/api/v1/server_settings
 
 ---
 
-### Step 8: Configure GitHub Secrets & Trigger First Deploy
+### Step 7: Configure GitHub Secrets & Trigger First Deploy
 
 Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
 
@@ -402,7 +449,7 @@ Watch the pipeline run in **GitHub → Actions** tab.
 
 ---
 
-### Step 9: Run First-Time Database Setup
+### Step 8: Run First-Time Database Setup
 
 After the first deploy completes, run migrations and seed data. SSH into your VPS:
 
@@ -417,11 +464,11 @@ docker exec jdconnect_api tsx scripts/seed.ts
 > After the first time, migrations run **automatically** on every subsequent deploy (inside the pipeline's SSH script). The seed script is only needed once — never run it again unless resetting.
 
 > [!IMPORTANT]
-> After seed completes, the database has the schema and a default admin account, but **no real employees yet**. To migrate your existing employee records from the old system, complete Phase 2 verification first (Step 10), then follow **Step 10.5** below.
+> After seed completes, the database has the schema and a default admin account, but **no real employees yet**. To migrate your existing employee records from the old system, complete Phase 2 verification first (Step 9), then follow **Step 9.5** below.
 
 ---
 
-### Step 10: Verify Everything Works via IP
+### Step 9: Verify Everything Works via IP
 
 From your Windows machine:
 
@@ -443,11 +490,11 @@ curl http://<VPS_IP>:4000/health
 Log into the HR Dashboard with `admin@company.com` / `AdminPassword123!` — you should see the employee list load.
 Log into Zulip with the same credentials.
 
-**If Phase 2 is working: proceed to Step 10.5 to migrate employee data, then Phase 3 begins.**
+**If Phase 2 is working: proceed to Step 9.5 to migrate employee data, then Phase 3 begins.**
 
 ---
 
-### Step 10.5: Migrate Existing Employee Data (Go-Live Day)
+### Step 9.5: Migrate Existing Employee Data (Go-Live Day)
 
 > [!IMPORTANT]
 > **Do NOT use the local test dump file for this step.** The local file (`jdconnect_public_data.sql` on your Windows machine) was used only during development. On actual go-live day, you generate a **fresh dump from the live old system** so it contains all data up to that exact moment. The commands below do exactly that.
@@ -566,7 +613,7 @@ Your VPS already runs Traefik (network: `root_default`, certresolver: `mytlschal
 
 ---
 
-### Step 11: Add DNS Records in Hostinger
+### Step 10: Add DNS Records in Hostinger
 
 Log into **Hostinger hPanel** → **Domains** → your domain → **DNS / Nameservers**.
 
@@ -593,7 +640,7 @@ nslookup chat.jdfusion.in
 
 ---
 
-### Step 12: Switch to Production Compose
+### Step 11: Switch to Production Compose
 
 > [!IMPORTANT]
 > **You must edit `deploy.yml` in your repository before deploying Phase 3.** The pipeline currently deploys `docker-compose.vps-test.yml` (Phase 2). For Phase 3 it must deploy `docker-compose.prod.yml` instead, which contains the Traefik labels that route traffic via your real domain and HTTPS.
@@ -628,7 +675,72 @@ After making these two changes, commit and push — the pipeline will deploy the
 
 ---
 
+### Step 12: Add Scoped `insecureSkipVerify` for Zulip
+
+> **Why this is needed:** In Phase 3, Traefik routes `chat.YOURDOMAIN.com` → Zulip's internal nginx, which only speaks HTTPS on port 443 using a **self-signed certificate**. Traefik refuses to connect to a backend with an untrusted cert by default. We must tell it to skip cert verification for this one backend connection.
+
+> [!IMPORTANT]
+> **This only affects the Traefik → Zulip internal connection (container-to-container).** External HTTPS (browser ↔ Traefik) always uses valid Let's Encrypt certs and is unaffected.
+>
+> We do this in a **scoped** way — only Zulip gets the exception. Every other service behind this Traefik instance (e.g., n8n) retains full TLS verification. Do NOT use a global `insecureSkipVerify: true` flag.
+
+#### File 1 of 2 — `/root/traefik-tls.yml` (define the named transport)
+
+> **What this file is:** This is Traefik's **file provider** config, mounted read-only into the Traefik container at `/etc/traefik/tls.yml`. It is watched dynamically — changes are picked up without restarting Traefik.
+>
+> **What to change:** Add the `http.serversTransports` block shown below.
+>
+> **What NOT to change:** Leave the existing `tls.options.default` cipher/version block exactly as it is.
+
+SSH into your VPS and append the named transport definition:
+
+```bash
+cat >> /root/traefik-tls.yml << 'EOF'
+
+http:
+  serversTransports:
+    zulip-internal:
+      insecureSkipVerify: true
+EOF
+```
+
+Verify the file now looks like this (the `tls:` block stays unchanged above it):
+
+```bash
+cat /root/traefik-tls.yml
+```
+
+Expected output:
+```yaml
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      cipherSuites:
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - TLS_AES_256_GCM_SHA384
+        - TLS_AES_128_GCM_SHA256
+        - TLS_CHACHA20_POLY1305_SHA256
+
+http:
+  serversTransports:
+    zulip-internal:
+      insecureSkipVerify: true
+```
+
+No Traefik restart needed — the file provider picks up changes automatically.
+
+#### File 2 of 2 — `/opt/jdconnect_v2/zulip/compose.override.yaml` (reference the named transport)
+
+This is handled in **Step 13** below — the production Zulip override template already includes the correct label that references `zulip-internal`. You do not need to do anything extra here.
+
+---
+
 ### Step 13: Switch Zulip to Production Override
+
+> **Note:** The production override template below includes the label `traefik.http.services.zulip.loadbalancer.serversTransport=zulip-internal`. This references the named transport you defined in Step 12 File 1. This is what scopes the `insecureSkipVerify` exception to Zulip only.
 
 SSH into your VPS:
 
@@ -678,6 +790,9 @@ services:
       - "traefik.http.routers.zulip.tls.certresolver=mytlschallenge"
       - "traefik.http.services.zulip.loadbalancer.server.port=443"
       - "traefik.http.services.zulip.loadbalancer.server.scheme=https"
+      # This references the named serversTransport defined in /root/traefik-tls.yml (Step 12).
+      # It scopes insecureSkipVerify to ONLY the Traefik → Zulip backend connection.
+      - "traefik.http.services.zulip.loadbalancer.serversTransport=zulip-internal"
       - "traefik.http.routers.zulip-http.rule=Host(`chat.YOURDOMAIN.com`)"
       - "traefik.http.routers.zulip-http.entrypoints=web"
       - "traefik.http.routers.zulip-http.middlewares=redirect-to-https@docker"
@@ -772,11 +887,11 @@ Go to your GitHub repo → **Settings** → **Secrets and variables** → **Acti
 ### Domain Secrets (update when switching phases)
 | Secret Name | Phase 2 value | Phase 3 value |
 |---|---|---|
-| `PROD_DOMAIN` | *(not used in phase 2)* | `jdfusion.in` |
+| `PROD_DOMAIN` | `<VPS_IP>` (e.g. `82.29.165.21`) | `jdfusion.in` |
 | `PROD_BACKEND_URL` | `http://<VPS_IP>:4000` | `https://api.jdfusion.in` |
 | `HR_DASHBOARD_URL` | `http://<VPS_IP>:3500` | `https://hr.jdfusion.in` |
 | `CLOCK_APP_URL` | `http://<VPS_IP>:3300` | `https://clock.jdfusion.in` |
-| `ALLOWED_CORS_ORIGINS` | `http://<VPS_IP>:3300,http://<VPS_IP>:3500` | `https://clock.jdfusion.in,https://hr.jdfusion.in,https://chat.jdfusion.in` |
+| `ALLOWED_CORS_ORIGINS` | `http://<VPS_IP>:3300,http://<VPS_IP>:3500,https://<VPS_IP>:9991` | `https://clock.jdfusion.in,https://hr.jdfusion.in,https://chat.jdfusion.in` |
 
 > [!NOTE]
 > `VPS_IP` is **not a separate GitHub Secret**. The pipeline automatically writes `VPS_IP=${{ secrets.VPS_HOST }}` into the `.env` file on the VPS — so the value comes from `VPS_HOST` (which already holds the raw IP). No extra secret needed.

@@ -6,9 +6,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 networks:
-  jdconnect_net:
-    driver: bridge
-    name: jdconnect_net
+  jdconnect_v2_net:
+    external: true           # Created once manually: `docker network create jdconnect_v2_net`
+                             # Separate from the old v1 jdconnect_net — zero overlap
   root_default:
     external: true        # Traefik's network — already exists on the VPS
 
@@ -29,7 +29,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - jdconnect_net     # Internal only — Postgres is NEVER exposed to the internet
+      - jdconnect_v2_net     # Internal only — Postgres is NEVER exposed to the internet
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d jdconnect"]
       interval: 5s
@@ -59,7 +59,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - jdconnect_net     # Reaches Postgres
+      - jdconnect_v2_net     # Reaches Postgres
       - root_default      # Traefik discovers and routes to this container
     labels:
       - "traefik.enable=true"

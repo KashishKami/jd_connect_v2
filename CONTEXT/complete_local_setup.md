@@ -781,10 +781,60 @@ docker inspect jdconnect_test_postgres --format "{{.State.Health.Status}}"
 # Wait until it shows: healthy
 ```
 
-### Git Bash path conversion breaks `./manage.py` commands
-
-Run this before any `./manage.py` command in a Git Bash session:
-```bash
-export MSYS_NO_PATHCONV=1
-```
 This prevents Git Bash from prepending Windows file system paths to Linux container paths.
+
+---
+
+## Step 7: Set Zulip Channel Descriptions (Run After Docker Containers Are Up)
+
+> **What this does:** Sets a permanent link in the `#attendance` and `#Breaks` Zulip channel descriptions so employees always have a visible shortcut to the Attendance App. The description shows at the top of the channel when viewing all topics.
+>
+> **When to run:** After the Docker test stack is up (`docker compose ... up -d`) and Zulip is running at `https://127.0.0.1:9991`.
+>
+> **Port used:** `3301` — the Attendance App docker container port in the local test stack.
+
+> [!IMPORTANT]
+> Run all commands from the `docker/zulip/` directory. On **Windows Git Bash**, `MSYS_NO_PATHCONV=1` is required to prevent path conversion errors. On PowerShell or Linux, omit it.
+
+**Set description on `#attendance` channel:**
+
+```bash
+# From docker/zulip/ directory
+MSYS_NO_PATHCONV=1 docker compose exec -u zulip zulip \
+  /home/zulip/deployments/current/manage.py shell -c "
+from zerver.models import Realm, Stream, UserProfile
+from zerver.actions.streams import do_change_stream_description
+realm = Realm.objects.get(string_id='')
+acting_user = UserProfile.objects.get(delivery_email='admin@company.com', realm=realm)
+stream = Stream.objects.get(name='attendance', realm=realm)
+do_change_stream_description(stream, 'Clock in / Clock out: http://localhost:3301', acting_user=acting_user)
+print('Done:', stream.description)
+"
+```
+
+**Set description on `#Breaks` channel:**
+
+```bash
+# From docker/zulip/ directory
+MSYS_NO_PATHCONV=1 docker compose exec -u zulip zulip \
+  /home/zulip/deployments/current/manage.py shell -c "
+from zerver.models import Realm, Stream, UserProfile
+from zerver.actions.streams import do_change_stream_description
+realm = Realm.objects.get(string_id='')
+acting_user = UserProfile.objects.get(delivery_email='admin@company.com', realm=realm)
+stream = Stream.objects.get(name='Breaks', realm=realm)
+do_change_stream_description(stream, 'Log your break here: http://localhost:3301', acting_user=acting_user)
+print('Done:', stream.description)
+"
+```
+
+Expected output for each:
+```
+85 objects imported automatically (use -v 2 for details).
+Done: Clock in / Clock out: http://localhost:3301
+```
+
+**To verify:** Open `https://127.0.0.1:9991` → click `# attendance` in the sidebar (not a topic inside it, the channel itself) → the description with the link appears at the top.
+
+> **On the VPS (Phase 2):** Same commands, but replace `http://localhost:3301` with `http://<VPS_IP>:3300`. The `MSYS_NO_PATHCONV=1` prefix is not needed on Linux.
+
