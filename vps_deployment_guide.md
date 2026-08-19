@@ -416,6 +416,54 @@ print('BOT_API_KEY:', bot.api_key)
 
 **Save the `BOT_API_KEY` output** — you will need it in GitHub Secrets (next step).
 
+**Set permanent links in Zulip channel descriptions:**
+
+> **What this does:** Adds a permanent link to the Attendance App in the description of the `#attendance` and `#Breaks` channels. The description is always visible at the top of the channel — it doesn't scroll away like messages do.
+>
+> **URL to use — depends on which phase you are in:**
+>
+> | Phase | Attendance App URL to use |
+> |---|---|
+> | **Phase 2** (current) | `http://<VPS_IP>:3300` |
+> | **Phase 3** (after domain + HTTPS) | `https://clock.jdfusion.in` (or your actual domain) |
+>
+> Replace `http://<VPS_IP>:3300` in the commands below with the correct URL for your phase.
+
+```bash
+cd /opt/jdconnect_v2/zulip
+
+# Set description on #attendance channel
+./manage.py shell -c "
+from zerver.models import Realm, Stream, UserProfile
+from zerver.actions.streams import do_change_stream_description
+realm = Realm.objects.get(string_id='')
+acting_user = UserProfile.objects.get(delivery_email='admin@company.com', realm=realm)
+stream = Stream.objects.get(name='attendance', realm=realm)
+do_change_stream_description(stream, 'Clock in / Clock out: http://<VPS_IP>:3300', acting_user=acting_user)
+print('Done:', stream.description)
+"
+
+# Set description on #Breaks channel (note: capital B)
+./manage.py shell -c "
+from zerver.models import Realm, Stream, UserProfile
+from zerver.actions.streams import do_change_stream_description
+realm = Realm.objects.get(string_id='')
+acting_user = UserProfile.objects.get(delivery_email='admin@company.com', realm=realm)
+stream = Stream.objects.get(name='Breaks', realm=realm)
+do_change_stream_description(stream, 'Log your break here: http://<VPS_IP>:3300', acting_user=acting_user)
+print('Done:', stream.description)
+"
+```
+
+> [!NOTE]
+> Replace `admin@company.com` with your real admin email (same as `SETTING_ZULIP_ADMINISTRATOR`).
+> The `#Breaks` channel name has a capital B — the query is case-sensitive.
+> If `#Breaks` does not exist yet, create it in the Zulip UI first (as admin), then run the command.
+>
+> **To verify:** Open Zulip → click `# attendance` in the sidebar (not a topic inside it, the channel itself) → the description with the link appears at the top.
+>
+> **When switching to Phase 3:** Re-run both commands with `https://clock.jdfusion.in` (or your domain) to update the descriptions.
+
 Verify Zulip is accessible:
 ```bash
 # From your Windows machine
@@ -1008,3 +1056,92 @@ docker inspect $(docker ps --filter "name=traefik" --format "{{.Names}}" | head 
   --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
 ```
 If the name differs, update it in `docker-compose.prod.yml` and `zulip-prod.override.yaml` accordingly.
+
+---
+
+## 6. Database Reset Runbook
+
+Use this when you need to wipe and reinitialise either database from scratch (e.g. switching from test data to real production data, or recovering from a corrupted state).
+
+> [!CAUTION]
+> These commands **permanently delete all data** in the selected database. There is no undo. Make a backup first if you need to preserve anything.
+
+---
+
+### Reset JD Connect Postgres (app database only)
+
+Wipes: all employees, attendance records, shifts, departments, sessions — everything in the JD Connect app DB.
+Does NOT affect: Zulip, its users, or messages.
+
+```bash
+cd /opt/jdconnect_v2
+
+# 1. Stop the app stack
+docker compose -f docker-compose.vps-test.yml down
+
+# 2. Delete the data volume (permanent)
+docker volume rm jdconnect_v2_pgdata_test
+
+# 3. Restart (volume is recreated empty, postgres initialises a fresh DB)
+docker compose -f docker-compose.vps-test.yml up -d
+
+# 4. Wait for postgres to be healthy, then run migrations + seed
+sleep 15
+docker exec jdconnect_api tsx scripts/migrate.ts
+docker exec jdconnect_api tsx scripts/seed.ts
+```
+
+After seeding, the super-admin account is recreated:
+- **Email:** `admin@company.com` (or whatever your seed script uses)
+- **Password:** `AdminPassword123!`
+
+Re-import employee data if needed using your migration scripts.
+
+---
+
+### Reset Zulip database only
+
+Wipes: all Zulip realms, users, messages, channels, bot accounts, API keys.
+Does NOT affect: the JD Connect Postgres database.
+
+```bash
+cd /opt/jdconnect_v2/zulip
+
+# 1. Stop the Zulip stack
+docker compose down
+
+# 2. Delete the Zulip data volume (permanent)
+docker volume rm zulip_zulip
+
+# 3. Re-run one-time initialisation (same as first-time setup)
+#    ⚠ Remove the default ports from compose.yaml again if you updated Zulip via git pull
+docker compose run --rm zulip app:init
+
+# 4. Start Zulip
+docker compose up -d
+
+# 5. Wait until healthy
+docker ps | grep zulip-zulip   # wait for (healthy)
+
+# 6. Re-run the full manage.py setup script (admin + bot + attendance channel)
+#    → Same script from Step 6 of this guide
+./manage.py shell -c "..."
+
+./manage.py change_user_role -r '' jdconnect-bot@company.com admin || true
+./manage.py change_user_role -r '' jdconnect-bot@company.com can_create_users
+```
+
+> [!IMPORTANT]
+> After resetting Zulip, the bot's API key changes. You **must** update the `ZULIP_BOT_API_KEY` GitHub Secret with the new key from the `BOT_API_KEY:` output and trigger a redeploy so the backend picks up the new key.
+
+---
+
+### Reset both databases (full clean slate)
+
+Run the JD Connect Postgres reset first, then the Zulip reset above. Order doesn't matter — they are fully independent.
+
+---
+
+### After either reset — re-invite employees
+
+After a Zulip reset, all employee Zulip accounts are gone. You will need to re-invite them or re-run whatever bulk-invite process you used during initial onboarding.
