@@ -2265,6 +2265,18 @@ The source data is the SQL dump located at `C:\Users\Administrator\Desktop\jdcon
 >   - When configured with `DATABASE_URL: postgresql://jduser:jdpassword@postgres:5432/jdconnect` (pointing to the isolated `jdconnect_test_postgres` container on port 5432 inside the Docker bridge network `jdconnect_local_test`), database queries succeed, but `jdconnect_test_postgres` starts as an unseeded database. Therefore, calling `/api/auth/login` on port 4001 returns `HTTP 500 relation "users" does not exist` until migrations and seeds (`docker exec jdconnect_test_api npx tsx scripts/migrate.ts && npx tsx scripts/seed.ts`) are run inside that container.
 >   - Alternatively, if pointing the containerized API to the host database on `host.docker.internal:5432`, the Postgres container `jdconnect_postgres` (running in `docker/docker-compose.yml`) must be configured to accept connections from the Docker bridge network gateway IP (`192.168.65.254`).
 
+> **Session Note — 2026-08-19**
+> - **Issue: Blank Pages + CORS Failure + Zulip Unreachable** — All three symptoms (blank attendance app, blank HR dashboard, Zulip not loading at `https://127.0.0.1:9991`) occurred simultaneously after a Docker Desktop hard crash (not a clean shutdown). Root cause confirmed via Postgres logs: `database system was interrupted; last known up at 2026-08-19 15:55:39 UTC` — Docker was force-killed, corrupting WSL2's port-forwarding/NAT layer.
+> - **Symptoms:** TCP connections were accepted on all ports (netstat showed ports LISTENING, `Test-NetConnection` succeeded) but HTTP traffic was silently dropped. Browser DevTools showed `CORS Failed` on `POST /api/auth/login` — this was a false CORS error caused by the connection being dropped mid-request, not an actual CORS policy rejection. The `cors()` middleware in `app.ts` is configured with no restrictions and was not the problem.
+> - **Fix:** Run `wsl --shutdown` from PowerShell → quit Docker Desktop from system tray → wait 10 seconds → reopen Docker Desktop → after Docker is fully running, bring all stacks back up with:
+>   ```powershell
+>   docker compose -f docker/zulip/compose.yaml -f docker/zulip/compose.override.yaml up -d
+>   docker compose --project-name jdconnect-dev -f docker/docker-compose.yml up -d
+>   docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d
+>   ```
+> - **Prevention:** Always quit Docker Desktop cleanly via the system tray (right-click whale → Quit Docker Desktop). Never kill it via Task Manager. If blank pages + CORS errors appear across all services simultaneously with no code changes, suspect WSL2 networking before debugging application code.
+
+
 ### Phase 8 — Production Deployment
 
 > **Goal:** Deploy all four JD Connect components (JD Connect Postgres, Zulip Postgres, Zulip, Backend API, HR Dashboard) to Hostinger VPS using Docker Compose, Nginx reverse proxy with HTTPS TLS certificates, production secrets, and automated daily backups.

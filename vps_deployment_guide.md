@@ -53,9 +53,10 @@ JD Connect runs as two isolated Docker Compose stacks, exactly like your local s
 
 ```
 VPS
-├── /opt/jdconnect/            ← Managed by GitHub Actions (CI/CD)
-│   ├── docker-compose.prod.yml   (SCP'd by pipeline)
-│   └── .env                      (Written by pipeline from GitHub Secrets)
+├── /opt/jdconnect_v2/            ← Managed by GitHub Actions (CI/CD)
+│   ├── docker-compose.vps-test.yml  (SCP'd by pipeline — Phase 2)
+│   │   └── [switched to docker-compose.prod.yml for Phase 3]
+│   └── .env                         (Written by pipeline from GitHub Secrets)
 │   
 │   Containers:
 │   ├── jdconnect_postgres         (Postgres — internal only)
@@ -63,9 +64,9 @@ VPS
 │   ├── jdconnect_attendance       (Attendance App — image from GHCR)
 │   └── jdconnect_hr               (HR Dashboard — image from GHCR)
 │
-└── /opt/jdconnect/zulip/      ← Set up manually ONCE, never touched by CI/CD
+└── /opt/jdconnect_v2/zulip/      ← Set up manually ONCE, never touched by CI/CD
     ├── compose.yaml              (Official Zulip — cloned from GitHub)
-    ├── compose.override.yaml     (Your prod override with Traefik labels)
+    ├── compose.override.yaml     (Your override — IP-based for Phase 2, domain for Phase 3)
     └── .env                      (Zulip secrets)
     
     Containers:
@@ -102,7 +103,7 @@ GitHub Actions:
 |---|---|---|
 | Source code (`.ts`, `.html`, etc.) | ❌ Never | N/A |
 | Docker images | ✅ Pulled from GHCR | GitHub Actions |
-| `docker-compose.prod.yml` | ✅ | GitHub Actions (SCP) |
+| `docker-compose.vps-test.yml` (Phase 2) / `docker-compose.prod.yml` (Phase 3) | ✅ | GitHub Actions (SCP) |
 | `.env` | ✅ | GitHub Actions (SSH write) |
 | Postgres data (`pgdata` volume) | ✅ | Docker volume — persistent |
 | Zulip stack (`/opt/jdconnect/zulip/`) | ✅ | You — manual setup once |
@@ -180,7 +181,7 @@ docker compose version
 ### Step 4: Create the Project Directory
 
 ```bash
-mkdir -p /opt/jdconnect
+mkdir -p /opt/jdconnect_v2
 ```
 
 That's it. GitHub Actions will populate this directory on your first push.
@@ -243,8 +244,8 @@ Zulip is set up manually once. It is never managed by the CI/CD pipeline.
 
 ```bash
 # Create Zulip directory inside the project folder
-mkdir -p /opt/jdconnect/zulip
-cd /opt/jdconnect/zulip
+mkdir -p /opt/jdconnect_v2/zulip
+cd /opt/jdconnect_v2/zulip
 
 # Clone the official Zulip Docker stack (exactly as in local_setup.md)
 git clone https://github.com/zulip/docker-zulip.git .
@@ -252,7 +253,7 @@ git clone https://github.com/zulip/docker-zulip.git .
 
 Create the Zulip environment file:
 ```bash
-cat > /opt/jdconnect/zulip/.env << 'EOF'
+cat > /opt/jdconnect_v2/zulip/.env << 'EOF'
 ZULIP__POSTGRES_PASSWORD=<generate-a-strong-password>
 ZULIP__MEMCACHED_PASSWORD=<generate-a-strong-password>
 ZULIP__RABBITMQ_PASSWORD=<generate-a-strong-password>
@@ -270,7 +271,7 @@ openssl rand -hex 20
 
 **For Phase 2 (VPS IP access):** Create the override with the VPS IP:
 ```bash
-cat > /opt/jdconnect/zulip/compose.override.yaml << EOF
+cat > /opt/jdconnect_v2/zulip/compose.override.yaml << EOF
 ---
 secrets:
   zulip__postgres_password:
@@ -302,7 +303,7 @@ EOF
 
 **Initialize and start Zulip** (one-time — takes ~5 minutes):
 ```bash
-cd /opt/jdconnect/zulip
+cd /opt/jdconnect_v2/zulip
 
 # Pull all Zulip images
 docker compose pull
@@ -316,7 +317,7 @@ docker compose up zulip --wait
 
 **Create admin, bot accounts and attendance channel:**
 ```bash
-cd /opt/jdconnect/zulip
+cd /opt/jdconnect_v2/zulip
 
 ./manage.py shell -c "
 from zerver.models import Realm, UserProfile
@@ -415,6 +416,9 @@ docker exec jdconnect_api tsx scripts/seed.ts
 
 > After the first time, migrations run **automatically** on every subsequent deploy (inside the pipeline's SSH script). The seed script is only needed once — never run it again unless resetting.
 
+> [!IMPORTANT]
+> After seed completes, the database has the schema and a default admin account, but **no real employees yet**. To migrate your existing employee records from the old system, complete Phase 2 verification first (Step 10), then follow **Step 10.5** below.
+
 ---
 
 ### Step 10: Verify Everything Works via IP
@@ -439,7 +443,68 @@ curl http://<VPS_IP>:4000/health
 Log into the HR Dashboard with `admin@company.com` / `AdminPassword123!` — you should see the employee list load.
 Log into Zulip with the same credentials.
 
-**If Phase 2 is working: Phase 3 begins.**
+**If Phase 2 is working: proceed to Step 10.5 to migrate employee data, then Phase 3 begins.**
+
+---
+
+### Step 10.5: Migrate Existing Employee Data
+
+This step imports all your real employee records (from the old jd-connect system) into the VPS database. The migration script talks **directly to Postgres** — it does not go through the HTTP API — so it must run inside the `jdconnect_api` container, which has database access.
+
+**1. Copy your SQL dump file to the VPS:**
+
+From your Windows machine:
+```powershell
+# Replace <VPS_IP> with your VPS IP address
+scp C:\Users\Administrator\Desktop\jdconnect_public_data.sql root@<VPS_IP>:/opt/jdconnect_v2/jdconnect_public_data.sql
+```
+
+**2. Copy the SQL file into the running API container:**
+
+SSH into the VPS and run:
+```bash
+docker cp /opt/jdconnect_v2/jdconnect_public_data.sql jdconnect_api:/app/jdconnect_public_data.sql
+```
+
+**3. Run the migration script inside the container:**
+
+```bash
+docker exec jdconnect_api tsx scripts/migrate-employees.ts
+```
+
+The script will:
+- Read the SQL dump from inside the container at `/app/jdconnect_public_data.sql`
+- Map old department/centre/shift/role IDs to the new schema
+- Create a `users` row and an `employees` row for each employee
+- Provision each employee in Zulip (sets `zulip_provisioned = true` if successful)
+- Write a `migration_passwords.csv` file inside the container with each employee's temporary password
+
+**4. Copy the passwords CSV back to your machine:**
+
+```bash
+# On VPS — copy out of container first
+docker cp jdconnect_api:/app/migration_passwords.csv /opt/jdconnect_v2/migration_passwords.csv
+```
+
+```powershell
+# On Windows — SCP it down
+scp root@<VPS_IP>:/opt/jdconnect_v2/migration_passwords.csv C:\Users\Administrator\Desktop\vps_migration_passwords.csv
+```
+
+> [!CAUTION]
+> `migration_passwords.csv` contains plaintext temporary passwords. Delete it from the VPS (`rm /opt/jdconnect_v2/migration_passwords.csv`) after you have safely downloaded it to your machine.
+
+> [!NOTE]
+> The migration script is idempotent — if it finds an employee that already exists (by employee code or email), it skips them. Safe to run again if interrupted.
+
+**5. Verify employees loaded:**
+
+```bash
+# Quick count check
+docker exec jdconnect_postgres psql -U <POSTGRES_USER> -d jdconnect -c "SELECT COUNT(*) FROM employees;"
+```
+
+Log into the HR Dashboard at `http://<VPS_IP>:3500` — the employee list should show all migrated records.
 
 ---
 ---
@@ -479,9 +544,36 @@ nslookup chat.jdfusion.in
 
 ### Step 12: Switch to Production Compose
 
-The `docker-compose.prod.yml` already has Traefik labels configured. You just need to update GitHub Secrets with your real domain and redeploy (see Step 14).
+> [!IMPORTANT]
+> **You must edit `deploy.yml` in your repository before deploying Phase 3.** The pipeline currently deploys `docker-compose.vps-test.yml` (Phase 2). For Phase 3 it must deploy `docker-compose.prod.yml` instead, which contains the Traefik labels that route traffic via your real domain and HTTPS.
 
-The Traefik labels in the compose file use `${DOMAIN}` which is written to `.env` from the `PROD_DOMAIN` secret. No manual file edits needed.
+**In `.github/workflows/deploy.yml`, make two changes:**
+
+**Change 1 — SCP step** (the `source:` line, around line 200):
+```yaml
+# Before (Phase 2):
+source: "docker/docker-compose.vps-test.yml"
+
+# After (Phase 3):
+source: "docker/docker-compose.prod.yml"
+```
+
+**Change 2 — SSH script** (the `docker compose` restart line, around line 240):
+```bash
+# Before (Phase 2):
+docker compose -f docker-compose.vps-test.yml up -d --no-deps api attendance-app hr-dashboard
+
+# After (Phase 3):
+docker compose -f docker-compose.prod.yml up -d --no-deps api attendance-app hr-dashboard
+```
+
+**Why two separate compose files?**
+- `docker-compose.vps-test.yml` exposes ports directly (`4000:4000`, `3300:80`, `3500:80`). Browsers connect straight to the VPS IP + port. No Traefik involved.
+- `docker-compose.prod.yml` exposes **no ports** — Traefik reads the `Host()` labels and routes traffic based on your domain name. If there is no domain pointed at the VPS, the services are completely unreachable.
+
+You cannot use `docker-compose.prod.yml` in Phase 2 (raw IP access would be blocked), and you cannot use `docker-compose.vps-test.yml` in Phase 3 (Traefik labels are absent, so your domain subdomains won't route). They are structurally different files.
+
+After making these two changes, commit and push — the pipeline will deploy the production compose file with Traefik labels. The Traefik labels use `${DOMAIN}` which is written to `.env` from the `PROD_DOMAIN` secret.
 
 ---
 
@@ -490,7 +582,7 @@ The Traefik labels in the compose file use `${DOMAIN}` which is written to `.env
 SSH into your VPS:
 
 ```bash
-cd /opt/jdconnect/zulip
+cd /opt/jdconnect_v2/zulip
 
 # Stop Zulip
 docker compose down
@@ -501,7 +593,7 @@ Replace the override file with the production version. The production override t
 ```bash
 # Copy the prod override template from your git repo's committed file
 # (You can also SCP it or paste it manually)
-cat > /opt/jdconnect/zulip/compose.override.yaml << 'EOF'
+cat > /opt/jdconnect_v2/zulip/compose.override.yaml << 'EOF'
 ---
 secrets:
   zulip__postgres_password:
@@ -635,6 +727,9 @@ Go to your GitHub repo → **Settings** → **Secrets and variables** → **Acti
 | `CLOCK_APP_URL` | `http://<VPS_IP>:3300` | `https://clock.jdfusion.in` |
 | `ALLOWED_CORS_ORIGINS` | `http://<VPS_IP>:3300,http://<VPS_IP>:3500` | `https://clock.jdfusion.in,https://hr.jdfusion.in,https://chat.jdfusion.in` |
 
+> [!NOTE]
+> `VPS_IP` is **not a separate GitHub Secret**. The pipeline automatically writes `VPS_IP=${{ secrets.VPS_HOST }}` into the `.env` file on the VPS — so the value comes from `VPS_HOST` (which already holds the raw IP). No extra secret needed.
+
 ### Zulip Secrets (get these from Zulip setup — Step 7)
 | Secret Name | Description | Where to find |
 |---|---|---|
@@ -668,6 +763,15 @@ git revert HEAD && git push origin main
 docker exec jdconnect_api tsx scripts/migrate.ts
 ```
 
+### Employee data migration (one-time, post-Phase 2)
+See **Step 10.5** in the Phase 2 section above for the full procedure.
+Short version:
+```bash
+# On VPS — after SCP'ing the SQL file there and docker cp'ing into container:
+docker exec jdconnect_api tsx scripts/migrate-employees.ts
+docker cp jdconnect_api:/app/migration_passwords.csv /opt/jdconnect_v2/migration_passwords.csv
+```
+
 ### View API logs
 ```bash
 docker logs jdconnect_api -f --tail=100
@@ -676,6 +780,7 @@ docker logs jdconnect_api -f --tail=100
 ### Restart a single container
 ```bash
 docker restart jdconnect_api          # Backend API
+
 docker restart jdconnect_attendance   # Attendance App
 docker restart jdconnect_hr           # HR Dashboard
 docker restart jdconnect_postgres     # Postgres (careful — brief downtime)
@@ -683,7 +788,7 @@ docker restart jdconnect_postgres     # Postgres (careful — brief downtime)
 
 ### Update Zulip (when a new Zulip version is released)
 ```bash
-cd /opt/jdconnect/zulip
+cd /opt/jdconnect_v2/zulip
 git pull origin main       # Get the new compose.yaml from official repo
 docker compose pull        # Pull new Zulip images
 docker compose up -d       # Restart with new images
@@ -703,7 +808,7 @@ docker exec jdconnect_postgres pg_dump \
   --schema=public \
   -f /tmp/jdconnect_backup_$(date +%Y%m%d).sql
 
-docker cp jdconnect_postgres:/tmp/jdconnect_backup_$(date +%Y%m%d).sql /opt/jdconnect/backups/
+docker cp jdconnect_postgres:/tmp/jdconnect_backup_$(date +%Y%m%d).sql /opt/jdconnect_v2/backups/
 ```
 
 ---

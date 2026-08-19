@@ -188,15 +188,22 @@ jobs:
         run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
 
       # Copy ONLY the compose file to the VPS (no source code needed there)
-      - name: Copy docker-compose.prod.yml to VPS
+      # ── PHASE NOTE ──────────────────────────────────────────────────────────
+      # Phase 2 (current): deploys docker-compose.vps-test.yml
+      #   → containers are reached directly via raw VPS IP + port (no Traefik needed)
+      # Phase 3 (when domain + HTTPS is ready): change source below to:
+      #   "docker/docker-compose.prod.yml"
+      #   and update target to still be /opt/jdconnect_v2/
+      # ────────────────────────────────────────────────────────────────────────
+      - name: Copy docker-compose.vps-test.yml to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker/docker-compose.prod.yml"
-          target: "/opt/jdconnect/"
-          strip_components: 1   # Strips "docker/" prefix → lands at /opt/jdconnect/docker-compose.prod.yml
+          source: "docker/docker-compose.vps-test.yml"
+          target: "/opt/jdconnect_v2/"
+          strip_components: 1   # Strips "docker/" prefix → lands at /opt/jdconnect_v2/docker-compose.vps-test.yml
 
       - name: Deploy on VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -209,8 +216,13 @@ jobs:
             set -e
 
             # ── Write the .env file from GitHub Secrets (safe to overwrite every deploy) ──
-            cat > /opt/jdconnect/.env << 'ENVEOF'
+            # VPS_IP is written from the VPS_HOST secret (same value — the raw VPS IP address).
+            # It is used by docker-compose.vps-test.yml to set CORS origins and app URLs.
+            # When upgrading to Phase 3, VPS_IP is no longer referenced by docker-compose.prod.yml
+            # (which uses ${DOMAIN} instead), but keeping it here is harmless.
+            cat > /opt/jdconnect_v2/.env << 'ENVEOF'
             REPO_LOWER=${{ env.REPO_LOWER }}
+            VPS_IP=${{ secrets.VPS_HOST }}
             DOMAIN=${{ secrets.PROD_DOMAIN }}
             POSTGRES_USER=${{ secrets.POSTGRES_USER }}
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
@@ -223,7 +235,7 @@ jobs:
             ALLOWED_CORS_ORIGINS=${{ secrets.ALLOWED_CORS_ORIGINS }}
             ENVEOF
 
-            cd /opt/jdconnect
+            cd /opt/jdconnect_v2
 
             # ── Log into GHCR to pull images ──
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -233,8 +245,13 @@ jobs:
             docker pull ghcr.io/$REPO_LOWER/attendance-app:latest
             docker pull ghcr.io/$REPO_LOWER/hr-dashboard:latest
 
-            # ── Restart app containers (Postgres is NOT touched if already healthy) ──
-            docker compose -f docker-compose.prod.yml up -d --no-deps api attendance-app hr-dashboard
+            # ── Restart app containers ──
+            # PHASE 2 (current): docker-compose.vps-test.yml exposes ports directly via raw IP.
+            #   No Traefik labels — containers are accessible at http://<VPS_IP>:4000, :3300, :3500
+            # PHASE 3 UPGRADE: when your domain is pointed and DNS propagates, change this line to:
+            #   docker compose -f docker-compose.prod.yml up -d --no-deps api attendance-app hr-dashboard
+            #   docker-compose.prod.yml uses Traefik Host() routing and HTTPS — no direct port access.
+            docker compose -f docker-compose.vps-test.yml up -d --no-deps api attendance-app hr-dashboard
 
             # ── Run database migrations (idempotent — safe to run every deploy) ──
             sleep 8
