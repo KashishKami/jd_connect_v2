@@ -249,7 +249,7 @@ jobs:
             # PHASE 3 UPGRADE: when your domain is pointed and DNS propagates, change this line to:
             #   docker compose -f docker-compose.prod.yml up -d --no-deps api attendance-app hr-dashboard
             #   docker-compose.prod.yml uses Traefik Host() routing and HTTPS — no direct port access.
-            docker compose -f docker-compose.vps-test.yml up -d --no-deps api attendance-app hr-dashboard
+            docker compose -f docker-compose.vps-test.yml up -d api attendance-app hr-dashboard
 
             # ── Run database migrations (idempotent — safe to run every deploy) ──
             sleep 8
