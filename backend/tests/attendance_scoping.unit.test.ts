@@ -43,4 +43,25 @@ describe('AttendanceService - Scoping Unit Tests', () => {
       expect.objectContaining({ employee_id: 'emp-1' })
     );
   });
+
+  it('resolves employee_id=me to actor.id even for super_admin or admin', async () => {
+    const mockAttRepo = {
+      findRecords: vi.fn().mockResolvedValue([{ id: 'att-admin', employee_id: 'admin-1' }]),
+    } as unknown as AttendanceRepository;
+
+    const mockEmpRepo = {} as unknown as EmployeeRepository;
+
+    const service = new AttendanceService(mockAttRepo, mockEmpRepo);
+
+    const records = await service.getAttendanceHistory(
+      { id: 'admin-1', roles: ['super_admin'] },
+      { employee_id: 'me' }
+    );
+
+    expect(records.length).toBe(1);
+    expect(mockAttRepo.findRecords).toHaveBeenCalledWith(
+      expect.objectContaining({ employee_id: 'admin-1' })
+    );
+  });
 });
+

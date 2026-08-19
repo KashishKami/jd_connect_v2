@@ -1,7 +1,10 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
+
+// Parse Postgres DATE (OID 1082) as raw string "YYYY-MM-DD" to avoid node-postgres timezone shifting
+types.setTypeParser(1082, (val: string) => val);
 
 const connectionString =
   process.env.DATABASE_URL ||
@@ -12,5 +15,6 @@ const connectionString =
 const pool = new Pool({
   connectionString,
 });
+
 
 export default pool;

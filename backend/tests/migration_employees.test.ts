@@ -55,7 +55,7 @@ emp_002_uuid	auth_002_uuid	JD0902	Legacy Employee	legacy.emp@company.com	9876543
   it('migrates employees successfully with proper password hashing and first-class hr role', async () => {
     // Mock Zulip API calls
     let fetchCallCount = 0;
-    const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+    const mockFetch = vi.fn().mockImplementation(async (_url: string, _init?: RequestInit) => {
       fetchCallCount++;
       return {
         ok: true,

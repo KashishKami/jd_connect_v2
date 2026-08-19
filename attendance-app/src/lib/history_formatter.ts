@@ -15,6 +15,46 @@ export function formatHistoryDate(isoString?: string | null): string {
   }
 }
 
+export function formatDateFull(isoString?: string | null): string {
+  if (!isoString) return '-';
+  try {
+    // 1. Pure date string "YYYY-MM-DD"
+    if (typeof isoString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(isoString)) {
+      const [year, month, day] = isoString.split('-').map(Number);
+      const d = new Date(year, month - 1, day);
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+    // 2. Pure date serialized as UTC midnight ISO string "YYYY-MM-DDT00:00:00..."
+    if (typeof isoString === 'string' && /^\d{4}-\d{2}-\d{2}T00:00:00/.test(isoString)) {
+      const [year, month, day] = isoString.slice(0, 10).split('-').map(Number);
+      const d = new Date(year, month - 1, day);
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+    // 3. Full TIMESTAMPTZ with non-zero time (e.g. break start_at) -> format in EST/EDT
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  } catch {
+    return '-';
+  }
+}
+
+
+
+
 export function formatDuration(minutes?: number | null): string {
   if (minutes === null || minutes === undefined) return '-';
   return `${minutes} mins`;

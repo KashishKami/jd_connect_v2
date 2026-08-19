@@ -1,4 +1,6 @@
+/* eslint-disable no-console */
 import pool from '../src/lib/db';
+
 
 async function main() {
   const client = await pool.connect();

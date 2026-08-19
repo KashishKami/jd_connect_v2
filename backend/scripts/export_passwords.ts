@@ -1,7 +1,8 @@
+/* eslint-disable no-console */
 import fs from 'fs';
 import path from 'path';
-import pool from '../src/lib/db';
 import { parseSqlDump } from '../src/lib/copy-parser';
+
 
 export function deriveTempPassword(oldId: string | null): string {
   if (!oldId) return 'TempPass@1234!';

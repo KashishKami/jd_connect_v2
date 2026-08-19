@@ -49,9 +49,6 @@ msg2_legacy_uuid	conv1_legacy_uuid	\\N	emp2_legacy_uuid	Hi Employee One (DM)	202
 \\.
 `;
 
-  let newEmp1Id: string;
-  let newEmp2Id: string;
-
   beforeAll(async () => {
     await runMigrations();
     await runSeed();
@@ -69,26 +66,24 @@ msg2_legacy_uuid	conv1_legacy_uuid	\\N	emp2_legacy_uuid	Hi Employee One (DM)	202
     const userRes1 = await pool.query(
       "INSERT INTO users (email, password_hash, is_active) VALUES ('legacy.emp1@company.com', 'hashed', true) RETURNING id"
     );
-    const empRes1 = await pool.query(
+    await pool.query(
       `INSERT INTO employees (auth_user_id, employee_code, full_name, email, employment_status, zulip_user_id, zulip_provisioned)
        VALUES ($1, 'JD0901', 'Employee One', 'legacy.emp1@company.com', 'active', 501, true) RETURNING id`,
       [userRes1.rows[0].id]
     );
-    newEmp1Id = empRes1.rows[0].id;
 
     const userRes2 = await pool.query(
       "INSERT INTO users (email, password_hash, is_active) VALUES ('legacy.emp2@company.com', 'hashed', true) RETURNING id"
     );
-    const empRes2 = await pool.query(
+    await pool.query(
       `INSERT INTO employees (auth_user_id, employee_code, full_name, email, employment_status, zulip_user_id, zulip_provisioned)
        VALUES ($1, 'JD0902', 'Employee Two', 'legacy.emp2@company.com', 'active', 502, true) RETURNING id`,
       [userRes2.rows[0].id]
     );
-    newEmp2Id = empRes2.rows[0].id;
 
     const fetchCalls: Array<{ url: string; method: string; body?: string }> = [];
 
-    const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       const method = init?.method || 'GET';
       let bodyData: string | undefined = undefined;
       if (init?.body) {
@@ -162,7 +157,7 @@ msg2_legacy_uuid	conv1_legacy_uuid	\\N	emp2_legacy_uuid	Hi Employee One (DM)	202
 
     // 3. Verify Idempotency on rerun
     fetchCalls.length = 0; // Clear history
-    const mockIdempotentFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+    const mockIdempotentFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       const method = init?.method || 'GET';
       fetchCalls.push({ url, method });
 

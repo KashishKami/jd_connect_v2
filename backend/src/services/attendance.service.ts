@@ -158,12 +158,15 @@ export class AttendanceService {
 
     let targetEmployeeId = filters.employee_id;
 
-    if (!isSuperAdminOrAdmin) {
+    if (targetEmployeeId === 'me') {
+      targetEmployeeId = actor.id;
+    } else if (!isSuperAdminOrAdmin) {
       if (targetEmployeeId && targetEmployeeId !== actor.id) {
         throw new ForbiddenError('Forbidden: You can only view your own attendance records');
       }
       targetEmployeeId = actor.id;
     }
+
 
     const repoFilters: FindAttendanceFilters = {
       employee_id: targetEmployeeId,

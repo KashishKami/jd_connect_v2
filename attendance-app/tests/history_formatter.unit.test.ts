@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatHistoryDate,
+  formatDateFull,
   formatDuration,
   formatStatusBadge,
   formatAttendanceStatus,
@@ -59,4 +60,26 @@ describe('Attendance & Break History Formatter Utilities', () => {
     expect(formatBreakReason({ break_type_key: 'tea' })).toBe('tea');
     expect(formatBreakReason({})).toBe('Break');
   });
+
+  it('formats YYYY-MM-DD date strings without day shift', () => {
+    expect(formatDateFull('2026-07-06')).toBe('Jul 6, 2026');
+    expect(formatDateFull('2026-06-30')).toBe('Jun 30, 2026');
+    expect(formatDateFull('2026-07-01')).toBe('Jul 1, 2026');
+  });
+
+  it('formats pure date serialized as UTC midnight ISO string without day shift', () => {
+    expect(formatDateFull('2026-07-06T00:00:00.000Z')).toBe('Jul 6, 2026');
+    expect(formatDateFull('2026-06-30T00:00:00.000Z')).toBe('Jun 30, 2026');
+    expect(formatDateFull('2026-07-01T00:00:00.000Z')).toBe('Jul 1, 2026');
+  });
+
+  it('formats full TIMESTAMPTZ with non-zero time using EST/EDT timezone', () => {
+    // 2026-07-06T19:22:48.000Z is 15:22:48 EDT (July 6th)
+    expect(formatDateFull('2026-07-06T19:22:48.000Z')).toBe('Jul 6, 2026');
+    // 2026-08-19T01:30:00.000Z is 21:30:00 EDT on Aug 18th
+    expect(formatDateFull('2026-08-19T01:30:00.000Z')).toBe('Aug 18, 2026');
+  });
 });
+
+
+

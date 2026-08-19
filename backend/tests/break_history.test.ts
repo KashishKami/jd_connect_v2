@@ -111,6 +111,16 @@ describe('GET /api/breaks & GET /api/break-types Endpoints', () => {
     expect(resActive.body[0].employee_id).toBe(employeeId);
   });
 
+  it('allows super_admin to scope query to own records using employee_id=me', async () => {
+    const resMe = await supertest(app)
+      .get('/api/breaks?employee_id=me')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(resMe.status).toBe(200);
+    expect(resMe.body.length).toBe(0);
+  });
+
+
   it('GET /api/break-types returns list of active break types', async () => {
     const res = await supertest(app).get('/api/break-types');
 

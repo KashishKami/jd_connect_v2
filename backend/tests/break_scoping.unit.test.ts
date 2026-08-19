@@ -47,4 +47,27 @@ describe('BreakService - History Scoping Unit Tests', () => {
       expect.objectContaining({ employee_id: 'emp-1' })
     );
   });
+
+  it('resolves employee_id=me to actor.id even for super_admin or admin', async () => {
+    const mockBreakRepo = {
+      findRecords: vi.fn().mockResolvedValue([{ id: 'brk-admin', employee_id: 'admin-1' }]),
+    } as unknown as BreakRepository;
+
+    const service = new BreakService(
+      mockBreakRepo,
+      {} as unknown as AttendanceRepository,
+      {} as unknown as EmployeeRepository
+    );
+
+    const records = await service.getBreakHistory(
+      { id: 'admin-1', roles: ['super_admin'] },
+      { employee_id: 'me' }
+    );
+
+    expect(records.length).toBe(1);
+    expect(mockBreakRepo.findRecords).toHaveBeenCalledWith(
+      expect.objectContaining({ employee_id: 'admin-1' })
+    );
+  });
 });
+

@@ -40,7 +40,7 @@ export function formatOriginalTime(date: Date): string {
   return `${day} ${month} ${year}, ${hour}:${minute}${ampm}`;
 }
 
-async function fetchWithRetry(url: string, options?: any): Promise<Response> {
+async function fetchWithRetry(url: string, options?: RequestInit): Promise<Response> {
   const res = await fetch(url, options);
   if (res.status === 429) {
     try {
@@ -66,8 +66,9 @@ function getZulipUserAuthHeaders(): Record<number, string> {
       const data = JSON.parse(match[1]);
       for (const [idStr, val] of Object.entries(data)) {
         const id = parseInt(idStr, 10);
-        const email = (val as any).email;
-        const apiKey = (val as any).api_key;
+        const userObj = val as { email?: string; api_key?: string };
+        const email = userObj.email;
+        const apiKey = userObj.api_key;
         if (email && apiKey) {
           authHeaders[id] = 'Basic ' + Buffer.from(`${email}:${apiKey}`).toString('base64');
         }
@@ -281,7 +282,7 @@ export async function migrateChat(dumpFilePath: string, delayMs = 650): Promise<
           });
 
           if (checkRes.ok) {
-            const data = (await checkRes.json()) as { messages: any[] };
+            const data = (await checkRes.json()) as { messages: unknown[] };
             streamChecked[streamName] = data.messages && data.messages.length > 0;
           } else {
             streamChecked[streamName] = false;
@@ -305,7 +306,7 @@ export async function migrateChat(dumpFilePath: string, delayMs = 650): Promise<
         const postRes = await fetchWithRetry(`${baseUrl}/api/v1/messages`, {
           method: 'POST',
           headers: {
-            Authorization: authHeader,
+            Authorization: senderAuthHeader,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: msgParams,
@@ -338,7 +339,7 @@ export async function migrateChat(dumpFilePath: string, delayMs = 650): Promise<
           });
 
           if (checkRes.ok) {
-            const data = (await checkRes.json()) as { messages: any[] };
+            const data = (await checkRes.json()) as { messages: unknown[] };
             conversationChecked[convKey] = data.messages && data.messages.length > 0;
           } else {
             conversationChecked[convKey] = false;

@@ -107,4 +107,14 @@ describe('GET /api/attendance - Attendance History & Scoped Queries', () => {
     expect(resFilter.body.length).toBe(1);
     expect(resFilter.body[0].employee_id).toBe(otherEmployeeId);
   });
+
+  it('allows super_admin to scope query to own records using employee_id=me', async () => {
+    const resMe = await supertest(app)
+      .get('/api/attendance?employee_id=me')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(resMe.status).toBe(200);
+    expect(resMe.body.length).toBe(0); // adminToken employee_id has no seeded attendance records
+  });
 });
+

@@ -447,57 +447,108 @@ Log into Zulip with the same credentials.
 
 ---
 
-### Step 10.5: Migrate Existing Employee Data
+### Step 10.5: Migrate Existing Employee Data (Go-Live Day)
 
-This step imports all your real employee records (from the old jd-connect system) into the VPS database. The migration script talks **directly to Postgres** — it does not go through the HTTP API — so it must run inside the `jdconnect_api` container, which has database access.
+> [!IMPORTANT]
+> **Do NOT use the local test dump file for this step.** The local file (`jdconnect_public_data.sql` on your Windows machine) was used only during development. On actual go-live day, you generate a **fresh dump from the live old system** so it contains all data up to that exact moment. The commands below do exactly that.
 
-**1. Copy your SQL dump file to the VPS:**
+> [!NOTE]
+> The old `jd-connect` (Supabase stack) and the new `jdconnect_v2` stack **run on the same VPS**. There is no file transfer between servers. Everything in this step happens in a single SSH session on `82.29.165.21`.
 
-From your Windows machine:
-```powershell
-# Replace <VPS_IP> with your VPS IP address
-scp C:\Users\Administrator\Desktop\jdconnect_public_data.sql root@<VPS_IP>:/opt/jdconnect_v2/jdconnect_public_data.sql
-```
+This step imports all your real employee records from the old `jd-connect` Supabase database into the new JD Connect v2 Postgres database. The migration script talks **directly to Postgres** — it does not go through the HTTP API — so it must run inside the `jdconnect_api` container, which has database access.
 
-**2. Copy the SQL file into the running API container:**
+You can run all of these commands **from any directory** on the VPS — `docker exec` and `docker cp` reference containers by name, not by path. Just SSH in and run them.
 
-SSH into the VPS and run:
-```bash
-docker cp /opt/jdconnect_v2/jdconnect_public_data.sql jdconnect_api:/app/jdconnect_public_data.sql
-```
+---
 
-**3. Run the migration script inside the container:**
+**1. Dump the live database from the old Supabase container**
 
 ```bash
-docker exec jdconnect_api tsx scripts/migrate-employees.ts
+# Step 1a: Run pg_dump inside the supabase-db container — writes to /tmp inside the container
+docker exec supabase-db pg_dump \
+  -U postgres \
+  -d postgres \
+  --schema=public \
+  --data-only \
+  --no-owner \
+  --no-privileges \
+  -f /tmp/jdconnect_public_data.sql
+
+# Step 1b: Copy the dump out of the supabase-db container onto the VPS host filesystem
+docker cp supabase-db:/tmp/jdconnect_public_data.sql /tmp/jdconnect_public_data.sql
 ```
+
+The file is now at `/tmp/jdconnect_public_data.sql` on the VPS host.
+
+---
+
+**2. Copy the dump file into the new API container**
+
+```bash
+docker cp /tmp/jdconnect_public_data.sql jdconnect_api:/app/jdconnect_public_data.sql
+```
+
+---
+
+**3. Run the migration script**
+
+```bash
+# Pass the file path explicitly as an argument — required on the VPS
+docker exec jdconnect_api tsx scripts/migrate-employees.ts /app/jdconnect_public_data.sql
+```
+
+> [!IMPORTANT]
+> You **must** include `/app/jdconnect_public_data.sql` as the argument. Without it, the script falls back to a hardcoded Windows path (`C:\Users\Administrator\Desktop\...`) which does not exist inside the Linux container and will crash immediately.
+
+---
+
+**4. Run the migration script**
+
+> **Where to run this:** On the **new VPS**, from any directory.
+
+```bash
+# Pass the file path explicitly as an argument — required on the VPS
+docker exec jdconnect_api tsx scripts/migrate-employees.ts /app/jdconnect_public_data.sql
+```
+
+> [!IMPORTANT]
+> You **must** include `/app/jdconnect_public_data.sql` as the argument. Without it, the script falls back to a hardcoded Windows path (`C:\Users\Administrator\Desktop\...`) which does not exist inside the Linux container and will crash immediately.
 
 The script will:
-- Read the SQL dump from inside the container at `/app/jdconnect_public_data.sql`
+- Read the SQL dump from `/app/jdconnect_public_data.sql` inside the container
 - Map old department/centre/shift/role IDs to the new schema
 - Create a `users` row and an `employees` row for each employee
 - Provision each employee in Zulip (sets `zulip_provisioned = true` if successful)
 - Write a `migration_passwords.csv` file inside the container with each employee's temporary password
 
-**4. Copy the passwords CSV back to your machine:**
+---
+
+**5. Copy the passwords CSV back to your machine**
 
 ```bash
-# On VPS — copy out of container first
+# On new VPS — copy out of container first
 docker cp jdconnect_api:/app/migration_passwords.csv /opt/jdconnect_v2/migration_passwords.csv
 ```
 
 ```powershell
 # On Windows — SCP it down
-scp root@<VPS_IP>:/opt/jdconnect_v2/migration_passwords.csv C:\Users\Administrator\Desktop\vps_migration_passwords.csv
+scp root@<NEW_VPS_IP>:/opt/jdconnect_v2/migration_passwords.csv C:\Users\Administrator\Desktop\vps_migration_passwords.csv
 ```
 
 > [!CAUTION]
-> `migration_passwords.csv` contains plaintext temporary passwords. Delete it from the VPS (`rm /opt/jdconnect_v2/migration_passwords.csv`) after you have safely downloaded it to your machine.
+> `migration_passwords.csv` contains plaintext temporary passwords. Delete it from the VPS after safely downloading it:
+> ```bash
+> rm /opt/jdconnect_v2/migration_passwords.csv
+> ```
 
 > [!NOTE]
-> The migration script is idempotent — if it finds an employee that already exists (by employee code or email), it skips them. Safe to run again if interrupted.
+> The migration script is idempotent — if an employee already exists (matched by employee code or email), it is skipped. Safe to re-run if it was interrupted.
 
-**5. Verify employees loaded:**
+---
+
+**6. Verify employees loaded**
+
+> **Where to run this:** New VPS, any directory.
 
 ```bash
 # Quick count check

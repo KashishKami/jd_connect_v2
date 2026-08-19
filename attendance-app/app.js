@@ -153,6 +153,27 @@
   function formatDateFull(isoString) {
     if (!isoString) return '-';
     try {
+      // 1. Pure date string "YYYY-MM-DD"
+      if (typeof isoString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(isoString)) {
+        const [year, month, day] = isoString.split('-').map(Number);
+        const d = new Date(year, month - 1, day);
+        return d.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+      }
+      // 2. Pure date serialized as UTC midnight ISO string "YYYY-MM-DDT00:00:00..."
+      if (typeof isoString === 'string' && /^\d{4}-\d{2}-\d{2}T00:00:00/.test(isoString)) {
+        const [year, month, day] = isoString.slice(0, 10).split('-').map(Number);
+        const d = new Date(year, month - 1, day);
+        return d.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+      }
+      // 3. Full TIMESTAMPTZ with non-zero time (e.g. break start_at) -> format in EST/EDT
       const d = new Date(isoString);
       if (isNaN(d.getTime())) return '-';
       return d.toLocaleDateString('en-US', {
@@ -165,6 +186,9 @@
       return '-';
     }
   }
+
+
+
 
   async function loadUserProfile() {
     if (!token) return;
@@ -267,7 +291,7 @@
     if (!attendanceHistoryTableBody) return;
     try {
       attendanceHistoryTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading your attendance logs...</td></tr>';
-      const records = await apiRequest('/api/attendance');
+      const records = await apiRequest('/api/attendance?employee_id=me');
       if (!Array.isArray(records) || records.length === 0) {
         attendanceHistoryTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">No attendance records found yet.</td></tr>';
         return;
@@ -297,7 +321,7 @@
     if (!breakHistoryTableBody) return;
     try {
       breakHistoryTableBody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading your break logs...</td></tr>';
-      const records = await apiRequest('/api/breaks');
+      const records = await apiRequest('/api/breaks?employee_id=me');
       if (!Array.isArray(records) || records.length === 0) {
         breakHistoryTableBody.innerHTML = '<tr><td colspan="6" class="empty-state">No break records found yet.</td></tr>';
         return;
