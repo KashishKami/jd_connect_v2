@@ -154,10 +154,16 @@ export class EmployeeRepository {
     setClauses.push('updated_at = NOW()');
 
     const sql = `
-      UPDATE employees
-      SET ${setClauses.join(', ')}
-      WHERE id = $1
-      RETURNING *
+      WITH updated AS (
+        UPDATE employees e
+        SET ${setClauses.join(', ')}
+        WHERE e.id = $1
+        RETURNING *
+      )
+      SELECT u.*, d.name AS department, r.key AS role
+      FROM updated u
+      LEFT JOIN departments d ON u.department_id = d.id
+      LEFT JOIN roles r ON u.role_id = r.id
     `;
 
     const res = await this.dbPool.query<EmployeeResponse>(sql, params);

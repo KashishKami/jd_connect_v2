@@ -1,0 +1,21 @@
+{
+  "name": "@jdconnect/portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --environment happy-dom --passWithNoTests"
+  },
+  "dependencies": {
+    "jose": "^5.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0",
+    "happy-dom": "^14.0.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.6.0"
+  }
+}

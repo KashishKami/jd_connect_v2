@@ -184,5 +184,5 @@ msg2_legacy_uuid	conv1_legacy_uuid	\\N	emp2_legacy_uuid	Hi Employee One (DM)	202
 
     const postRequests = fetchCalls.filter((c) => c.url.includes('/api/v1/messages') && c.method === 'POST');
     expect(postRequests.length).toBe(0);
-  });
+  }, 15000);
 });

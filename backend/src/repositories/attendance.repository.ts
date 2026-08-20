@@ -3,6 +3,7 @@ import { AttendanceRecord, AttendanceStatus } from '../types/attendance';
 
 export interface FindAttendanceFilters {
   employee_id?: string | undefined;
+  team_actor_id?: string | undefined;
   fromDate?: string | undefined;
   toDate?: string | undefined;
   status?: AttendanceStatus | undefined;
@@ -60,6 +61,10 @@ export class AttendanceRepository {
     if (filters.employee_id) {
       values.push(filters.employee_id);
       conditions.push(`a.employee_id = $${values.length}`);
+    }
+    if (filters.team_actor_id) {
+      values.push(filters.team_actor_id);
+      conditions.push(`(e.manager_id = $${values.length} OR e.team_leader_id = $${values.length} OR e.id = $${values.length})`);
     }
     if (filters.fromDate) {
       values.push(filters.fromDate);

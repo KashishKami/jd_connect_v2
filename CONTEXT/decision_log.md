@@ -457,3 +457,131 @@ The existing `/monitor` endpoint returns `working_count`, `on_break_count`, `tot
 - Attendance logic decoupled from Zulip presence. Decision 6 stands.
 - Admin-only password reset (no self-service email). Decision 2 consequence stands.
 - Backend API is the sole writer to JD Connect's Postgres. Decision 7 stands.
+
+---
+
+### Decision 14: Merge Attendance App + HR Dashboard into One Unified Portal with esbuild + Backend-Enforced Granular Permissions
+
+**Date:** 2026-08-21
+**Status:** Accepted
+
+#### Context
+
+Phase 9 produced two separate working web applications:
+- `attendance-app/` — employee clock-in/out, break management, personal history
+- `hr-dashboard/` — employee management, attendance audit, break audit, admin actions
+
+Both apps share the same login endpoint (`POST /api/auth/login`), the same JWT, the same Backend API, and the same CSS design system (Notion theme, identical CSS variables). Maintaining two separate apps creates duplicated auth logic, two separate deployment units, and a fragmented UX. Additionally:
+
+1. **Security gap:** The HR Dashboard had no frontend role-gate — any employee who knew the URL could load the page. Although the backend rejected their API calls (403), the UI loaded freely. This is poor UX and opaque security.
+2. **Frontend has no TypeScript:** Both apps are plain JS files. Adding TypeScript requires a build step; esbuild is the correct choice (lightweight, fast, zero config).
+3. **Permission system is coarse:** The backend only checks `employees.manage` (create + edit bundled together). There is no granularity within a page (view vs. create vs. edit vs. delete), no field-level access control, and no permissions management UI.
+4. **No permissions management page:** Admins cannot change role-permission assignments without touching the database directly.
+
+#### Decision
+
+**Merge `attendance-app/` and `hr-dashboard/` into a single unified portal (`portal/`). Add esbuild as the TypeScript build step. Expand the permission system to be granular, fully backend-enforced, and manageable via a new Permissions page.**
+
+Specifically:
+
+**1. Unified Portal (`portal/`)**
+- Single application replacing both `attendance-app/` and `hr-dashboard/`.
+- One login screen. After login, the JWT is used to call `GET /api/me/permissions` which returns the full list of permission keys the authenticated user holds.
+- The sidebar/nav renders only the sections the user has permission to access. Employees see only the Attendance Console. HR/Admin/Manager additionally see Employees, Attendance Audit, Breaks Audit, and (super_admin only) Permissions Management.
+- Frontend role-gate is UX-only (hides nav items, redirects on direct URL access). The backend remains the authoritative security layer — every API call is still checked server-side.
+- Served at a single URL (e.g., `app.yourcompany.com`). No separate `clock.yourcompany.com` or `hr.yourcompany.com` split needed.
+
+**2. esbuild TypeScript Build Step**
+- The portal is written in TypeScript (`.ts` files in `portal/src/`).
+- `esbuild` bundles `portal/src/main.ts` → `portal/dist/bundle.js`. CSS is copied from `portal/src/styles.css` → `portal/dist/styles.css`.
+- Build command: `pnpm build` (runs `esbuild src/main.ts --bundle --outfile=dist/bundle.js`).
+- Dev command: `pnpm dev` (runs esbuild with `--watch` + `npx serve dist/` for live reloading).
+- No React, no webpack, no framework. Plain TypeScript compiled by esbuild to vanilla JS.
+- The `index.html` in `portal/` references `dist/bundle.js` and `dist/styles.css`.
+
+**3. Granular Backend-Enforced Permission System**
+
+The existing `permissions` and `role_permissions` tables are retained. The permission key taxonomy is expanded from 6 coarse keys to a complete fine-grained set covering every page, action, and sensitive field in the system.
+
+**Permission enforcement layers (all in the backend):**
+- **Route-level:** `requirePermission(key)` middleware blocks the entire endpoint (HTTP 403) if the caller lacks the key. Every route has an explicit permission key.
+- **Query-param-level:** Service checks permission before applying optional filter params. If the caller lacks `employees.filter.by_role`, the `role_key` query param is silently ignored.
+- **Field-level (response stripping):** Service removes sensitive fields from the response object if the caller lacks the corresponding permission. Example: if caller lacks `employees.view.salary` (future field), that field is omitted from every row.
+- **Row-level (scoping):** For `attendance.view_team` and `breaks.view_team`, the service appends a `WHERE manager_id = $1 OR team_leader_id = $1` clause so managers only see their own team's records.
+
+**New permission keys (complete taxonomy):**
+
+| Key | Description |
+|---|---|
+| `portal.attendance` | Access the Attendance Console page |
+| `portal.employees` | Access the Employees Management page |
+| `portal.attendance_audit` | Access the Attendance Audit page |
+| `portal.breaks_audit` | Access the Breaks Audit page |
+| `portal.permissions` | Access the Permissions Management page |
+| `employees.view` | View employee list and basic fields |
+| `employees.view.sensitive` | View sensitive fields (mobile, designation, joining date) |
+| `employees.create` | Create new employees |
+| `employees.edit` | Edit existing employee fields |
+| `employees.edit.role` | Change an employee's role (elevate only) |
+| `employees.edit.status` | Change employment status (suspend, terminate) |
+| `employees.delete` | Soft-delete / permanently terminate an employee record |
+| `employees.filter.by_role` | Use the role filter on the employees page |
+| `employees.filter.by_department` | Use the department filter on the employees page |
+| `employees.filter.by_status` | Use the status filter on the employees page |
+| `attendance.view_own` | View own attendance records |
+| `attendance.view_team` | View team attendance (scoped to managed employees) |
+| `attendance.view_all` | View all employees' attendance |
+| `attendance.correct` | Submit attendance corrections |
+| `breaks.view_own` | View own break records |
+| `breaks.view_team` | View team break records (scoped) |
+| `breaks.view_all` | View all employees' breaks |
+| `hr.reset_password` | Reset any employee's password |
+| `hr.manage_roles` | Assign/change employee roles (super_admin only) |
+| `permissions.view` | View the permissions matrix |
+| `permissions.manage` | Edit role-permission assignments |
+
+**4. `GET /api/me/permissions` endpoint**
+- New endpoint. Returns the full list of permission keys for the authenticated user's role(s).
+- Called once on login. Cached in `sessionStorage` for the session lifetime.
+- The frontend reads this cache to control UI visibility (nav items, buttons, filter dropdowns).
+- If the cache is cleared or the session expires, the user is redirected to the login screen.
+
+**5. Permissions Management Page (UI)**
+- Only accessible to users with `permissions.view` permission (super_admin only by default).
+- Displays a matrix: rows = roles, columns = permission keys, cells = toggle (enabled/disabled).
+- Saving calls `PUT /api/roles/:roleKey/permissions` with the new permission key set.
+- Changes take effect on the next login (session cache is invalidated on permission change — the backend sends a response header `X-Permissions-Changed: true` to trigger a re-fetch).
+
+**6. Directory structure change**
+- `attendance-app/` → retired (archived as `attendance-app.archived/` for reference).
+- `hr-dashboard/` → retired (archived as `hr-dashboard.archived/` for reference).
+- `portal/` → new unified portal directory.
+- `portal/src/` → TypeScript source files.
+- `portal/dist/` → esbuild output (gitignored).
+- `portal/index.html` → entry point referencing `dist/bundle.js` and `dist/styles.css`.
+- `portal/package.json` → esbuild build scripts.
+- `pnpm-workspace.yaml` → updated to include `portal`.
+
+#### What Changes
+
+1. `attendance-app/` and `hr-dashboard/` retired — archived, not deleted.
+2. New `portal/` workspace created with esbuild TypeScript pipeline.
+3. New SQL migration `012_expand_permissions.sql` — expands the `permissions` table with the full taxonomy; updates `role_permissions` seed data.
+4. New backend endpoint: `GET /api/me/permissions`.
+5. New backend endpoints: `GET /api/permissions`, `GET /api/roles`, `GET /api/roles/:roleKey/permissions`, `PUT /api/roles/:roleKey/permissions`.
+6. Split `employees.manage` permission into `employees.create`, `employees.edit`, `employees.edit.role`, `employees.edit.status`, `employees.delete`.
+7. All existing route guards updated to use the new fine-grained permission keys.
+8. Service layer updated to perform query-param permission checks and response field stripping.
+9. `project_data.md` Section 2 updated: Component 2 and Component 4 merged into Component 2 (Unified Portal). Permission key table in Section 5 expanded.
+10. `pnpm-workspace.yaml` updated: remove `attendance-app` and `hr-dashboard`, add `portal`.
+
+#### What Does NOT Change
+
+- The Backend API's three-layer architecture (repositories → services → routes). Decision 7 stands.
+- Plain `pg` pool + raw SQL repositories. Decision 11 stands.
+- Custom JWT auth (RS256). Decision 2 stands.
+- Attendance logic decoupled from Zulip presence. Decision 6 stands.
+- Admin-only password reset (no self-service email). Decision 2 consequence stands.
+- Backend API is the sole writer to JD Connect's Postgres. Decision 7 stands.
+- The Zulip Bot (`zulip-bot/`). Unchanged — still posts daily attendance prompt.
+- All Postgres table schemas for HR/attendance/break data. No structural changes except the new permission rows.

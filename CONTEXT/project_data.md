@@ -18,7 +18,7 @@ This document is the **authoritative reference** for JD Connect's metadata, tech
 
 ## 2. Architecture Overview
 
-The system is built as four deliberately isolated components so each can be upgraded independently:
+The system is built as three deliberately isolated components so each can be upgraded independently. (Previously four components — `attendance-app/` and `hr-dashboard/` were merged into a single unified portal in Decision 14.)
 
 ### Component 1: Zulip (Chat Platform)
 - Self-hosted via Docker Compose.
@@ -27,23 +27,19 @@ The system is built as four deliberately isolated components so each can be upgr
 - **Zulip's Postgres database owns only chat data** — it is not used for HR, attendance, or employee data.
 - Decision log reference: Decision 12.
 
-### Component 2: Attendance Web App + Zulip Bot
-- Replaces the old Rocket.Chat Apps-Engine attendance app. See Decision 12.
-- **Sub-component A — Attendance Web App** (`attendance-app/`): A standalone lightweight web application served at `clock.yourcompany.com`. Employees navigate here to clock in/out and manage breaks. Authenticates via JWT session cookie (SSO). Calls the Backend API for all data operations.
-- **Sub-component B — Zulip Bot** (`zulip-bot/`): A small Node.js cron service. Every morning at 8:45 AM EST it posts a Markdown message into the `#attendance` Zulip stream with a link to the Attendance Web App. Stateless — does not process attendance events.
+### Component 2: Unified Portal + Zulip Bot
+- Decision log reference: Decision 14.
+- **Sub-component A — Unified Portal** (`portal/`): A single TypeScript web application (compiled by esbuild, served at `app.yourcompany.com`) that replaces both the old `attendance-app/` and `hr-dashboard/` apps. All employees use this one URL. After login, `GET /api/me/permissions` determines which pages and features the user can see. Employees see the Attendance Console only. HR/Admin/Managers additionally see Employee Management, Attendance Audit, Breaks Audit. Super Admins additionally see the Permissions Management page.
+- **Sub-component B — Zulip Bot** (`zulip-bot/`): A small Node.js cron service. Every morning at 8:45 AM EST it posts a Markdown message into the `#attendance` Zulip stream with a link to the Unified Portal. Stateless — does not process attendance events.
+- The portal is written in TypeScript. esbuild bundles `portal/src/main.ts` → `portal/dist/bundle.js`. No React, no webpack, no framework.
+- Frontend role-gating is UX-only (hides nav items). The backend is the authoritative security layer — every API call is checked server-side via `requirePermission()` middleware.
 
 ### Component 3: Backend API
 - Our own Node.js/TypeScript REST API service.
 - The **only** process that writes to JD Connect's Postgres database.
 - The **only** process that calls Zulip's Admin REST API.
-- Handles: JWT auth, employee CRUD, attendance recording, break recording, permission checks, admin password reset, employee provisioning into Zulip, OIDC server endpoints for SSO.
-- Data flow: `Attendance Web App → Backend API → Postgres` and `HR Dashboard → Backend API → Postgres + Zulip Admin API`.
-
-### Component 4: HR / Admin Dashboard (Web App)
-- Separate web application served on its own subdomain (e.g., `hr.yourcompany.com`).
-- Admin subdomain: permission management, user role assignment.
-- HR subdomain: employee CRUD, attendance history, break history, password reset, Zulip provisioning retry.
-- Reads/writes Postgres exclusively via the Backend API — no direct DB access.
+- Handles: JWT auth, employee CRUD, attendance recording, break recording, granular permission enforcement (route-level, query-param-level, field-level, row-level), admin password reset, employee provisioning into Zulip, OIDC server endpoints for SSO, permissions management CRUD.
+- Data flow: `Unified Portal → Backend API → Postgres` and `Unified Portal → Backend API → Postgres + Zulip Admin API`.
 
 ---
 
@@ -108,6 +104,8 @@ Auth is entirely handled by the Backend API. There is no third-party auth platfo
 
 ## 5. Roles & Permissions
 
+> **Decision 14:** Permission system expanded from 6 coarse keys to a full fine-grained taxonomy. All permissions are enforced in the backend at route-level, query-param-level, field-level, and row-level. The frontend reads `GET /api/me/permissions` after login and uses the result only for UX (hiding nav items and buttons) — never for security decisions.
+
 ### App Roles (stored in Postgres, mapped to employees)
 
 | Role | Description |
@@ -118,19 +116,36 @@ Auth is entirely handled by the Backend API. There is no third-party auth platfo
 | `team_leader` | Can view their team's attendance and breaks. |
 | `employee` | Standard access. Can clock in/out, take breaks, use chat. |
 
-### Permission Keys (format: `resource:action`)
+### Permission Keys — Complete Taxonomy
+
+#### Portal Page Access
+| Key | Description | super_admin | admin | manager | team_leader | employee |
+|---|---|---|---|---|---|---|
+| `portal.attendance` | Access the Attendance Console | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `portal.employees` | Access Employee Management page | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `portal.attendance_audit` | Access Attendance Audit page | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `portal.breaks_audit` | Access Breaks Audit page | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `portal.permissions` | Access Permissions Management page | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 #### Resource: `employees`
 | Key | Description | super_admin | admin | manager | team_leader | employee |
 |---|---|---|---|---|---|---|
-| `employees.view` | View employee directory | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `employees.manage` | Create/edit/suspend employees | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `employees.view` | View employee list and basic fields | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `employees.view.sensitive` | View sensitive fields (mobile, designation, joining date) | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `employees.create` | Create new employees | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `employees.edit` | Edit existing employee fields | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `employees.edit.role` | Change an employee's role | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `employees.edit.status` | Change employment status (suspend, terminate) | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `employees.delete` | Soft-delete / permanently terminate | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `employees.filter.by_role` | Use role filter on employees page | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `employees.filter.by_department` | Use department filter on employees page | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `employees.filter.by_status` | Use status filter on employees page | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 #### Resource: `attendance`
 | Key | Description | super_admin | admin | manager | team_leader | employee |
 |---|---|---|---|---|---|---|
 | `attendance.view_own` | View own attendance records | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `attendance.view_team` | View team attendance (scoped) | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `attendance.view_team` | View team attendance (scoped to managed employees) | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `attendance.view_all` | View all employees' attendance | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `attendance.correct` | Submit attendance corrections | ✅ | ✅ | ✅ | ❌ | ❌ |
 
@@ -146,6 +161,21 @@ Auth is entirely handled by the Backend API. There is no third-party auth platfo
 |---|---|---|---|---|---|---|
 | `hr.reset_password` | Reset any employee's password | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `hr.manage_roles` | Assign/change employee roles | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+#### Resource: `permissions`
+| Key | Description | super_admin | admin | manager | team_leader | employee |
+|---|---|---|---|---|---|---|
+| `permissions.view` | View the permissions matrix | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `permissions.manage` | Edit role-permission assignments | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+### Permission Enforcement Layers (all backend-enforced)
+
+| Layer | Mechanism | Example |
+|---|---|---|
+| **Route-level** | `requirePermission(key)` middleware → HTTP 403 if missing | `GET /api/employees` → requires `employees.view` |
+| **Query-param-level** | Service ignores filter param if caller lacks permission | No `employees.filter.by_role` → `role_key` query param is silently ignored |
+| **Field-level** | Service strips fields from response objects | No `employees.view.sensitive` → `mobile`, `designation` omitted from every row |
+| **Row-level** | Service appends `WHERE` scoping clause | `attendance.view_team` → only returns records where `manager_id` or `team_leader_id` matches caller |
 
 ---
 
@@ -231,12 +261,14 @@ Seeded locations:
 ## 10. Key Architectural Constraints (Always Keep in Mind)
 
 1. **Zulip's Postgres schema and JD Connect's Postgres schema never communicate directly.** The Backend API is the only bridge. MongoDB has been removed entirely.
-2. **Zulip presence ≠ attendance state.** Never couple them. Attendance is tracked exclusively via explicit clock-in/clock-out actions in the Attendance Web App.
+2. **Zulip presence ≠ attendance state.** Never couple them. Attendance is tracked exclusively via explicit clock-in/clock-out actions in the Unified Portal.
 3. **`zulip_user_id` is the immutable cross-system key.** Never use email as a join key between Zulip and JD Connect Postgres.
 4. **All employee creation must provision Zulip atomically.** Failure sets `zulip_provisioned = false` and is surfaced to HR — never silently swallowed.
 5. **Auth is entirely custom JWT.** No Supabase, no third-party auth platform.
 6. **Password reset is admin-only.** No self-service email flow.
-7. **The Backend API is the single writer to JD Connect's Postgres.** The HR dashboard never touches Postgres directly.
-8. **Zulip's Admin REST API is called only by the Backend API.** The Attendance Web App calls the Backend API, not Zulip Admin API directly.
+7. **The Backend API is the single writer to JD Connect's Postgres.** The Unified Portal never touches Postgres directly.
+8. **Zulip's Admin REST API is called only by the Backend API.** The Unified Portal calls the Backend API, not Zulip Admin API directly.
 9. **The Zulip Bot (`zulip-bot/`) is stateless and posts-only.** It never processes attendance events or calls the Backend API for HR data.
-10. **The Attendance Web App (`attendance-app/`) is fully independent of Zulip.** It is a standalone web page that calls the Backend API. If Zulip is down, attendance tracking continues uninterrupted.
+10. **The Unified Portal (`portal/`) is fully independent of Zulip.** It is a standalone TypeScript web app (compiled via esbuild) that calls the Backend API. If Zulip is down, attendance tracking continues uninterrupted.
+11. **All permissions are enforced in the backend.** Frontend permission checks are UX-only (hiding nav items). The backend must enforce every permission at route-level, query-param-level, field-level, and row-level. There is no security guarantee from the frontend.
+12. **`GET /api/me/permissions` is the permission source of truth for the frontend.** Called once after login, cached in `sessionStorage`. Never hardcode role-to-permission mappings in the frontend — always read from this endpoint.

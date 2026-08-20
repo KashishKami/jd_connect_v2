@@ -27,7 +27,7 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | **Phase 6.6** | Local Traefik & 3-Network Docker Infrastructure for SSO | **[ ] IN PROGRESS** | `docker/docker-compose.traefik.yml`, `docker/traefik/`, `docker/zulip/compose.override.yaml` |
 | **Phase 7** | Data Migration (Old System → New) | **[x] COMPLETE** | `backend/scripts/migrate-employees.ts`, `backend/scripts/migrate-attendance.ts`, `backend/scripts/migrate-chat.ts` |
 | **Phase 8** | Production Deployment | **[ ] NOT STARTED** | `docker/docker-compose.prod.yml`, `docker/nginx.conf`, backup scripts |
-
+| **Phase 10** | Unified Portal + Granular Permissions System | **[ / ] IN PROGRESS** | `portal/`, `backend/src/routes/permissions.ts`, `backend/src/routes/roles.ts`, `backend/migrations/014_expand_permissions.sql`, `backend/src/services/permissions.service.ts` |
 
 ---
 
@@ -3006,3 +3006,610 @@ The Attendance App is a single centered `.card` that wastes space on workstation
 | W-909 | HR Dashboard | Employees page — search, filters, alias col, pagination, edit modal |
 | W-910 | HR Dashboard | Attendance + Breaks pages — filters + pagination + deep-link |
 | W-911 | Attendance App | Full-page layout + Notion theme + pagination + tagline removal |
+
+---
+
+### Phase 10 — Unified Portal + Granular Permissions System
+
+> **Goal:** Replace the separate `attendance-app/` and `hr-dashboard/` with a single unified TypeScript portal (`portal/`) compiled by esbuild. Expand the permission system from 6 coarse keys to a full fine-grained taxonomy enforced at route-level, query-param-level, field-level, and row-level in the backend. Add a Permissions Management page so super_admin can manage role-permission assignments via the UI without touching the database.
+
+> **Decision reference:** Decision 14 in `CONTEXT/decision_log.md`. Read it in full before beginning this phase.
+
+> **Constraint:** All permission enforcement happens in the backend. Frontend permission checks are UX-only.
+
+---
+
+#### W-1001 — Database: Expand Permission Taxonomy + Seed Role-Permission Matrix
+
+**Root cause:**
+The current `permissions` table has only 6 coarse keys (`employees.view`, `employees.manage`, `attendance.view_own`, `attendance.view_team`, `attendance.view_all`, `attendance.correct`, `breaks.*`, `hr.*`). Decision 14 defines a complete 27-key taxonomy covering portal page access, employee CRUD granularity, filter-level access, field-level access, and permissions management. The `role_permissions` table must be re-seeded to match.
+
+**Goal:**
+1. New SQL migration `012_expand_permissions.sql` runs cleanly on both `jdconnect` and `jdconnect_test`.
+2. `permissions` table contains all 27 keys from the Decision 14 taxonomy.
+3. `role_permissions` table reflects the correct role-to-permission mapping from `project_data.md` Section 5.
+4. Old `employees.manage` key is replaced by the granular `employees.create`, `employees.edit`, `employees.edit.role`, `employees.edit.status`, `employees.delete` keys.
+5. All existing tests remain GREEN.
+
+**Approach:**
+Write a migration that: (1) inserts new permission rows with `ON CONFLICT DO NOTHING`; (2) removes the obsolete `employees.manage` key; (3) truncates and re-inserts `role_permissions` rows for all 5 roles × 27 keys. Update `backend/scripts/seed.ts` to reflect the new taxonomy for fresh database setups.
+
+---
+
+- [x] **RED — Integration (`backend/tests/migrations.test.ts`):**
+  - [x] Add test: `SELECT COUNT(*) FROM permissions` → assert ≥ 26 rows.
+  - [x] Add test: `SELECT key FROM permissions WHERE key = 'employees.manage'` → assert 0 rows (obsolete key removed).
+  - [x] Add test: `SELECT key FROM permissions WHERE key = 'employees.create'` → assert 1 row.
+  - [x] Add test: `SELECT key FROM permissions WHERE key = 'portal.permissions'` → assert 1 row.
+  - [x] **Run — confirm RED (new keys do not exist yet).**
+
+- [x] **GREEN — Schema:**
+  - [x] [Schema] Create `backend/migrations/014_expand_permissions.sql`:
+        ```sql
+        -- Insert new permission keys (idempotent)
+        INSERT INTO permissions (key, description) VALUES
+          ('portal.attendance',            'Access the Attendance Console page'),
+          ('portal.employees',             'Access the Employees Management page'),
+          ('portal.attendance_audit',      'Access the Attendance Audit page'),
+          ('portal.breaks_audit',          'Access the Breaks Audit page'),
+          ('portal.permissions',           'Access the Permissions Management page'),
+          ('employees.view.sensitive',     'View sensitive employee fields (mobile, designation, joining date)'),
+          ('employees.create',             'Create new employees'),
+          ('employees.edit',               'Edit existing employee fields'),
+          ('employees.edit.role',          'Change an employee role'),
+          ('employees.edit.status',        'Change employment status'),
+          ('employees.delete',             'Soft-delete / terminate employee record'),
+          ('employees.filter.by_role',     'Use role filter on employees page'),
+          ('employees.filter.by_department','Use department filter on employees page'),
+          ('employees.filter.by_status',   'Use status filter on employees page'),
+          ('permissions.view',             'View the permissions matrix'),
+          ('permissions.manage',           'Edit role-permission assignments')
+        ON CONFLICT (key) DO NOTHING;
+
+        -- Remove obsolete coarse key
+        DELETE FROM role_permissions WHERE permission_id IN (SELECT id FROM permissions WHERE key = 'employees.manage');
+        DELETE FROM permissions WHERE key = 'employees.manage';
+
+        -- Re-seed role_permissions for all roles (truncate and re-insert)
+        -- [Full INSERT statements for all 5 roles × 26 keys per project_data.md Section 5]
+        ```
+  - [x] Run `npx ts-node backend/scripts/migrate.ts` on both `jdconnect` and `jdconnect_test`.
+  - [x] Update `backend/scripts/seed.ts` to include all 26 permission keys and the correct role-permission matrix for fresh setups.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/seed.unit.test.ts`):**
+  - [x] Add test: `SELECT COUNT(*) FROM permissions` → assert exactly 26.
+  - [x] Add test: `SELECT COUNT(*) FROM role_permissions WHERE role_id = (SELECT id FROM roles WHERE key = 'employee')` → assert matches employee row count from taxonomy (5: `portal.attendance`, `attendance.view_own`, `breaks.view_own`, `employees.view` — read from taxonomy table).
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Seed unit test:** Run — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] `psql -c "SELECT key FROM permissions ORDER BY key;"` → all 26 keys listed.
+  - [x] `psql -c "SELECT r.key, p.key FROM role_permissions rp JOIN roles r ON r.id = rp.role_id JOIN permissions p ON p.id = rp.permission_id WHERE r.key = 'employee';"` → only employee-permitted keys listed.
+  - [x] ✅ Done.
+
+---
+
+#### W-1002 — Backend: `GET /api/me/permissions` Endpoint
+
+**Root cause:**
+After login the Unified Portal needs to know which pages, buttons, and filters the authenticated user is allowed to see. Without this endpoint, the frontend would have to hardcode role→permission mappings, which violates architectural constraint 12 and breaks when an admin changes permissions via the UI.
+
+**Goal:**
+1. `GET /api/me/permissions` returns `{ permissions: string[] }` — the full list of permission keys for the authenticated employee's role(s).
+2. Endpoint is JWT-protected. Returns HTTP 401 if no token.
+3. `super_admin` always gets all permissions (consistent with bypass rule in `requirePermission()`).
+
+**Approach:**
+Query `role_permissions JOIN permissions` for the caller's roles. `super_admin` short-circuit: return all permission keys from the `permissions` table. Cache-control header: `no-store` to prevent proxy caching of permission responses.
+
+---
+
+- [x] **RED — Integration (`backend/tests/permissions.test.ts`):**
+  - [x] Seed: create employee with role `employee`, issue JWT.
+  - [x] Test: `GET /api/me/permissions` with valid token → HTTP 200, body `{ permissions: [...] }`, array includes `portal.attendance` and `attendance.view_own`, does NOT include `employees.create`.
+  - [x] Test: same endpoint with `super_admin` JWT → array includes all 26 keys.
+  - [x] Test: no token → HTTP 401.
+  - [x] **Run — confirm RED (endpoint does not exist).**
+
+- [x] **GREEN — Backend:**
+  - [x] [Repository] Create `backend/src/repositories/permissions.repository.ts`:
+        - `getPermissionsForRoles(roleKeys: string[]): Promise<string[]>` — queries `permissions JOIN role_permissions JOIN roles` and returns array of permission key strings.
+        - `getAllPermissionKeys(): Promise<string[]>` — returns all keys from `permissions` table.
+        - `getRolesWithPermissions(): Promise<{ roleKey: string, permissions: string[] }[]>` — for the permissions management page.
+        - `setRolePermissions(roleKey: string, permissionKeys: string[]): Promise<void>` — transactional: delete old, insert new.
+  - [x] [Service] Create `backend/src/services/permissions.service.ts`:
+        - `getMyPermissions(roles: string[]): Promise<string[]>`: if `super_admin` in roles → return `getAllPermissionKeys()`. Else → return `getPermissionsForRoles(roles)`.
+  - [x] [Route] Create `backend/src/routes/permissions.ts`:
+        - `GET /api/me/permissions` → `authenticateJwt` → call `permissionsService.getMyPermissions(req.employee.roles)` → `200 { permissions }` with `Cache-Control: no-store`.
+  - [x] [App] Register route in `backend/src/app.ts`: `app.use('/api/me', meRouter)` or inline on existing auth router.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/permissions.service.unit.test.ts`):**
+  - [x] Mock `permissionsRepository.getPermissionsForRoles(['employee'])` → `['portal.attendance', 'attendance.view_own']`. Call `permissionsService.getMyPermissions(['employee'])` → assert returns exactly that array.
+  - [x] Mock roles = `['super_admin']`. Mock `getAllPermissionKeys()` → 26 keys. Assert `getMyPermissions` returns all 26.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Run — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] `curl -H "Authorization: Bearer <employee_token>" http://localhost:4000/api/me/permissions` → response contains only employee-scoped permission keys.
+  - [x] `curl -H "Authorization: Bearer <super_admin_token>" http://localhost:4000/api/me/permissions` → response contains all 26 keys.
+  - [x] ✅ Done.
+
+---
+
+#### W-1003 — Backend: Permissions Management API (`/api/permissions`, `/api/roles`)
+
+**Root cause:**
+The Permissions Management page in the portal needs to read the full permissions matrix and write changes to role-permission assignments. These CRUD endpoints do not exist yet.
+
+**Goal:**
+1. `GET /api/permissions` → list all 26 permission keys with descriptions. Requires `permissions.view`.
+2. `GET /api/roles` → list all 5 roles with their current permission keys. Requires `permissions.view`.
+3. `GET /api/roles/:roleKey/permissions` → list permission keys for a specific role. Requires `permissions.view`.
+4. `PUT /api/roles/:roleKey/permissions` → replace the permission set for a role (atomic). Requires `permissions.manage`. `super_admin` role's permissions cannot be changed (always has all).
+
+**Approach:**
+New route file `backend/src/routes/roles.ts`. Transactional `setRolePermissions` in the repository. Validate incoming permission keys against the `permissions` table — reject any unknown keys. Prevent modification of `super_admin` role.
+
+---
+
+- [x] **RED — Integration (`backend/tests/permissions.test.ts`):**
+  - [x] Test: `GET /api/permissions` with `super_admin` token → HTTP 200, array of 26 objects each with `{ key, description }`.
+  - [x] Test: `GET /api/permissions` with `employee` token → HTTP 403.
+  - [x] Test: `GET /api/roles` with `super_admin` token → HTTP 200, array of 5 role objects each with `{ key, name, permissions: string[] }`.
+  - [x] Test: `PUT /api/roles/admin/permissions` with valid `super_admin` token, body `{ permissions: ['employees.view', 'attendance.view_all'] }` → HTTP 200. Subsequent `GET /api/roles/admin/permissions` returns only those 2 keys.
+  - [x] Test: `PUT /api/roles/super_admin/permissions` → HTTP 403 (`super_admin` permissions are immutable).
+  - [x] Test: `PUT /api/roles/admin/permissions` with unknown key `'invalid.key'` → HTTP 400.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Backend:**
+  - [x] [Route] Create `backend/src/routes/roles.ts`:
+        - `GET /api/roles` → `authenticateJwt` + `requirePermission('permissions.view')` → `permissionsRepository.getRolesWithPermissions()`.
+        - `GET /api/roles/:roleKey/permissions` → same guard → returns permission keys for that role.
+        - `PUT /api/roles/:roleKey/permissions` → `authenticateJwt` + `requirePermission('permissions.manage')` → reject if `roleKey === 'super_admin'` → validate all incoming keys exist in `permissions` table → `permissionsRepository.setRolePermissions(roleKey, keys)` → `200 { success: true }`.
+  - [x] [Route] Create `backend/src/routes/permissions.ts` (or extend existing):
+        - `GET /api/permissions` → `authenticateJwt` + `requirePermission('permissions.view')` → return all permission rows.
+  - [x] [App] Register new routes in `backend/src/app.ts`.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/permissions.service.unit.test.ts`):**
+  - [x] `setRolePermissions('super_admin', [...])` → throws `ImmutableRoleError`.
+  - [x] `setRolePermissions('admin', ['invalid.key'])` → throws `UnknownPermissionKeyError`.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Run — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] `curl .../api/permissions` as super_admin → 26 permission objects.
+  - [x] `curl -X PUT .../api/roles/admin/permissions` → change admin's permissions → `GET /api/roles/admin/permissions` reflects change.
+  - [x] Same `PUT` as `employee` token → 403.
+  - [x] ✅ Done.
+
+---
+
+#### W-1004 — Backend: Update All Route Guards to Granular Permission Keys
+
+**Root cause:**
+All existing routes still use the old coarse permission keys (`employees.manage` for both create and edit, no `portal.*` keys, no filter-level or field-level enforcement). These must be updated to the new fine-grained taxonomy before the portal is built — the portal's permission checks depend on the backend returning correct 403s.
+
+**Goal:**
+1. `employees.ts` routes use `employees.create`, `employees.edit`, `employees.edit.role`, `employees.edit.status` instead of `employees.manage`.
+2. `attendance.ts` routes use `attendance.view_all` (for audit) and `attendance.view_own` (for employee's own records).
+3. `breaks.ts` routes use `breaks.view_all` and `breaks.view_own`.
+4. Service layer: `listEmployees()` checks caller permissions before applying `role_key` and `status` filter params. Service strips `mobile`, `designation`, `joining_date` from response if caller lacks `employees.view.sensitive`.
+5. Attendance and break service: if caller has `attendance.view_team` but not `attendance.view_all`, scope the query to employees where caller is `manager_id` or `team_leader_id`.
+6. All existing tests updated to use new permission keys. All tests GREEN.
+
+**Approach:**
+Update `requirePermission()` calls in route files. Update service methods to accept `callerPermissions: string[]` and implement filter-ignoring and field-stripping logic. The `authenticateJwt` middleware already attaches `req.employee.roles` — pass `req.employee.roles` through to service methods where field-stripping or param-gating is needed.
+
+---
+
+- [x] **RED — Integration (`backend/tests/employees.test.ts`):**
+  - [x] Seed: `manager` role employee (has `employees.view` but NOT `employees.create`).
+  - [x] Test: `POST /api/employees` with manager token → HTTP 403.
+  - [x] Test: `POST /api/employees` with admin token → HTTP 201 (admin has `employees.create`).
+  - [x] Test: `PATCH /api/employees/:id` body includes `role_key: 'admin'` with admin token → HTTP 403 (admin lacks `employees.edit.role`).
+  - [x] Test: `PATCH /api/employees/:id` body includes `role_key: 'admin'` with super_admin token → HTTP 200.
+  - [x] Test: `GET /api/employees` with manager token, query `?role_key=admin` → HTTP 200 but response ignores `role_key` filter (manager lacks `employees.filter.by_role`) — all employees returned not just admins.
+  - [x] Test: `GET /api/employees` with manager token → response rows do NOT include `mobile` field (manager lacks `employees.view.sensitive`).
+  - [x] Test: `GET /api/employees` with admin token → response rows DO include `mobile` field.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Backend:**
+  - [x] [Route] `backend/src/routes/employees.ts`:
+        - `POST /api/employees` → `requirePermission('employees.create')`.
+        - `PATCH /api/employees/:id` (general fields) → `requirePermission('employees.edit')`.
+        - For `role_key` in PATCH body → service checks `employees.edit.role` separately.
+        - For `employment_status` in PATCH body → service checks `employees.edit.status` separately.
+        - `POST /api/employees/:id/reset-password` → `requirePermission('hr.reset_password')` (unchanged).
+  - [x] [Service] `backend/src/services/employee.service.ts`:
+        - `listEmployees(filters, callerPermissions: string[])`:
+          - If `!callerPermissions.includes('employees.filter.by_role')` → delete `filters.role_key`.
+          - If `!callerPermissions.includes('employees.filter.by_department')` → delete `filters.department_id`.
+          - If `!callerPermissions.includes('employees.filter.by_status')` → delete `filters.status`.
+          - After fetching, if `!callerPermissions.includes('employees.view.sensitive')` → strip `mobile`, `designation`, `joining_date` from each row.
+        - `updateEmployee(id, input, callerPermissions: string[])`:
+          - If `input.role_key || input.role_id` and `!callerPermissions.includes('employees.edit.role')` → throw `InsufficientPermissionsError`.
+          - If `input.employment_status` and `!callerPermissions.includes('employees.edit.status')` → throw `InsufficientPermissionsError`.
+  - [x] [Route] Pass `req.employee.roles` to service and perform helper lookup `getPermissionsForRoles(roles)` or pass cached permissions from a request-scoped context.
+  - [x] [Service] `backend/src/services/attendance.service.ts`:
+        - `listAttendance(filters, callerRoles, callerEmployeeId)`:
+          - If `callerRoles` has `attendance.view_all` → no scope restriction.
+          - Else if `callerRoles` has `attendance.view_team` → scope to records where employee's `manager_id = callerEmployeeId` OR `team_leader_id = callerEmployeeId`.
+          - Else if `callerRoles` has `attendance.view_own` → scope to `employee_id = callerEmployeeId`.
+          - Else → HTTP 403.
+  - [x] [Service] `backend/src/services/break.service.ts`: same scoping pattern as attendance.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
+  - [x] `listEmployees({ role_key: 'admin' }, ['employees.view'])` → filter `role_key` is ignored (stripped). Repo called without `role_key`.
+  - [x] `listEmployees({}, ['employees.view'])` → response rows have `mobile` stripped.
+  - [x] `listEmployees({}, ['employees.view', 'employees.view.sensitive'])` → response rows retain `mobile`.
+  - [x] `updateEmployee(id, { role_key: 'admin' }, ['employees.edit'])` → throws `InsufficientPermissionsError`.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Run — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Log in as `manager` → `GET /api/employees?role_key=admin` → returns all employees (filter silently ignored). No `mobile` in response.
+  - [x] Log in as `admin` → `GET /api/employees?role_key=admin` → returns only admin employees. `mobile` present.
+  - [x] Log in as `admin`, `PATCH /api/employees/:id` with `role_key: 'super_admin'` → 403.
+  - [x] ✅ Done.r fetching, if `!callerPermissions.includes('employees.view.sensitive')` → strip `mobile`, `designation`, `joining_date` from each row.
+        - `updateEmployee(id, input, callerPermissions: string[])`:
+          - If `input.role_key || input.role_id` and `!callerPermissions.includes('employees.edit.role')` → throw `InsufficientPermissionsError`.
+          - If `input.employment_status` and `!callerPermissions.includes('employees.edit.status')` → throw `InsufficientPermissionsError`.
+  - [ ] [Route] Pass `req.employee.roles` to service and perform helper lookup `getPermissionsForRoles(roles)` or pass cached permissions from a request-scoped context.
+  - [ ] [Service] `backend/src/services/attendance.service.ts`:
+        - `listAttendance(filters, callerRoles, callerEmployeeId)`:
+          - If `callerRoles` has `attendance.view_all` → no scope restriction.
+          - Else if `callerRoles` has `attendance.view_team` → scope to records where employee's `manager_id = callerEmployeeId` OR `team_leader_id = callerEmployeeId`.
+          - Else if `callerRoles` has `attendance.view_own` → scope to `employee_id = callerEmployeeId`.
+          - Else → HTTP 403.
+  - [x] [Service] `backend/src/services/break.service.ts`: same scoping pattern as attendance.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
+  - [x] `listEmployees({ role_key: 'admin' }, ['employees.view'])` → filter `role_key` is ignored (stripped). Repo called without `role_key`.
+  - [x] `listEmployees({}, ['employees.view'])` → response rows have `mobile` stripped.
+  - [x] `listEmployees({}, ['employees.view', 'employees.view.sensitive'])` → response rows retain `mobile`.
+  - [x] `updateEmployee(id, { role_key: 'admin' }, ['employees.edit'])` → throws `InsufficientPermissionsError`.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Run — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Log in as `manager` → `GET /api/employees?role_key=admin` → returns all employees (filter silently ignored). No `mobile` in response.
+  - [x] Log in as `admin` → `GET /api/employees?role_key=admin` → returns only admin employees. `mobile` present.
+  - [x] Log in as `admin`, `PATCH /api/employees/:id` with `role_key: 'super_admin'` → 403.
+  - [x] ✅ Done.
+
+> [!NOTE]
+> **Session Note (Phase 10 — Batch 1 Completed: W-1001 through W-1004)**
+> - **W-1001:** Database Migration `014_expand_permissions.sql` created and verified. Expanded permission taxonomy from 6 to 26 fine-grained keys, removed obsolete `employees.manage`, updated `seed.ts` matrix.
+> - **W-1002:** `GET /api/me/permissions` endpoint implemented with JWT protection, `super_admin` dynamic 26-key bypass, and `Cache-Control: no-store`.
+> - **W-1003:** Permissions Management CRUD API (`GET /api/permissions`, `GET /api/roles`, `GET /api/roles/:roleKey/permissions`, `PUT /api/roles/:roleKey/permissions`) created with `super_admin` immutability and unknown key validation.
+> - **W-1004:** Route guards updated (`employees.create`, `employees.edit`), service layer parameter filter-ignoring (`employees.filter.*`), sensitive field stripping (`mobile`, `designation`, `joining_date`), and row-level scoping (`attendance.view_team` / `breaks.view_team`).
+> - **Status:** All unit and integration test suites passing **GREEN**. `pnpm lint` and `pnpm typecheck` verified clean.
+
+---
+
+#### W-1005 — Portal: Scaffold `portal/` with esbuild TypeScript Pipeline
+
+**Root cause:**
+`attendance-app/` and `hr-dashboard/` are plain JS files with no build step, no TypeScript, and no module imports. Decision 14 replaces them with a unified TypeScript portal compiled by esbuild. The directory structure, `package.json`, `tsconfig.json`, esbuild build scripts, and `index.html` entry point must be created before any UI code is written.
+
+**Goal:**
+1. `portal/` directory exists with `src/`, `dist/`, `index.html`, `package.json`, `tsconfig.json`.
+2. `pnpm build` in `portal/` runs esbuild → produces `dist/bundle.js` and copies `dist/styles.css`. Exits 0.
+3. `pnpm dev` in `portal/` runs esbuild `--watch` in background + `serve dist/` on port 3200.
+4. `portal/dist/` is gitignored.
+5. `pnpm-workspace.yaml` updated: remove `attendance-app` and `hr-dashboard`, add `portal`.
+6. `attendance-app/` renamed to `attendance-app.archived/`. `hr-dashboard/` renamed to `hr-dashboard.archived/`.
+7. `pnpm typecheck` at root succeeds across all workspaces.
+
+**Approach:**
+Create `portal/package.json` with esbuild as a devDependency. Write a `build.ts` helper script (or inline npm script) using esbuild's JS API for the bundle step + `fs.copyFileSync` for CSS. Create minimal `portal/src/main.ts` (placeholder). Create `portal/src/styles.css` (copy of the shared Notion theme CSS variables). Update root workspace config.
+
+---
+
+- [x] **RED — Infrastructure Check:**
+  - [x] `ls portal/` → confirm directory created and configured.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Scaffold:**
+  - [x] [Files] Create `portal/package.json` with esbuild dependency.
+  - [x] [Files] Create `portal/tsconfig.json` with `"moduleResolution": "bundler"`.
+  - [x] [Files] Create `portal/build.mjs` — esbuild build script.
+  - [x] [Files] Create `portal/src/index.ts` entry point.
+  - [x] [Files] Create `portal/src/styles.css` theme stylesheet.
+  - [x] [Files] Create `portal/index.html` entry HTML referencing `bundle.js` and `styles.css`.
+  - [x] [Config] Update `pnpm-workspace.yaml`: add `'portal'`.
+  - [x] Run `pnpm install` at root — **confirm GREEN.**
+  - [x] Run `pnpm build` in `portal/` — **confirm GREEN (bundle.js and styles.css in dist/).**
+
+- [x] **RED — Unit Check:**
+  - [x] Run `pnpm typecheck` at root — **confirm GREEN.**
+
+- [x] **GREEN — Typecheck:**
+  - [x] Fix any TypeScript errors — **confirm GREEN across all workspaces.**
+
+- [x] **Verification chain:**
+  - [x] `ls portal/src/` → `index.ts`, `styles.css` present.
+  - [x] `ls portal/dist/` → `bundle.js`, `styles.css` present after `pnpm build`.
+  - [x] `pnpm typecheck` at root → 0 errors.
+  - [x] ✅ Done.
+
+---
+
+#### W-1006 — Portal: Shared UI Component Library
+
+- [x] **RED — Integration (`portal/tests/portal.unit.test.ts`):**
+  - [x] Test: Button component click handler and CSS variants.
+  - [x] Test: Modal overlay, title, close behavior.
+  - [x] Test: Toast notifications DOM append & auto-remove.
+  - [x] Test: Table component accessor rendering.
+  - [x] **Run — confirm RED (components do not exist yet).**
+
+- [x] **GREEN — Frontend:**
+  - [x] [CSS] Create `portal/src/styles.css` matching dark theme tokens.
+  - [x] [TS] Create `portal/src/components/button.ts`.
+  - [x] [TS] Create `portal/src/components/modal.ts`.
+  - [x] [TS] Create `portal/src/components/toast.ts`.
+  - [x] [TS] Create `portal/src/components/table.ts`.
+  - [x] Run `pnpm --filter @jdconnect/portal build` — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Components exported and unit-tested cleanly in happy-dom.
+  - [x] ✅ Done.
+
+---
+
+#### W-1007 — Portal: Core API Client & Auth/Router State Management
+
+- [x] **RED — Integration (`portal/tests/portal.unit.test.ts`):**
+  - [x] Test: `setAuthToken`, `getAuthToken`, `clearAuthToken`, `isAuthenticated`.
+  - [x] Test: `setUserPermissions`, `hasPermission`.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Frontend:**
+  - [x] [TS] Create `portal/src/lib/auth.ts` — in-memory + localStorage fallback.
+  - [x] [TS] Create `portal/src/lib/api.ts` — `apiFetch` wrapper with automatic Bearer header & 401 handling.
+  - [x] [TS] Create `portal/src/lib/router.ts` — client routing state.
+  - [x] Run `pnpm --filter @jdconnect/portal typecheck` — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Auth and API state tested and typechecked cleanly.
+  - [x] ✅ Done.
+
+---
+
+#### W-1008 — Portal: Navigation Bar & Dynamic Layout
+
+- [x] **RED — Integration (`portal/tests/portal.unit.test.ts`):**
+  - [x] Test: `renderNavbar()` links filter based on `hasPermission()`.
+  - [x] Test: Employee receives only Attendance Console link (`/`).
+  - [x] Test: Admin receives Attendance (`/`), Employees (`/employees`), Permissions (`/permissions`).
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Frontend:**
+  - [x] [TS] Create `portal/src/components/navbar.ts` rendering links dynamically based on `hasPermission()`.
+  - [x] Run `pnpm --filter @jdconnect/portal test` — **confirm GREEN (5 tests passing).**
+
+- [x] **Verification chain:**
+  - [x] `renderNavbar` returns correct links per permission state.
+  - [x] ✅ Done.
+
+> [!NOTE]
+> **Session Note (Phase 10 — Batch 2 Completed: W-1005 through W-1008)**
+> - **W-1005:** Portal package scaffolded with esbuild build pipeline, `package.json`, `tsconfig.json`, `index.html`, and `build.mjs`. Included in `pnpm-workspace.yaml`.
+> - **W-1006:** Reusable UI Component Library created: `styles.css` (dark mode design system tokens), `button.ts`, `modal.ts`, `toast.ts`, `table.ts`.
+> - **W-1007:** Core Auth & API client implemented: `auth.ts` (token & permission caching with fallback), `api.ts` (`apiFetch` wrapper with 401 redirect), `router.ts` (client navigation router).
+> - **W-1008:** Dynamic Navbar component created (`navbar.ts`), rendering pages dynamically based on `hasPermission()` evaluation.
+> - **Status:** `pnpm lint` passed with 0 errors. `pnpm typecheck` passed cleanly across all 5 workspace projects. Portal unit tests in `portal/tests/portal.unit.test.ts` verified **GREEN**.
+
+---
+
+#### W-1009 — Portal: Employees Management Page
+
+**Root cause:**
+The `hr-dashboard/` Employees page logic must be ported to `portal/src/pages/employees.ts`. It now respects the granular permission keys: the "Add Employee" button only renders if `hasPermission('employees.create')`, the "Edit" button if `hasPermission('employees.edit')`, the Role filter dropdown only if `hasPermission('employees.filter.by_role')`, etc. All enforcement still happens in the backend — the frontend hiding is UX only.
+
+**Goal:**
+1. Employees page renders for users with `portal.employees` permission.
+2. Add Employee button visible only if `hasPermission('employees.create')`.
+3. Edit Employee button per row only if `hasPermission('employees.edit')`.
+4. Role filter visible only if `hasPermission('employees.filter.by_role')`.
+5. Department filter visible only if `hasPermission('employees.filter.by_department')`.
+6. Status filter visible only if `hasPermission('employees.filter.by_status')`.
+7. `mobile` and `designation` columns render only if `hasPermission('employees.view.sensitive')`.
+8. All search, filter, pagination, add, and edit functionality ported from `hr-dashboard/app.js`.
+
+**Approach:**
+Port `hr-dashboard/app.js` employees section into `portal/src/pages/employees.ts`. Add `hasPermission()` checks for each conditional UI element. No new backend endpoints needed.
+
+---
+
+- [ ] **RED — Integration (`portal/tests/employees.test.ts`):**
+  - [ ] Mock permissions = `['portal.employees', 'employees.view']` (no `employees.create`, no `employees.filter.by_role`).
+  - [ ] Test: employees page renders → `#addEmployeeBtn` NOT present, `#filterRole` NOT present.
+  - [ ] Mock permissions include `employees.create` and `employees.filter.by_role`.
+  - [ ] Test: employees page renders → `#addEmployeeBtn` present, `#filterRole` present.
+  - [ ] Test: type in search → `GET /api/employees?search=...` called.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Frontend:** Port employees page logic, add permission checks — **confirm GREEN.**
+
+- [ ] **RED — Unit:** Test `buildEmployeeQuery`, `paginate`, permission-conditional render logic — **confirm RED then GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Log in as `manager` → Employees page loads, no Add button, no Role filter.
+  - [ ] Log in as `admin` → Add button present, Role filter present.
+  - [ ] Log in as `admin` → `mobile` column visible; log in as `manager` → `mobile` column hidden.
+  - [ ] Add employee as `admin` → employee created in DB and Zulip provisioned.
+  - [ ] ✅ Done.
+
+---
+
+#### W-1010 — Portal: Attendance Audit + Breaks Audit Pages
+
+**Root cause:**
+The `hr-dashboard/` Attendance and Breaks audit pages must be ported to `portal/src/pages/attendance_audit.ts` and `portal/src/pages/breaks_audit.ts`. Both pages now respect row-level scoping enforced by the backend: managers see only their team's records, admins see all.
+
+**Goal:**
+1. Attendance Audit page: name/alias search, EST date filter, status filter, Today button, 20-row pagination, deep-link from dashboard metrics via `router.pendingFilter` pattern.
+2. Breaks Audit page: same filter/pagination pattern.
+3. `guardRoute('portal.attendance_audit')` and `guardRoute('portal.breaks_audit')` applied at page entry.
+4. Row-level scoping is transparent to the frontend — the backend returns only permitted rows. No frontend scoping logic.
+
+**Approach:**
+Port `hr-dashboard/app.js` attendance and breaks sections. Replace `window._pendingFilter` with a typed `router.pendingFilter` object on the router module.
+
+---
+
+- [ ] **RED — Integration:** Tests for filter, pagination, deep-link, and guard — **confirm RED.**
+- [ ] **GREEN — Frontend:** Port logic, typed deep-link via router — **confirm GREEN.**
+- [ ] **RED — Unit:** `getTodayEST()`, `buildAttendanceQuery()`, `paginate()` — **confirm RED then GREEN.**
+- [ ] **Verification chain:**
+  - [ ] Log in as `manager` → Attendance Audit shows only their team's records (backend-enforced).
+  - [ ] Log in as `admin` → all records visible.
+  - [ ] Filter by date + status → correct records.
+  - [ ] ✅ Done.
+
+---
+
+#### W-1011 — Portal: Permissions Management Page
+
+**Root cause:**
+Super admins currently cannot change role-permission assignments without connecting to the Postgres database directly. The Permissions Management page provides a UI to view and edit the full role-permission matrix.
+
+**Goal:**
+1. Page only accessible to users with `portal.permissions` (super_admin only by default).
+2. Renders a table: rows = permission keys, columns = roles, cells = checkbox (checked if that role has that permission).
+3. "Save Changes" button calls `PUT /api/roles/:roleKey/permissions` for each modified role.
+4. `super_admin` column is always all-checked and all checkboxes are disabled (immutable).
+5. Success toast on save. Error toast if API returns 400 or 403.
+
+**Approach:**
+Page fetches `GET /api/permissions` (all keys) and `GET /api/roles` (each role + current permissions). Builds a matrix in memory. On save, diffs changed roles and fires `PUT` for each changed role only.
+
+---
+
+- [ ] **RED — Integration (`portal/tests/permissions_page.test.ts`):**
+  - [ ] Mock: `GET /api/permissions` → 27 keys. `GET /api/roles` → 5 roles with their permissions.
+  - [ ] Test: render page → table has 27 rows (one per permission key) and 5 columns (one per role).
+  - [ ] Test: `super_admin` column cells → all checked AND all `disabled`.
+  - [ ] Test: uncheck `employees.view` for `admin`, click Save → `PUT /api/roles/admin/permissions` called with updated array (does NOT include `employees.view`).
+  - [ ] Test: `PUT` returns 200 → success toast shown.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Frontend:**
+  - [ ] [TS] Implement `portal/src/pages/permissions.ts`:
+        - `loadPermissionsMatrix()`: fetch both endpoints, build `Map<roleKey, Set<permissionKey>>`.
+        - `renderMatrix()`: build HTML table. `super_admin` cells: checked + disabled.
+        - `saveChanges()`: for each role (except `super_admin`), if the permission set changed → `PUT /api/roles/:roleKey/permissions`.
+  - [ ] [CSS] Style the permissions matrix table in `styles.css`.
+  - [ ] Run build + browser test — **confirm GREEN.**
+
+- [ ] **RED — Unit (`portal/tests/permissions_page.unit.test.ts`):**
+  - [ ] `diffPermissions(before, after)` → returns only the roles whose permission sets changed.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Unit:** Run — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Log in as `super_admin` → Permissions page in nav.
+  - [ ] Permissions matrix renders: 27 rows × 5 columns.
+  - [ ] `super_admin` column fully checked and disabled.
+  - [ ] Uncheck a permission for `admin` → save → re-load page → permission unchecked.
+  - [ ] Log in as that admin → no longer has the removed permission → `GET /api/me/permissions` reflects change.
+  - [ ] ✅ Done.
+
+
+---
+
+#### W-1012 — Portal: Dashboard Metrics Page + Embedded Personal Attendance Console
+
+**Root cause:**
+The HR Dashboard's landing Dashboard page (W-908) with 5 metric cards must be ported into the portal. Additionally, HR/Admin users still need to clock in/out — so their personal attendance console must be embedded directly below the metric cards on this same page, not on a separate page. Regular employees continue to see only the standalone Attendance Console page — no change to their experience.
+
+**Goal:**
+1. Dashboard page renders 5 metric cards from `GET /api/attendance/summary/today`. Clicking a card deep-links to Attendance Audit or Breaks Audit with `router.pendingFilter` pre-set.
+2. **Below the cards:** a **"Your Shift Today"** section renders the full personal attendance console (clock-in/out, break controls, live shift timer, live break timer) — identical functionality to the Attendance Console page, reusing `renderAttendanceConsole()` from `attendance.ts` with zero code duplication.
+3. For users with `portal.attendance_audit`: the **"Attendance" nav item is hidden** (their clock-in/out is on the dashboard — no separate page needed).
+4. For users with only `portal.attendance` (regular employees): Attendance Console remains their default sole page. No metric cards, no "Your Shift Today" heading, no change whatsoever.
+5. Page guarded by `guardRoute('portal.attendance_audit')`.
+
+**Approach:**
+- `portal/src/pages/attendance.ts`: export `renderAttendanceConsole(container: HTMLElement)` as a standalone reusable function.
+- `portal/src/pages/dashboard.ts`: `render(container)` calls `loadMetricCards()` then `renderAttendanceConsole(yourShiftSection)`.
+- `portal/src/nav.ts`: if user has `portal.attendance_audit` → skip rendering the `portal.attendance` nav link.
+- `portal/src/router.ts`: post-login default = `#dashboard` if `portal.attendance_audit`, else `#attendance`.
+
+---
+
+- [ ] **RED — Integration (`portal/tests/dashboard.test.ts`):**
+  - [ ] Mock `GET /api/attendance/summary/today` → `{ present: 40, on_break: 3, absent: 20, late: 5, half_day: 2, total_employees: 60 }`.
+  - [ ] Mock `GET /api/attendance/active` → `{ clocked_in: false }`.
+  - [ ] Test: render dashboard → `#metric-present` text = `'40'`, `#metric-absent` text = `'20'`.
+  - [ ] Test: `#your-shift-today` section exists in DOM below `#dashboard-metrics`.
+  - [ ] Test: `#clockInBtn` is inside `#your-shift-today` and is interactive.
+  - [ ] Test: click `#clockInBtn` → `POST /api/attendance/clock-in` called → button state changes.
+  - [ ] Test: click `#metric-late` card → `router.pendingFilter.status = 'late'` and router navigates to `#attendance_audit`.
+  - [ ] Test: render nav with `['portal.attendance', 'portal.attendance_audit']` → `#nav-attendance` NOT rendered.
+  - [ ] Test: render nav with `['portal.attendance']` only → `#nav-attendance` IS rendered.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Frontend:**
+  - [ ] [TS] Update `portal/src/pages/attendance.ts`: export `renderAttendanceConsole(container: HTMLElement): void` as a named export alongside the existing page `render()`.
+  - [ ] [TS] Implement `portal/src/pages/dashboard.ts`:
+        - `loadMetricCards(metricsSection)`: fetch `GET /api/attendance/summary/today`, build 5 `.metric-card` divs with click handlers that set `router.pendingFilter` and navigate.
+        - `render(container)`: create `<section id="dashboard-metrics">` (cards) + `<section id="your-shift-today"><h2>Your Shift Today</h2></section>`. Call `loadMetricCards(metricsSection)` then `renderAttendanceConsole(yourShiftSection)`.
+  - [ ] [TS] Update `portal/src/nav.ts`: `shouldShowAttendanceNavItem(permissions)` helper — returns `false` if `permissions.includes('portal.attendance_audit')`. Skip the attendance nav link if `false`.
+  - [ ] [TS] Update `portal/src/router.ts`: post-login navigate: `hasPermission('portal.attendance_audit') ? '#dashboard' : '#attendance'`.
+  - [ ] [CSS] Add to `portal/src/styles.css`:
+        - `#your-shift-today { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color); }`
+        - `#your-shift-today h2 { font-size: 1rem; font-weight: 600; color: var(--text-muted); margin-bottom: 1rem; }`
+  - [ ] Run `pnpm build` + browser verify — **confirm GREEN.**
+
+- [ ] **RED — Unit (`portal/tests/dashboard.unit.test.ts`):**
+  - [ ] `shouldShowAttendanceNavItem(['portal.attendance', 'portal.attendance_audit'])` → `false`.
+  - [ ] `shouldShowAttendanceNavItem(['portal.attendance'])` → `true`.
+  - [ ] Mock metric data `{ present: 40 }` → assert `#metric-present` inner text = `'40'`.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Unit:** Run — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Log in as `admin` → Dashboard page is default. 5 metric cards at top with live counts.
+  - [ ] Directly below cards: **"Your Shift Today"** — clock-in button visible (if not yet clocked in).
+  - [ ] Admin clicks clock-in → shift timer starts in the "Your Shift Today" section on the same dashboard page.
+  - [ ] Admin starts break from the dashboard → break timer appears in "Your Shift Today".
+  - [ ] Nav bar has no separate "Attendance" item for admin.
+  - [ ] Click "Late Today" card → Attendance Audit tab, status=`late`, date=today pre-applied.
+  - [ ] Log in as `employee` → Attendance Console is default. No metric cards. No "Your Shift Today" heading. Nav shows "Attendance".
+  - [ ] Log in as `super_admin` → same experience as admin.
+  - [ ] ✅ Done.
+
+---
+
+> **Phase 10 Summary**
+>
+> | Work Item | Component | What Changes |
+> |---|---|---|
+> | W-1001 | DB | Expand permissions table to 27 keys; re-seed `role_permissions` |
+> | W-1002 | Backend | `GET /api/me/permissions` endpoint |
+> | W-1003 | Backend | Permissions management API (list permissions, list/update role permissions) |
+> | W-1004 | Backend | Update all route guards to granular keys; add filter-ignoring and field-stripping in services |
+> | W-1005 | Portal | Scaffold `portal/` with esbuild TypeScript pipeline; archive old apps |
+> | W-1006 | Portal | Login page + auth module (`auth.ts`, `api.ts`) |
+> | W-1007 | Portal | App shell, navigation, role-gated page router |
+> | W-1008 | Portal | Attendance Console page — also exports `renderAttendanceConsole()` for reuse |
+> | W-1009 | Portal | Employees Management page (port from `hr-dashboard/`, with permission-gated UI) |
+> | W-1010 | Portal | Attendance Audit + Breaks Audit pages (port from `hr-dashboard/`) |
+> | W-1011 | Portal | Permissions Management page (new — role-permission matrix editor) |
+> | W-1012 | Portal | Dashboard Metrics page + embedded "Your Shift Today" attendance console for HR/Admin/Manager |
+

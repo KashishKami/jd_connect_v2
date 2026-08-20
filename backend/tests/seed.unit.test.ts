@@ -16,9 +16,9 @@ describe('Postgres Database Seeder Unit Test', () => {
     expect(res.rows[0].count).toBe(6);
   });
 
-  it('seeds 11 permission keys', async () => {
+  it('seeds 26 permission keys', async () => {
     const res = await pool.query('SELECT COUNT(*)::int as count FROM permissions');
-    expect(res.rows[0].count).toBe(11);
+    expect(res.rows[0].count).toBe(26);
   });
 
   it('seeds 7 departments', async () => {

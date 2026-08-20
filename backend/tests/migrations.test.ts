@@ -47,4 +47,18 @@ describe('Postgres Database Migrations Integration Test', () => {
     expect(colMap.has('zulip_provisioned')).toBe(true);
     expect(colMap.has('rc_provisioned')).toBe(false);
   });
+
+  it('has expanded permissions taxonomy (26 keys, obsolete employees.manage removed)', async () => {
+    const countRes = await pool.query<{ count: string }>('SELECT COUNT(*) FROM permissions');
+    expect(parseInt(countRes.rows[0].count, 10)).toBe(26);
+
+    const oldKeyRes = await pool.query('SELECT key FROM permissions WHERE key = $1', ['employees.manage']);
+    expect(oldKeyRes.rows.length).toBe(0);
+
+    const newKeyRes = await pool.query('SELECT key FROM permissions WHERE key = $1', ['employees.create']);
+    expect(newKeyRes.rows.length).toBe(1);
+
+    const portalKeyRes = await pool.query('SELECT key FROM permissions WHERE key = $1', ['portal.permissions']);
+    expect(portalKeyRes.rows.length).toBe(1);
+  });
 });

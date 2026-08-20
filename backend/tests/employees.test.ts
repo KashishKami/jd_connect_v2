@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import supertest from 'supertest';
 import app from '../src/app';
 import pool from '../src/lib/db';
@@ -11,7 +11,7 @@ describe('POST /api/employees - Employee Creation', () => {
   let employeeToken: string;
   let superAdminRoleId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     await runMigrations();
     await runSeed();
 
@@ -240,6 +240,119 @@ describe('POST /api/employees - Employee Creation', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.every((e: { role?: string; employment_status: string }) => e.role === 'super_admin' && e.employment_status === 'active')).toBe(true);
+  });
+
+  describe('W-1004 Granular Permission Enforcement', () => {
+    let managerToken: string;
+    let targetEmpId: string;
+
+    beforeEach(async () => {
+      await pool.query("DELETE FROM employees WHERE email IN ('target.emp@jdconnect.com', 'forbidden@jdconnect.com')");
+      await pool.query("DELETE FROM users WHERE email IN ('target.emp@jdconnect.com', 'forbidden@jdconnect.com')");
+
+      const { privateKey } = await generateKeyPair('RS256');
+
+      // Create Manager token (has employees.view, employees.filter.by_department, but NOT employees.create, NOT employees.filter.by_role, NOT employees.view.sensitive)
+      managerToken = await new SignJWT({
+        sub: '00000000-0000-0000-0000-000000000005',
+        employee_id: '00000000-0000-0000-0000-000000000006',
+        zulip_user_id: 3,
+        roles: ['manager'],
+      })
+        .setProtectedHeader({ alg: 'RS256' })
+        .setIssuedAt()
+        .setExpirationTime('1h')
+        .sign(privateKey as KeyLike);
+
+      const roleRes = await pool.query("SELECT id FROM roles WHERE key = 'employee'");
+      const empRoleId = roleRes.rows[0].id;
+
+      const userRes = await pool.query("INSERT INTO users (email, password_hash) VALUES ('target.emp@jdconnect.com', 'hash') RETURNING id");
+      const empRes = await pool.query(`
+        INSERT INTO employees (auth_user_id, full_name, email, role_id, zulip_user_id, mobile, designation, zulip_provisioned)
+        VALUES ($1, 'Target Emp', 'target.emp@jdconnect.com', $2, 9005, '9998887776', 'Agent', true)
+        RETURNING id
+      `, [userRes.rows[0].id, empRoleId]);
+      targetEmpId = empRes.rows[0].id;
+    });
+
+    it('returns 403 when manager attempts to create employee (lacks employees.create)', async () => {
+      const res = await supertest(app)
+        .post('/api/employees')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({
+          full_name: 'Forbidden Emp',
+          email: 'forbidden@jdconnect.com',
+          password: 'Password123!',
+          role_key: 'employee',
+        });
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 403 when admin attempts to update role_key without employees.edit.role', async () => {
+      // Create admin token (has employees.edit, employees.create, but NOT employees.edit.role)
+      const { privateKey } = await generateKeyPair('RS256');
+      const adminRoleOnlyToken = await new SignJWT({
+        sub: '00000000-0000-0000-0000-000000000007',
+        employee_id: '00000000-0000-0000-0000-000000000008',
+        zulip_user_id: 4,
+        roles: ['admin'],
+      })
+        .setProtectedHeader({ alg: 'RS256' })
+        .setIssuedAt()
+        .setExpirationTime('1h')
+        .sign(privateKey as KeyLike);
+
+      const res = await supertest(app)
+        .patch(`/api/employees/${targetEmpId}`)
+        .set('Authorization', `Bearer ${adminRoleOnlyToken}`)
+        .send({ role_key: 'admin' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('employees.edit.role');
+    });
+
+    it('allows super_admin to update role_key', async () => {
+      const res = await supertest(app)
+        .patch(`/api/employees/${targetEmpId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role_key: 'manager' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.role).toBe('manager');
+    });
+
+    it('silently ignores role_key filter if caller lacks employees.filter.by_role', async () => {
+      const res = await supertest(app)
+        .get('/api/employees?role_key=super_admin')
+        .set('Authorization', `Bearer ${managerToken}`);
+
+      expect(res.status).toBe(200);
+      // Since manager lacks employees.filter.by_role, role_key filter is ignored, returning non-super_admin employees too
+      const hasNonSuperAdmin = res.body.some((e: { role?: string }) => e.role !== 'super_admin');
+      expect(hasNonSuperAdmin).toBe(true);
+    });
+
+    it('strips sensitive fields (mobile, designation, joining_date) when caller lacks employees.view.sensitive', async () => {
+      const resManager = await supertest(app)
+        .get('/api/employees')
+        .set('Authorization', `Bearer ${managerToken}`);
+
+      expect(resManager.status).toBe(200);
+      const targetEmpManagerView = resManager.body.find((e: { email: string }) => e.email === 'target.emp@jdconnect.com');
+      expect(targetEmpManagerView).toBeDefined();
+      expect(targetEmpManagerView.mobile).toBeUndefined();
+      expect(targetEmpManagerView.designation).toBeUndefined();
+
+      const resAdmin = await supertest(app)
+        .get('/api/employees')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(resAdmin.status).toBe(200);
+      const targetEmpAdminView = resAdmin.body.find((e: { email: string }) => e.email === 'target.emp@jdconnect.com');
+      expect(targetEmpAdminView).toBeDefined();
+      expect(targetEmpAdminView).toHaveProperty('mobile');
+    });
   });
 });
 

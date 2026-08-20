@@ -118,4 +118,74 @@ describe('EmployeeService Unit Tests', () => {
 
     expect(result.alias).toBe('Adam');
   });
+
+  describe('W-1004 Filter-ignoring, Field-stripping, and Role Update Checks', () => {
+    it('ignores role_key filter if caller lacks employees.filter.by_role', async () => {
+      const mockEmpRepo = {
+        findAllEmployees: vi.fn().mockResolvedValue([]),
+      } as unknown as EmployeeRepository;
+
+      const service = new EmployeeService(undefined, mockEmpRepo);
+      await service.listEmployees({ role_key: 'admin', search: 'john' }, ['employees.view']);
+
+      expect(mockEmpRepo.findAllEmployees).toHaveBeenCalledWith({ search: 'john' });
+    });
+
+    it('strips sensitive fields (mobile, designation, joining_date) if caller lacks employees.view.sensitive', async () => {
+      const mockEmp = {
+        id: 'emp-1',
+        full_name: 'Jane Doe',
+        email: 'jane@jdconnect.com',
+        mobile: '1234567890',
+        designation: 'Lead Agent',
+        joining_date: '2026-01-01',
+      };
+      const mockEmpRepo = {
+        findAllEmployees: vi.fn().mockResolvedValue([mockEmp]),
+      } as unknown as EmployeeRepository;
+
+      const service = new EmployeeService(undefined, mockEmpRepo);
+      const result = await service.listEmployees({}, ['employees.view']);
+
+      expect(result[0]).toHaveProperty('full_name', 'Jane Doe');
+      expect(result[0].mobile).toBeUndefined();
+      expect(result[0].designation).toBeUndefined();
+      expect(result[0].joining_date).toBeUndefined();
+    });
+
+    it('retains sensitive fields if caller has employees.view.sensitive', async () => {
+      const mockEmp = {
+        id: 'emp-1',
+        full_name: 'Jane Doe',
+        email: 'jane@jdconnect.com',
+        mobile: '1234567890',
+        designation: 'Lead Agent',
+        joining_date: '2026-01-01',
+      };
+      const mockEmpRepo = {
+        findAllEmployees: vi.fn().mockResolvedValue([mockEmp]),
+      } as unknown as EmployeeRepository;
+
+      const service = new EmployeeService(undefined, mockEmpRepo);
+      const result = await service.listEmployees({}, ['employees.view', 'employees.view.sensitive']);
+
+      expect(result[0].mobile).toBe('1234567890');
+      expect(result[0].designation).toBe('Lead Agent');
+    });
+
+    it('throws InsufficientPermissionsError when updating role_key without employees.edit.role', async () => {
+      const mockEmpRepo = {
+        findById: vi.fn().mockResolvedValue({ id: 'emp-1', email: 'emp@test.com' }),
+        updateEmployee: vi.fn(),
+      } as unknown as EmployeeRepository;
+
+      const service = new EmployeeService(undefined, mockEmpRepo);
+
+      await expect(
+        service.updateEmployee('emp-1', { role_key: 'admin' }, ['employees.edit'])
+      ).rejects.toThrow('Missing employees.edit.role permission');
+
+      expect(mockEmpRepo.updateEmployee).not.toHaveBeenCalled();
+    });
+  });
 });

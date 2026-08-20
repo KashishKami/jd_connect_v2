@@ -18,6 +18,13 @@ export class EmployeeNotFoundError extends Error {
   }
 }
 
+export class InsufficientPermissionsError extends Error {
+  constructor(message = 'Insufficient permissions') {
+    super(message);
+    this.name = 'InsufficientPermissionsError';
+  }
+}
+
 export class EmployeeService {
   constructor(
     private userRepo: UserRepository = defaultUserRepo,
@@ -25,17 +32,56 @@ export class EmployeeService {
     private zulipSvc: ZulipService = defaultZulipService
   ) {}
 
-  async listEmployees(filters?: EmployeeFilters): Promise<EmployeeResponse[]> {
-    return await this.empRepo.findAllEmployees(filters);
+  async listEmployees(
+    filters?: EmployeeFilters,
+    callerPermissions?: string[]
+  ): Promise<EmployeeResponse[]> {
+    const effectiveFilters: EmployeeFilters = { ...filters };
+
+    if (callerPermissions) {
+      if (!callerPermissions.includes('employees.filter.by_role')) {
+        delete effectiveFilters.role_key;
+      }
+      if (!callerPermissions.includes('employees.filter.by_department')) {
+        delete effectiveFilters.department_id;
+      }
+      if (!callerPermissions.includes('employees.filter.by_status')) {
+        delete effectiveFilters.status;
+      }
+    }
+
+    const employees = await this.empRepo.findAllEmployees(effectiveFilters);
+
+    if (callerPermissions && !callerPermissions.includes('employees.view.sensitive')) {
+      return employees.map((emp) => {
+        const copy = { ...emp };
+        delete copy.mobile;
+        delete copy.designation;
+        delete copy.joining_date;
+        return copy;
+      });
+    }
+
+    return employees;
   }
 
   async updateEmployee(
     id: string,
-    updates: UpdateEmployeeInput
+    updates: UpdateEmployeeInput,
+    callerPermissions?: string[]
   ): Promise<EmployeeResponse> {
     const employee = await this.empRepo.findById(id);
     if (!employee) {
       throw new EmployeeNotFoundError(id);
+    }
+
+    if (callerPermissions) {
+      if ((updates.role_key || updates.role_id) && !callerPermissions.includes('employees.edit.role')) {
+        throw new InsufficientPermissionsError('Missing employees.edit.role permission');
+      }
+      if (updates.employment_status && !callerPermissions.includes('employees.edit.status')) {
+        throw new InsufficientPermissionsError('Missing employees.edit.status permission');
+      }
     }
 
     const fieldUpdates: Record<string, unknown> = { ...updates };

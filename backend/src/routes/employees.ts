@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticateJwt, requirePermission } from '../middleware/auth';
-import { employeeService, DuplicateEmailError, EmployeeNotFoundError } from '../services/employee.service';
+import { employeeService, DuplicateEmailError, EmployeeNotFoundError, InsufficientPermissionsError } from '../services/employee.service';
+import { permissionsService } from '../services/permissions.service';
 
 const router: Router = Router();
 
@@ -55,7 +56,8 @@ router.get(
         role_key: typeof req.query.role_key === 'string' ? req.query.role_key : undefined,
         status: typeof req.query.status === 'string' ? req.query.status : undefined,
       };
-      const employees = await employeeService.listEmployees(filters);
+      const callerPermissions = await permissionsService.getMyPermissions(req.employee?.roles || []);
+      const employees = await employeeService.listEmployees(filters, callerPermissions);
       return res.status(200).json(employees);
     } catch (err) {
       return res.status(500).json({ error: 'Failed to list employees', details: (err as Error).message });
@@ -66,7 +68,7 @@ router.get(
 router.post(
   '/',
   authenticateJwt,
-  requirePermission('employees.manage'),
+  requirePermission('employees.create'),
   async (req: Request, res: Response) => {
     try {
       const input = createEmployeeSchema.parse(req.body);
@@ -87,15 +89,19 @@ router.post(
 router.patch(
   '/:id',
   authenticateJwt,
-  requirePermission('employees.manage'),
+  requirePermission('employees.edit'),
   async (req: Request, res: Response) => {
     try {
       const input = updateEmployeeSchema.parse(req.body);
-      const employee = await employeeService.updateEmployee(req.params.id, input);
+      const callerPermissions = await permissionsService.getMyPermissions(req.employee?.roles || []);
+      const employee = await employeeService.updateEmployee(req.params.id, input, callerPermissions);
       return res.status(200).json(employee);
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ error: 'Validation failed', details: err.errors });
+      }
+      if (err instanceof InsufficientPermissionsError) {
+        return res.status(403).json({ error: err.message });
       }
       if (err instanceof EmployeeNotFoundError) {
         return res.status(404).json({ error: 'Employee not found' });
@@ -108,7 +114,7 @@ router.patch(
 router.post(
   '/:id/retry-zulip-provisioning',
   authenticateJwt,
-  requirePermission('employees.manage'),
+  requirePermission('employees.create'),
   async (req: Request, res: Response) => {
     try {
       const employee = await employeeService.retryZulipProvisioning(req.params.id);

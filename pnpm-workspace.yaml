@@ -1,8 +1,7 @@
 packages:
   - 'backend'
-  - 'attendance-app'
   - 'zulip-bot'
-  - 'hr-dashboard'
+  - 'portal'
 allowBuilds:
   esbuild: true
 onlyBuiltDependencies:

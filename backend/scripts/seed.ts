@@ -28,8 +28,21 @@ export async function runSeed() {
 
     // 2. Permissions
     const permissions = [
+      { key: 'portal.attendance', desc: 'Access the Attendance Console page' },
+      { key: 'portal.employees', desc: 'Access the Employees Management page' },
+      { key: 'portal.attendance_audit', desc: 'Access the Attendance Audit page' },
+      { key: 'portal.breaks_audit', desc: 'Access the Breaks Audit page' },
+      { key: 'portal.permissions', desc: 'Access the Permissions Management page' },
       { key: 'employees.view', desc: 'View employee directory' },
-      { key: 'employees.manage', desc: 'Create/edit/suspend employees' },
+      { key: 'employees.view.sensitive', desc: 'View sensitive employee fields' },
+      { key: 'employees.create', desc: 'Create new employees' },
+      { key: 'employees.edit', desc: 'Edit existing employee fields' },
+      { key: 'employees.edit.role', desc: 'Change an employee role' },
+      { key: 'employees.edit.status', desc: 'Change employment status' },
+      { key: 'employees.delete', desc: 'Soft-delete / terminate employee record' },
+      { key: 'employees.filter.by_role', desc: 'Use role filter on employees page' },
+      { key: 'employees.filter.by_department', desc: 'Use department filter on employees page' },
+      { key: 'employees.filter.by_status', desc: 'Use status filter on employees page' },
       { key: 'attendance.view_own', desc: 'View own attendance records' },
       { key: 'attendance.view_team', desc: 'View team attendance' },
       { key: 'attendance.view_all', desc: "View all employees' attendance" },
@@ -39,6 +52,8 @@ export async function runSeed() {
       { key: 'breaks.view_all', desc: "View all employees' breaks" },
       { key: 'hr.reset_password', desc: "Reset any employee's password" },
       { key: 'hr.manage_roles', desc: 'Assign/change employee roles' },
+      { key: 'permissions.view', desc: 'View the permissions matrix' },
+      { key: 'permissions.manage', desc: 'Edit role-permission assignments' },
     ];
 
     for (const p of permissions) {
@@ -50,39 +65,43 @@ export async function runSeed() {
       );
     }
 
+    // Remove obsolete key if present
+    await client.query(`DELETE FROM role_permissions WHERE permission_id IN (SELECT id FROM permissions WHERE key = 'employees.manage')`);
+    await client.query(`DELETE FROM permissions WHERE key = 'employees.manage'`);
+
     // 3. Role ↔ Permission Assignments (from CONTEXT/project_data.md Section 5)
-    // super_admin bypasses all checks in middleware, but seed anyway for completeness.
+    const allPermKeys = permissions.map((p) => p.key);
     const rolePermissionMatrix: Record<string, string[]> = {
-      super_admin: [
-        'employees.view', 'employees.manage',
-        'attendance.view_own', 'attendance.view_team', 'attendance.view_all', 'attendance.correct',
-        'breaks.view_own', 'breaks.view_team', 'breaks.view_all',
-        'hr.reset_password', 'hr.manage_roles',
-      ],
+      super_admin: allPermKeys,
       admin: [
-        'employees.view', 'employees.manage',
+        'portal.attendance', 'portal.employees', 'portal.attendance_audit', 'portal.breaks_audit',
+        'employees.view', 'employees.view.sensitive', 'employees.create', 'employees.edit',
+        'employees.edit.status', 'employees.filter.by_role', 'employees.filter.by_department', 'employees.filter.by_status',
         'attendance.view_own', 'attendance.view_team', 'attendance.view_all', 'attendance.correct',
         'breaks.view_own', 'breaks.view_team', 'breaks.view_all',
         'hr.reset_password',
       ],
       hr: [
-        'employees.view',
+        'portal.attendance', 'portal.employees', 'portal.attendance_audit', 'portal.breaks_audit',
+        'employees.view', 'employees.view.sensitive', 'employees.create', 'employees.edit',
+        'employees.edit.status', 'employees.filter.by_role', 'employees.filter.by_department', 'employees.filter.by_status',
         'attendance.view_own', 'attendance.view_team', 'attendance.view_all', 'attendance.correct',
         'breaks.view_own', 'breaks.view_team', 'breaks.view_all',
         'hr.reset_password',
       ],
       manager: [
-        'employees.view',
+        'portal.attendance', 'portal.employees', 'portal.attendance_audit', 'portal.breaks_audit',
+        'employees.view', 'employees.filter.by_department',
         'attendance.view_own', 'attendance.view_team', 'attendance.correct',
         'breaks.view_own', 'breaks.view_team',
       ],
       team_leader: [
-        'employees.view',
+        'portal.attendance', 'portal.attendance_audit', 'portal.breaks_audit',
         'attendance.view_own', 'attendance.view_team',
         'breaks.view_own', 'breaks.view_team',
       ],
       employee: [
-        'employees.view',
+        'portal.attendance',
         'attendance.view_own',
         'breaks.view_own',
       ],

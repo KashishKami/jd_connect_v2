@@ -7,6 +7,8 @@ import breakRouter from './routes/breaks';
 import breakTypesRouter from './routes/break_types';
 import departmentsRouter from './routes/departments';
 import oauthRouter from './routes/oauth';
+import { permissionsRouter } from './routes/permissions';
+import { rolesRouter } from './routes/roles';
 
 const app: Express = express();
 
@@ -27,6 +29,8 @@ app.use('/api/attendance', attendanceRouter);
 app.use('/api/breaks', breakRouter);
 app.use('/api/break-types', breakTypesRouter);
 app.use('/api/departments', departmentsRouter);
+app.use('/api', permissionsRouter);
+app.use('/api', rolesRouter);
 app.use('/oauth', oauthRouter);
 
 export default app;
