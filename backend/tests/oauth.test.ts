@@ -7,11 +7,14 @@ import { runSeed } from '../scripts/seed';
 import { SignJWT, generateKeyPair, KeyLike } from 'jose';
 
 describe('OIDC Server Endpoints Integration (W-402)', () => {
+  let privateKey: KeyLike;
   let userJwt: string;
   let zulipUserId: number;
 
   beforeAll(async () => {
     await runMigrations();
+    const keyPair = await generateKeyPair('RS256');
+    privateKey = keyPair.privateKey as KeyLike;
   });
 
   beforeEach(async () => {
@@ -25,7 +28,6 @@ describe('OIDC Server Endpoints Integration (W-402)', () => {
     const emp = empRes.rows[0];
     zulipUserId = emp.zulip_user_id;
 
-    const { privateKey } = await generateKeyPair('RS256');
     userJwt = await new SignJWT({
       sub: emp.id,
       employee_id: emp.id,
@@ -35,7 +37,7 @@ describe('OIDC Server Endpoints Integration (W-402)', () => {
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuedAt()
       .setExpirationTime('1h')
-      .sign(privateKey as KeyLike);
+      .sign(privateKey);
   });
 
   it('GET /oauth/authorize generates auth code and redirects', async () => {

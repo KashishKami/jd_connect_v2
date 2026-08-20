@@ -142,13 +142,12 @@ export async function migrateEmployees(dumpFilePath: string): Promise<MigrationS
       const centreId = oldEmp.centre_id ? centreMap[oldEmp.centre_id] || null : null;
       const shiftId = oldEmp.shift_id ? shiftMap[oldEmp.shift_id] || null : null;
       const status = resolveEmploymentStatus(oldEmp.employment_status || null);
+      const aliasVal = oldEmp.alias_name || null;
 
       if (empCheck.rows.length > 0) {
         newEmployeeId = empCheck.rows[0].id;
         existingZulipUserId = empCheck.rows[0].zulip_user_id;
         existingZulipProvisioned = empCheck.rows[0].zulip_provisioned;
-
-        const aliasVal = oldEmp.alias_name || null;
 
         await client.query(
           `UPDATE employees

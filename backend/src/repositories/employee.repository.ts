@@ -43,7 +43,7 @@ export class EmployeeRepository {
     dbClient = this.dbPool
   ): Promise<EmployeeResponse[]> {
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: unknown[] = [];
 
     if (filters?.search && filters.search.trim()) {
       params.push(`%${filters.search.trim()}%`);
@@ -121,10 +121,10 @@ export class EmployeeRepository {
 
   async updateEmployee(
     id: string,
-    updates: Record<string, any>
+    updates: Record<string, unknown>
   ): Promise<EmployeeResponse> {
     const setClauses: string[] = [];
-    const params: any[] = [id];
+    const params: unknown[] = [id];
 
     const allowedColumns = [
       'full_name',

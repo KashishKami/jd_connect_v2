@@ -1,164 +1,193 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark-theme">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JD Connect - Attendance Portal</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>JD Connect — Attendance Portal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- Clock Out Confirmation Modal -->
+  <!-- End Shift Confirmation Modal -->
   <div id="clockOutModal" class="modal-overlay" style="display: none;">
     <div class="modal-content">
       <div class="modal-header">
         <span class="modal-icon">🛑</span>
         <h3>End Shift Confirmation</h3>
       </div>
-      <p class="modal-body">Are you sure you want to clock out and end your shift for today?</p>
+      <p class="modal-body">Are you sure you want to end your shift for today?</p>
       <div class="modal-actions">
         <button id="cancelClockOutBtn" class="btn-modal-cancel">Cancel</button>
-        <button id="confirmClockOutBtn" class="btn-modal-confirm">Confirm Clock Out</button>
+        <button id="confirmClockOutBtn" class="btn-modal-confirm">Confirm End Shift</button>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="header">
-      <h2>JD CONNECT</h2>
-      <p>BPO Workforce Attendance Portal</p>
-    </div>
-
-    <!-- Login View (Shown when unauthenticated) -->
-    <div id="loginView" class="login-box">
-      <div class="input-group">
-        <label for="loginEmail">Email Address</label>
-        <input type="email" id="loginEmail" placeholder="employee@jdconnect.com">
-      </div>
-      <div class="input-group">
-        <label for="loginPassword">Password</label>
-        <input type="password" id="loginPassword" placeholder="••••••••">
-      </div>
-      <button id="loginSubmitBtn" class="btn btn-clock-in" style="background: linear-gradient(135deg, #6366f1, #8b5cf6);">
-        <span>🔐 Sign In to Portal</span>
-      </button>
-      <button id="ssoBtn" class="btn" style="background: rgba(255, 255, 255, 0.08); margin-top: 0.75rem; border: 1px solid var(--border-color); color: var(--text-main);">
-        <span>🔑 Sign In with JD Connect SSO</span>
-      </button>
-    </div>
-
-    <!-- Attendance View (Shown when authenticated) -->
-    <div id="attendanceView" style="display: none;">
-      <!-- User Profile Header Bar -->
-      <div class="user-bar">
-        <div class="user-details">
-          <span class="user-name" id="userNameLabel">Loading...</span>
-          <span class="user-email" id="userEmailLabel"></span>
-        </div>
-        <div class="user-actions">
-          <button id="clockOutBtn" class="btn-clock-out-sm" style="display: none;">🔴 Clock Out</button>
-          <button id="logoutBtn" class="btn-logout-sm">Logout</button>
-        </div>
-      </div>
-
-      <!-- Navigation Tabs -->
-      <div class="tab-bar">
-        <button id="tabConsoleBtn" class="tab-btn active">⏱️ Shift Console</button>
-        <button id="tabHistoryBtn" class="tab-btn">📜 My History Logs</button>
-      </div>
-
-      <!-- Tab 1: Shift Console Panel -->
-      <div id="consolePanel" class="tab-panel">
-        <!-- Live Status Card -->
-        <div class="status-card">
-          <div id="statusBadge" class="status-badge off-shift">Off Shift</div>
-          <div id="timer" class="timer">00:00:00</div>
-          <div id="breakTimerSubtext" style="display: none; font-size: 0.85rem; color: var(--accent-amber); margin-top: 0.35rem; font-weight: 600;">
-            ☕ Break Duration: <span id="breakTimer">00:00:00</span>
+  <div class="app-layout">
+    <!-- Top Navbar Header -->
+    <header class="top-navbar" id="topNavbar">
+      <div class="navbar-container">
+        <div class="navbar-left">
+          <div class="brand">
+            <span class="logo">JD CONNECT</span>
+            <span class="badge-portal">Attendance Portal</span>
           </div>
         </div>
-
-        <!-- Off Shift Action (Only when OFF SHIFT) -->
-        <div id="clockInContainer">
-          <button id="clockInBtn" class="btn btn-clock-in">
-            <span>🟢 Clock In to Start Shift</span>
-          </button>
+        <div class="navbar-right">
+          <button class="theme-toggle-btn" id="themeToggleBtn" title="Toggle Theme">☀️</button>
+          <div class="user-details" id="userDetailsContainer" style="display: none;">
+            <span class="user-name" id="userNameLabel">Employee</span>
+            <span class="user-email" id="userEmailLabel"></span>
+          </div>
+          <button id="clockOutHeaderBtn" class="btn-clock-out-sm" style="display: none;">🔴 End Shift</button>
+          <button id="logoutBtn" class="btn-logout-sm" style="display: none;">Logout</button>
         </div>
+      </div>
+    </header>
 
-        <!-- Active Shift Break Operations (Only when CLOCKED IN / ON BREAK) -->
-        <div id="activeShiftControls" style="display: none;">
-          <div class="break-card">
-            <div class="card-section-title">☕ Shift Break Controls</div>
-            <div id="startBreakContainer" style="display: flex; flex-direction: column; gap: 0.75rem;">
-              <select id="breakSelect" class="break-select">
-                <option value="">Select Break Reason...</option>
-              </select>
-              <button id="startBreakBtn" class="btn btn-start-break">
-                <span>☕ Take a Break</span>
+    <!-- Main Content Container -->
+    <main class="main-content">
+      <!-- Unauthenticated Login View -->
+      <div id="loginView" class="login-card-container">
+        <div class="modal-card login-card">
+          <div class="modal-header" style="justify-content: center; flex-direction: column; text-align: center;">
+            <div class="logo" style="font-size: 1.75rem; margin-bottom: 0.25rem;">JD CONNECT</div>
+            <h3 style="margin-top: 0.5rem; margin-bottom: 0.25rem;">Employee Attendance Sign In</h3>
+            <p style="color: var(--text-muted); font-size: 0.85rem;">Sign in with your corporate credentials to manage your shift and view history</p>
+          </div>
+          <div class="form-group" style="margin-top: 1.25rem;">
+            <label for="loginEmail">Email Address</label>
+            <input type="email" id="loginEmail" class="form-input" placeholder="employee@company.com">
+          </div>
+          <div class="form-group">
+            <label for="loginPassword">Password</label>
+            <input type="password" id="loginPassword" class="form-input" placeholder="••••••••">
+          </div>
+          <div class="form-actions" style="flex-direction: column; gap: 0.75rem;">
+            <button id="loginSubmitBtn" class="btn btn-primary" style="width: 100%; padding: 0.85rem;">🔐 Sign In to Portal</button>
+            <button id="ssoBtn" class="btn btn-secondary" style="width: 100%; padding: 0.75rem;">🔑 Sign In with JD Connect SSO</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Authenticated Single-Page 2-Column Dashboard View -->
+      <div id="attendanceView" style="display: none;">
+        <div class="portal-grid">
+          
+          <!-- Left Column: Shift & Break Controls -->
+          <div class="portal-col-left">
+            <!-- Live Status Card -->
+            <div class="status-card">
+              <div id="statusBadge" class="status-badge off-shift">Off Shift</div>
+              <div id="timer" class="timer">00:00:00</div>
+              <div id="breakTimerSubtext" style="display: none; font-size: 0.875rem; color: var(--accent-amber); margin-top: 0.5rem; font-weight: 600;">
+                ☕ Break Duration: <span id="breakTimer">00:00:00</span>
+              </div>
+            </div>
+
+            <!-- Off Shift Action -->
+            <div id="clockInContainer">
+              <button id="clockInBtn" class="btn btn-clock-in">
+                <span>🟢 Start Shift</span>
               </button>
             </div>
-            <div id="endBreakContainer" style="display: none;">
-              <button id="endBreakBtn" class="btn btn-end-break">
-                <span>▶️ End Break & Resume Shift</span>
-              </button>
+
+            <!-- Active Shift Break Operations -->
+            <div id="activeShiftControls" style="display: none;">
+              <div class="break-card">
+                <div class="card-section-title">☕ Shift Break Controls</div>
+                <div id="startBreakContainer" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                  <select id="breakSelect" class="form-select">
+                    <option value="">Select Break Reason...</option>
+                  </select>
+                  <button id="startBreakBtn" class="btn btn-start-break">
+                    <span>☕ Take a Break</span>
+                  </button>
+                </div>
+                <div id="endBreakContainer" style="display: none;">
+                  <button id="endBreakBtn" class="btn btn-end-break">
+                    <span>▶️ End Break & Resume Shift</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- Tab 2: Personal History Panel -->
-      <div id="historyPanel" class="tab-panel" style="display: none;">
-        <div class="history-controls">
-          <div class="sub-tab-bar">
-            <button id="subTabAttendanceBtn" class="sub-tab-btn active">Attendance Logs</button>
-            <button id="subTabBreaksBtn" class="sub-tab-btn">Break Logs</button>
+          <!-- Right Column: Personal History Logs -->
+          <div class="portal-col-right">
+            <div class="history-card">
+              <div class="history-controls">
+                <div class="sub-tab-bar">
+                  <button id="subTabAttendanceBtn" class="sub-tab-btn active">📋 Attendance Logs</button>
+                  <button id="subTabBreaksBtn" class="sub-tab-btn">☕ Break Logs</button>
+                </div>
+                <button id="refreshHistoryBtn" class="btn btn-secondary btn-refresh">🔄 Refresh</button>
+              </div>
+
+              <!-- Attendance History Table -->
+              <div id="attendanceHistoryView">
+                <div class="table-container">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Start Shift</th>
+                        <th>End Shift</th>
+                        <th>Hours</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="attendanceHistoryTableBody">
+                      <tr><td colspan="5" class="loading-cell">Loading your attendance logs...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Attendance History Pagination -->
+                <div class="pagination-bar">
+                  <button class="btn btn-pagination" id="attHistPrevBtn" disabled>&laquo; Previous</button>
+                  <span class="page-indicator" id="attHistPageInfo">Page 1 of 1</span>
+                  <button class="btn btn-pagination" id="attHistNextBtn" disabled>Next &raquo;</button>
+                </div>
+              </div>
+
+              <!-- Break History Table -->
+              <div id="breakHistoryView" style="display: none;">
+                <div class="table-container">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Reason</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="breakHistoryTableBody">
+                      <tr><td colspan="6" class="loading-cell">Loading your break logs...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Break History Pagination -->
+                <div class="pagination-bar">
+                  <button class="btn btn-pagination" id="brkHistPrevBtn" disabled>&laquo; Previous</button>
+                  <span class="page-indicator" id="brkHistPageInfo">Page 1 of 1</span>
+                  <button class="btn btn-pagination" id="brkHistNextBtn" disabled>Next &raquo;</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <button id="refreshHistoryBtn" class="btn-refresh">🔄 Refresh</button>
-        </div>
 
-        <!-- Attendance Table -->
-        <div id="attendanceHistoryView" class="table-wrapper">
-          <table class="history-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Clock In</th>
-                <th>Clock Out</th>
-                <th>Hours</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="attendanceHistoryTableBody">
-              <tr><td colspan="5" class="empty-state">Loading your attendance logs...</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Break Table -->
-        <div id="breakHistoryView" class="table-wrapper" style="display: none;">
-          <table class="history-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Reason</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Duration</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="breakHistoryTableBody">
-              <tr><td colspan="6" class="empty-state">Loading your break logs...</td></tr>
-            </tbody>
-          </table>
         </div>
       </div>
-
-    </div>
+    </main>
   </div>
 
   <script src="app.js"></script>

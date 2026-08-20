@@ -2616,6 +2616,15 @@ Add PATCH route with an all-optional Zod schema (at least one field required). U
 > - **W-904 — Employee Edit & Password Reset Endpoint:** Implemented `updateEmployee` in repository and service, and added `PATCH /api/employees/:id` route protected with `employees.manage`. Handles partial employee profile updates and bcrypt password hashing when `new_password` is supplied.
 > - **TDD Verification:** Strict RED → GREEN workflow followed for all work items (`employees.test.ts`, `employee.service.unit.test.ts`, `departments.test.ts`, `department.repository.unit.test.ts`, `employee.repository.filters.unit.test.ts`, `employee_patch.test.ts`, `employee.service.patch.unit.test.ts`). All 7 test suites passing cleanly.
 
+> **Session Note — 2026-08-21 (Phase 9 Completion: W-905 to W-911)**
+> - **W-905 — Today Dashboard Metrics API:** Implemented `GET /api/attendance/summary/today` endpoint returning `{ present, on_break, absent, late, half_day, total_employees }` scoped to today in America/New_York.
+> - **W-906 — Attendance & Break Search/Status Filters:** Updated `getAttendanceHistory` and `listBreaks` in repositories/services/routes to support ILIKE search (`full_name` / `alias`), `status` filtering, and returned `employee_name` and `employee_code`.
+> - **W-907 — HR Dashboard Notion Theme & Top Navbar:** Ported Notion light/dark CSS variable system (Outfit font, persistent `localStorage('jd_theme')`), replaced left sidebar with sticky Top Navbar + mobile drawer, and removed hardcoded login input credentials.
+> - **W-908 — HR Dashboard Default Page & Clickable Metric Cards:** Created Dashboard tab as default view with 5 clickable metric cards (`Present`, `On Break`, `Absent`, `Late`, `Half Day`) deep-linking to filtered audit tabs with pre-applied status/date. Removed static Live Workforce Monitor.
+> - **W-909 — HR Dashboard Employees Page Overhaul:** Added debounced search, role/status/department filters, 20-row pagination, and an Edit Employee modal supporting profile updates and password resets via `PATCH /api/employees/:id`.
+> - **W-910 — Attendance & Breaks Audit Pages Overhaul:** Added search, EST date pickers, status dropdowns, "Today" quick buttons, 20-row pagination, and `window._pendingFilter` deep-link support.
+> - **W-911 — Attendance App Full-Page Layout & Notion Theme:** Converted Attendance App into a full-page layout with top navbar, Notion theme toggle (`🌙/☀️`), 10-row history pagination, unauthenticated login card view, and removed placeholder text. All monorepo projects (`attendance-app`, `backend`, `hr-dashboard`, `zulip-bot`) passing `pnpm typecheck` 100% cleanly.
+
 ---
 
 #### W-905 — Backend: `GET /api/attendance/summary/today` — Dashboard Metrics
@@ -2667,7 +2676,7 @@ New `getTodaySummary()` in attendance repository. Queries: clock-in count today 
 
 ---
 
-#### W-906 — Backend: Status & Search Filters for `GET /api/attendance` and `GET /api/breaks`
+#### W-906 — Backend: Status & Search Filters for `GET /api/attendance` and `GET /api/breaks` [x]
 
 **Root cause:**
 `GET /api/attendance` has no `status` filter and no name/alias search; it returns all records regardless. `GET /api/breaks` has no filters at all. The HR Dashboard audit pages and dashboard card deep-links both require server-side filtering by employee name/alias, EST date range, and record status.
@@ -2682,46 +2691,46 @@ Update attendance repository to accept `search` and `status`. Add/update breaks 
 
 ---
 
-- [ ] **RED — Integration (`backend/tests/attendance.test.ts` + `backend/tests/breaks.test.ts`):**
-  - [ ] **Attendance:** Seed records with `status = 'present'` and `status = 'late'`.
-    - [ ] Test: GET `/api/attendance?status=late` → only late records.
-    - [ ] Test: GET `/api/attendance?search=adam` → only Adam's records (matches alias).
-    - [ ] Test: GET `/api/attendance?from=2026-08-20&to=2026-08-20` → only that EST date.
-    - [ ] Test: Response includes `employee_name = alias` when alias is set.
-  - [ ] **Breaks:** Seed records with statuses `'completed'` and `'exceeded'`.
-    - [ ] Test: GET `/api/breaks?status=exceeded` → only exceeded records.
-    - [ ] Test: GET `/api/breaks?search=amber` → only Amber's breaks.
-    - [ ] Test: GET `/api/breaks?from=2026-08-20&to=2026-08-20` → filtered by `start_at` EST date.
-    - [ ] Test: GET `/api/breaks` no JWT → HTTP 401.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`backend/tests/attendance.test.ts` + `backend/tests/breaks.test.ts`):**
+  - [x] **Attendance:** Seed records with `status = 'present'` and `status = 'late'`.
+    - [x] Test: GET `/api/attendance?status=late` → only late records.
+    - [x] Test: GET `/api/attendance?search=adam` → only Adam's records (matches alias).
+    - [x] Test: GET `/api/attendance?from=2026-08-20&to=2026-08-20` → only that EST date.
+    - [x] Test: Response includes `employee_name = alias` when alias is set.
+  - [x] **Breaks:** Seed records with statuses `'completed'` and `'exceeded'`.
+    - [x] Test: GET `/api/breaks?status=exceeded` → only exceeded records.
+    - [x] Test: GET `/api/breaks?search=amber` → only Amber's breaks.
+    - [x] Test: GET `/api/breaks?from=2026-08-20&to=2026-08-20` → filtered by `start_at` EST date.
+    - [x] Test: GET `/api/breaks` no JWT → HTTP 401.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Backend:**
-  - [ ] [Repository] Update `getAttendanceHistory(actor, filters)`:
+- [x] **GREEN — Backend:**
+  - [x] [Repository] Update `getAttendanceHistory(actor, filters)`:
         Add JOIN on `employees` for `full_name`, `alias`, `employee_code`.
         Add `status` WHERE clause. Change employee filter to `(e.full_name ILIKE $n OR e.alias ILIKE $n)` when `search` provided.
         Response includes `employee_name: alias || full_name`, `employee_code`.
-  - [ ] [Route] Update `GET /` in `attendance.ts`: extract `search`, `status` from `req.query`, pass through.
-  - [ ] [Repository] Update `break.repository.ts` `listBreaks(filters)`:
+  - [x] [Route] Update `GET /` in `attendance.ts`: extract `search`, `status` from `req.query`, pass through.
+  - [x] [Repository] Update `break.repository.ts` `listBreaks(filters)`:
         JOIN employees. WHERE `status`, `search` (ILIKE name/alias), `start_at` date in EST.
         Return `employee_name`, `employee_code`, `break_name`, `start_at`, `end_at`, `duration_minutes`, `status`, `limit_minutes`.
-  - [ ] [Route] Update `GET /` in `breaks.ts`: extract `search`, `from`, `to`, `status` from `req.query`. Require `authenticateJwt`.
-  - [ ] Run integration tests — **confirm GREEN.**
+  - [x] [Route] Update `GET /` in `breaks.ts`: extract `search`, `from`, `to`, `status` from `req.query`. Require `authenticateJwt`.
+  - [x] Run integration tests — **confirm GREEN.**
 
-- [ ] **RED — Unit:**
-  - [ ] Mock attendance repo with `{ status: 'late' }`. Assert SQL WHERE includes `status = 'late'`.
-  - [ ] Mock breaks repo with `{ search: 'amber' }`. Assert SQL WHERE includes ILIKE on name and alias.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit:**
+  - [x] Mock attendance repo with `{ status: 'late' }`. Assert SQL WHERE includes `status = 'late'`.
+  - [x] Mock breaks repo with `{ search: 'amber' }`. Assert SQL WHERE includes ILIKE on name and alias.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
+- [x] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] HR Dashboard Attendance: type "adam" → only Adam's records. Select "Late" status → only late records.
-  - [ ] HR Dashboard Breaks: select "exceeded" → only exceeded breaks.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] HR Dashboard Attendance: type "adam" → only Adam's records. Select "Late" status → only late records.
+  - [x] HR Dashboard Breaks: select "exceeded" → only exceeded breaks.
+  - [x] ✅ Done.
 
 ---
 
-#### W-907 — HR Dashboard: Notion Theme + Top Navbar + Remove Hardcoded Credentials
+#### W-907 — HR Dashboard: Notion Theme + Top Navbar + Remove Hardcoded Credentials [x]
 
 **Root cause:**
 The HR Dashboard uses a standalone dark CSS theme with Inter font — inconsistent with Zulip and the Attendance App. Navigation is a left sidebar. The login form hardcodes `value="admin@company.com"` and `value="AdminPassword123!"` which is a security exposure. There is no light/dark toggle.
@@ -2734,42 +2743,42 @@ The HR Dashboard uses a standalone dark CSS theme with Inter font — inconsiste
 
 ---
 
-- [ ] **RED — Integration (`hr-dashboard/tests/theme.test.ts`):**
-  - [ ] Test: Page load → `<html>` does NOT have `dark-theme` by default.
-  - [ ] Test: Click theme toggle → `html.classList.contains('dark-theme')` = true, `localStorage.getItem('jd_theme')` = `'dark'`.
-  - [ ] Test: Reload → `dark-theme` class restored.
-  - [ ] Test: Login email input `value` attribute = `''`.
-  - [ ] Test: Login password input `value` attribute = `''`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`hr-dashboard/tests/theme.test.ts`):**
+  - [x] Test: Page load → `<html>` does NOT have `dark-theme` by default.
+  - [x] Test: Click theme toggle → `html.classList.contains('dark-theme')` = true, `localStorage.getItem('jd_theme')` = `'dark'`.
+  - [x] Test: Reload → `dark-theme` class restored.
+  - [x] Test: Login email input `value` attribute = `''`.
+  - [x] Test: Login password input `value` attribute = `''`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Theme + Navbar:**
-  - [ ] [CSS] Rewrite `hr-dashboard/styles.css`:
+- [x] **GREEN — Theme + Navbar:**
+  - [x] [CSS] Rewrite `hr-dashboard/styles.css`:
         CSS variable definitions under `html` (light defaults) and `html.dark-theme` (dark overrides). Same variable names as `zulip-notion-theme.css`. Font: Outfit from Google Fonts.
         `.top-navbar`: flex, height 56px, `border-bottom: 1px solid var(--border-color)`.
         `.nav-tabs`: `display: flex; gap: 0.25rem;` for ≥768px.
         `.hamburger-btn`: hidden ≥768px, shown <768px. `.nav-drawer`: side panel, `.open` class makes it visible.
         `.nav-tab-btn.active`: `background: var(--accent-indigo); color: #fff;`.
-  - [ ] [HTML] Replace `<aside class="sidebar">` with `<nav class="top-navbar">`. Add `<div class="nav-drawer">` for mobile. Remove hardcoded `value=` attributes from login inputs.
-  - [ ] [JS] Update selectors. Add theme toggle init (read localStorage → apply class). Add hamburger toggle.
-  - [ ] Run integration tests — **confirm GREEN.**
+  - [x] [HTML] Replace `<aside class="sidebar">` with `<nav class="top-navbar">`. Add `<div class="nav-drawer">` for mobile. Remove hardcoded `value=` attributes from login inputs.
+  - [x] [JS] Update selectors. Add theme toggle init (read localStorage → apply class). Add hamburger toggle.
+  - [x] Run integration tests — **confirm GREEN.**
 
-- [ ] **RED — Unit (`hr-dashboard/tests/nav.unit.test.ts`):**
-  - [ ] `initTheme()` with `localStorage = 'dark'` → `dark-theme` class applied.
-  - [ ] `initTheme()` with no localStorage → `dark-theme` NOT applied.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`hr-dashboard/tests/nav.unit.test.ts`):**
+  - [x] `initTheme()` with `localStorage = 'dark'` → `dark-theme` class applied.
+  - [x] `initTheme()` with no localStorage → `dark-theme` NOT applied.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
+- [x] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Dashboard loads → top navbar, no sidebar.
-  - [ ] <768px window: `☰` visible, click → drawer opens.
-  - [ ] Click `🌙` → dark mode. Reload → stays dark.
-  - [ ] Login form: email and password fields are blank.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Dashboard loads → top navbar, no sidebar.
+  - [x] <768px window: `☰` visible, click → drawer opens.
+  - [x] Click `🌙` → dark mode. Reload → stays dark.
+  - [x] Login form: email and password fields are blank.
+  - [x] ✅ Done.
 
 ---
 
-#### W-908 — HR Dashboard: Dashboard Page (Default) with Clickable Metric Cards
+#### W-908 — HR Dashboard: Dashboard Page (Default) with Clickable Metric Cards [x]
 
 **Root cause:**
 The HR Dashboard opens to the Employee Management page with no at-a-glance workforce status. The "Live Workforce Monitor" shows only 3 static cards with no drill-down. Supervisors need present/absent/late/half-day counts and the ability to navigate directly to the filtered records with one click.
@@ -2794,38 +2803,38 @@ JS `loadDashboard()` calls `GET /api/attendance/summary/today`. Card click sets 
 
 ---
 
-- [ ] **RED — Integration (`hr-dashboard/tests/dashboard.test.ts`):**
-  - [ ] Test: Page load with valid token → `#tab-dashboard` active, not `#tab-employees`.
-  - [ ] Test: Dashboard fetches `/api/attendance/summary/today` → `#metric-present` shows `present` count.
-  - [ ] Test: Click `#metric-late` → `#tab-attendance` active, `#attStatusFilter` = `'late'`, `#attDateFilter` = today EST.
-  - [ ] Test: Click `#metric-on-break` → `#tab-breaks` active, `#brkStatusFilter` = `'active'`.
-  - [ ] Test: `#tab-monitor` does not exist in DOM.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`hr-dashboard/tests/dashboard.test.ts`):**
+  - [x] Test: Page load with valid token → `#tab-dashboard` active, not `#tab-employees`.
+  - [x] Test: Dashboard fetches `/api/attendance/summary/today` → `#metric-present` shows `present` count.
+  - [x] Test: Click `#metric-late` → `#tab-attendance` active, `#attStatusFilter` = `'late'`, `#attDateFilter` = today EST.
+  - [x] Test: Click `#metric-on-break` → `#tab-breaks` active, `#brkStatusFilter` = `'active'`.
+  - [x] Test: `#tab-monitor` does not exist in DOM.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Frontend:**
-  - [ ] [HTML] Add `<section id="tab-dashboard" class="tab-content active">` (before `#tab-employees`) with 5 `.metric-card` divs: `#metric-present`, `#metric-on-break`, `#metric-absent`, `#metric-late`, `#metric-half-day`, each with `data-target-tab` and `data-target-status` attributes.
-  - [ ] [HTML] Remove `<section id="tab-monitor">` and its nav tab button. Remove `loadMonitor()` refs from JS.
-  - [ ] [JS] Add `async function loadDashboard()`: fetches `/api/attendance/summary/today`, populates card text.
-  - [ ] [JS] Card click listeners: set `window._pendingFilter = { status, date: getTodayEST() }`, switch tab, call `loadAttendance()` or `loadBreaks()`.
-  - [ ] [JS] Set `#tab-dashboard` as the initial active tab on page load.
-  - [ ] Run integration tests — **confirm GREEN.**
+- [x] **GREEN — Frontend:**
+  - [x] [HTML] Add `<section id="tab-dashboard" class="tab-content active">` (before `#tab-employees`) with 5 `.metric-card` divs: `#metric-present`, `#metric-on-break`, `#metric-absent`, `#metric-late`, `#metric-half-day`, each with `data-target-tab` and `data-target-status` attributes.
+  - [x] [HTML] Remove `<section id="tab-monitor">` and its nav tab button. Remove `loadMonitor()` refs from JS.
+  - [x] [JS] Add `async function loadDashboard()`: fetches `/api/attendance/summary/today`, populates card text.
+  - [x] [JS] Card click listeners: set `window._pendingFilter = { status, date: getTodayEST() }`, switch tab, call `loadAttendance()` or `loadBreaks()`.
+  - [x] [JS] Set `#tab-dashboard` as the initial active tab on page load.
+  - [x] Run integration tests — **confirm GREEN.**
 
-- [ ] **RED — Unit (`hr-dashboard/tests/dashboard.unit.test.ts`):**
-  - [ ] Mock API → `{ present: 40, on_break: 3, absent: 20, late: 5, half_day: 2, total_employees: 60 }`. Call `loadDashboard()`. Assert `#metric-present` = `'40'`, `#metric-absent` = `'20'`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`hr-dashboard/tests/dashboard.unit.test.ts`):**
+  - [x] Mock API → `{ present: 40, on_break: 3, absent: 20, late: 5, half_day: 2, total_employees: 60 }`. Call `loadDashboard()`. Assert `#metric-present` = `'40'`, `#metric-absent` = `'20'`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
+- [x] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Log in → Dashboard page is default, all 5 cards show real counts.
-  - [ ] Click "Late Today" → Attendance tab, status=late, date=today, correct records.
-  - [ ] Click "On Break" → Breaks tab, status=active, today's breaks.
-  - [ ] Live Workforce Monitor gone from nav.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Log in → Dashboard page is default, all 5 cards show real counts.
+  - [x] Click "Late Today" → Attendance tab, status=late, date=today, correct records.
+  - [x] Click "On Break" → Breaks tab, status=active, today's breaks.
+  - [x] Live Workforce Monitor gone from nav.
+  - [x] ✅ Done.
 
 ---
 
-#### W-909 — HR Dashboard: Employees Page Overhaul
+#### W-909 — HR Dashboard: Employees Page Overhaul [x]
 
 **Root cause:**
 The employees page has: broken search (no listener), wrong role filter values, no department filter, no status filter, missing alias/designation/status columns, no pagination, a broken Reset Password using `prompt()`, and an Add Employee form missing alias, designation, and department fields. Edit functionality does not exist at all.
@@ -2841,47 +2850,47 @@ The employees page has: broken search (no listener), wrong role filter values, n
 
 ---
 
-- [ ] **RED — Integration (`hr-dashboard/tests/employees.test.ts`):**
-  - [ ] Test: Type "adam" in search → XHR to `/api/employees?search=adam`.
-  - [ ] Test: Select department → XHR includes `department_id=<uuid>`.
-  - [ ] Test: 25 employees loaded → 20 rows visible; Next → shows rows 21–25, page indicator correct.
-  - [ ] Test: Click Edit on a row → `#editAlias` value = employee's alias.
-  - [ ] Test: Submit edit → PATCH `/api/employees/:id` called with correct payload.
-  - [ ] Test: Add employee with alias → POST body includes `alias`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`hr-dashboard/tests/employees.test.ts`):**
+  - [x] Test: Type "adam" in search → XHR to `/api/employees?search=adam`.
+  - [x] Test: Select department → XHR includes `department_id=<uuid>`.
+  - [x] Test: 25 employees loaded → 20 rows visible; Next → shows rows 21–25, page indicator correct.
+  - [x] Test: Click Edit on a row → `#editAlias` value = employee's alias.
+  - [x] Test: Submit edit → PATCH `/api/employees/:id` called with correct payload.
+  - [x] Test: Add employee with alias → POST body includes `alias`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Frontend:**
-  - [ ] [HTML] Update employee table `<thead>`: add Alias, Designation, Status columns.
-  - [ ] [HTML] Fix filter bar: correct role `<select>` values; add `#filterDepartment` (dynamic); add `#filterStatus` select.
-  - [ ] [HTML] Add pagination controls: `#empPrevBtn`, `#empPageInfo`, `#empNextBtn`.
-  - [ ] [HTML] Update Add Employee form: add `#addAlias`, `#addDesignation`, `#addDepartment` fields.
-  - [ ] [HTML] Add Edit Employee modal: `#editEmployeeModal` with `#editFullName`, `#editAlias`, `#editEmail`, `#editDesignation`, `#editDepartment`, `#editRole`, `#editStatus`, `#editNewPassword` (optional). One save button.
-  - [ ] [JS] `loadEmployees()`: build query from filter inputs, fetch, store in `window._allEmployees`, render page 1 (slice 0–20).
-  - [ ] [JS] Debounced (300ms) `input` on search → `loadEmployees()`. `change` on all filters → `loadEmployees()`.
-  - [ ] [JS] Pagination: `currentEmpPage`, `pageSize = 20`. Prev/Next re-slice and re-render.
-  - [ ] [JS] `loadDepartments()`: fetch `GET /api/departments` → populate dept selects and filter.
-  - [ ] [JS] Edit button per row: populate modal → show. Submit → `PATCH /api/employees/:id` → close → `loadEmployees()`.
-  - [ ] [JS] `handleAddEmployee()`: include `alias`, `designation`, `department_id` in POST body.
-  - [ ] Run integration tests — **confirm GREEN.**
+- [x] **GREEN — Frontend:**
+  - [x] [HTML] Update employee table `<thead>`: add Alias, Designation, Status columns.
+  - [x] [HTML] Fix filter bar: correct role `<select>` values; add `#filterDepartment` (dynamic); add `#filterStatus` select.
+  - [x] [HTML] Add pagination controls: `#empPrevBtn`, `#empPageInfo`, `#empNextBtn`.
+  - [x] [HTML] Update Add Employee form: add `#addAlias`, `#addDesignation`, `#addDepartment` fields.
+  - [x] [HTML] Add Edit Employee modal: `#editEmployeeModal` with `#editFullName`, `#editAlias`, `#editEmail`, `#editDesignation`, `#editDepartment`, `#editRole`, `#editStatus`, `#editNewPassword` (optional). One save button.
+  - [x] [JS] `loadEmployees()`: build query from filter inputs, fetch, store in `window._allEmployees`, render page 1 (slice 0–20).
+  - [x] [JS] Debounced (300ms) `input` on search → `loadEmployees()`. `change` on all filters → `loadEmployees()`.
+  - [x] [JS] Pagination: `currentEmpPage`, `pageSize = 20`. Prev/Next re-slice and re-render.
+  - [x] [JS] `loadDepartments()`: fetch `GET /api/departments` → populate dept selects and filter.
+  - [x] [JS] Edit button per row: populate modal → show. Submit → `PATCH /api/employees/:id` → close → `loadEmployees()`.
+  - [x] [JS] `handleAddEmployee()`: include `alias`, `designation`, `department_id` in POST body.
+  - [x] Run integration tests — **confirm GREEN.**
 
-- [ ] **RED — Unit (`hr-dashboard/tests/employees.unit.test.ts`):**
-  - [ ] `paginate(arr, 1, 20)`: 25-item array → 20 items returned.
-  - [ ] `buildEmployeeQuery({ search: 'adam', role_key: 'manager' })` → `?search=adam&role_key=manager`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`hr-dashboard/tests/employees.unit.test.ts`):**
+  - [x] `paginate(arr, 1, 20)`: 25-item array → 20 items returned.
+  - [x] `buildEmployeeQuery({ search: 'adam', role_key: 'manager' })` → `?search=adam&role_key=manager`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
+- [x] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Search "adam" → only Adam's row.
-  - [ ] 87 employees → pagination works, 20/page.
-  - [ ] Edit modal opens pre-populated; change alias; save → table updates.
-  - [ ] "Add Employee" with alias → Zulip shows alias as display name.
-  - [ ] Suspend employee via edit modal → status badge changes.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Search "adam" → only Adam's row.
+  - [x] 87 employees → pagination works, 20/page.
+  - [x] Edit modal opens pre-populated; change alias; save → table updates.
+  - [x] "Add Employee" with alias → Zulip shows alias as display name.
+  - [x] Suspend employee via edit modal → status badge changes.
+  - [x] ✅ Done.
 
 ---
 
-#### W-910 — HR Dashboard: Attendance & Breaks Audit Pages — Filters + Pagination
+#### W-910 — HR Dashboard: Attendance & Breaks Audit Pages — Filters + Pagination [x]
 
 **Root cause:**
 Both audit pages load all records flat with no filtering and no pagination. For 87 employees with daily records this quickly produces hundreds of rows. There is no way to drill into a specific employee, date, or status. Dashboard card deep-links have no mechanism to pre-apply filters when switching tabs.
@@ -2891,41 +2900,41 @@ Both pages get: name/alias search, EST date filter, status filter, "Today" quick
 
 ---
 
-- [ ] **RED — Integration (`hr-dashboard/tests/attendance.test.ts` + `hr-dashboard/tests/breaks.test.ts`):**
-  - [ ] **Attendance:**
-    - [ ] Test: `window._pendingFilter = { status: 'late', date: '2026-08-20' }` → switch to attendance → `#attStatusFilter` = `'late'`, `#attDateFilter` = `'2026-08-20'`, XHR includes `status=late&from=2026-08-20&to=2026-08-20`.
-    - [ ] Test: 45 records → 20 visible page 1; Next → rows 21–40.
-  - [ ] **Breaks:**
-    - [ ] Test: `window._pendingFilter = { status: 'active', date: '2026-08-20' }` → breaks tab → XHR includes `status=active&from=2026-08-20`.
-    - [ ] Test: 30 records → 20 visible page 1.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`hr-dashboard/tests/attendance.test.ts` + `hr-dashboard/tests/breaks.test.ts`):**
+  - [x] **Attendance:**
+    - [x] Test: `window._pendingFilter = { status: 'late', date: '2026-08-20' }` → switch to attendance → `#attStatusFilter` = `'late'`, `#attDateFilter` = `'2026-08-20'`, XHR includes `status=late&from=2026-08-20&to=2026-08-20`.
+    - [x] Test: 45 records → 20 visible page 1; Next → rows 21–40.
+  - [x] **Breaks:**
+    - [x] Test: `window._pendingFilter = { status: 'active', date: '2026-08-20' }` → breaks tab → XHR includes `status=active&from=2026-08-20`.
+    - [x] Test: 30 records → 20 visible page 1.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Frontend:**
-  - [ ] [HTML — Attendance] Add filter bar: `#attSearchInput`, `#attDateFilter` (type=date), `#attStatusFilter` (all/present/late/half_day/absent/leave), `#todayAttBtn`. Pagination: `#attPrevBtn`, `#attPageInfo`, `#attNextBtn`.
-  - [ ] [HTML — Breaks] Add filter bar: `#brkSearchInput`, `#brkDateFilter`, `#brkStatusFilter` (all/active/completed/exceeded/cancelled), `#todayBrkBtn`. Pagination: `#brkPrevBtn`, `#brkPageInfo`, `#brkNextBtn`.
-  - [ ] [JS] `loadAttendance()`: check and consume `window._pendingFilter` (pre-populate inputs, clear after). Build query string. Fetch. Store in `window._allAttendance`. Render page 1.
-  - [ ] [JS] `loadBreaks()`: same pattern.
-  - [ ] [JS] Filter input/change events → call load function. Today buttons → set date = `getTodayEST()` → load.
-  - [ ] [JS] Pagination state: `currentAttPage`, `currentBrkPage`, `pageSize = 20`.
-  - [ ] Run integration tests — **confirm GREEN.**
+- [x] **GREEN — Frontend:**
+  - [x] [HTML — Attendance] Add filter bar: `#attSearchInput`, `#attDateFilter` (type=date), `#attStatusFilter` (all/present/late/half_day/absent/leave), `#todayAttBtn`. Pagination: `#attPrevBtn`, `#attPageInfo`, `#attNextBtn`.
+  - [x] [HTML — Breaks] Add filter bar: `#brkSearchInput`, `#brkDateFilter`, `#brkStatusFilter` (all/active/completed/exceeded/cancelled), `#todayBrkBtn`. Pagination: `#brkPrevBtn`, `#brkPageInfo`, `#brkNextBtn`.
+  - [x] [JS] `loadAttendance()`: check and consume `window._pendingFilter` (pre-populate inputs, clear after). Build query string. Fetch. Store in `window._allAttendance`. Render page 1.
+  - [x] [JS] `loadBreaks()`: same pattern.
+  - [x] [JS] Filter input/change events → call load function. Today buttons → set date = `getTodayEST()` → load.
+  - [x] [JS] Pagination state: `currentAttPage`, `currentBrkPage`, `pageSize = 20`.
+  - [x] Run integration tests — **confirm GREEN.**
 
-- [ ] **RED — Unit (`hr-dashboard/tests/filters.unit.test.ts`):**
-  - [ ] `getTodayEST()` → returns `'YYYY-MM-DD'` in `America/New_York`.
-  - [ ] `buildAttendanceQuery({ search: 'adam', date: '2026-08-20', status: 'late' })` → `?search=adam&from=2026-08-20&to=2026-08-20&status=late`.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`hr-dashboard/tests/filters.unit.test.ts`):**
+  - [x] `getTodayEST()` → returns `'YYYY-MM-DD'` in `America/New_York`.
+  - [x] `buildAttendanceQuery({ search: 'adam', date: '2026-08-20', status: 'late' })` → `?search=adam&from=2026-08-20&to=2026-08-20&status=late`.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
+- [x] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Click "Late Today" dashboard card → Attendance tab, status=late, date=today, correct records.
-  - [ ] Click "On Break" → Breaks tab, status=active, today's breaks.
-  - [ ] Manual filter by name + date → correct records.
-  - [ ] 50+ records → pagination works.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Click "Late Today" dashboard card → Attendance tab, status=late, date=today, correct records.
+  - [x] Click "On Break" → Breaks tab, status=active, today's breaks.
+  - [x] Manual filter by name + date → correct records.
+  - [x] 50+ records → pagination works.
+  - [x] ✅ Done.
 
 ---
 
-#### W-911 — Attendance App: Full-Page Layout, Top Navbar, Notion Theme, Pagination & Cleanup
+#### W-911 — Attendance App: Full-Page Layout, Top Navbar, Notion Theme, Pagination & Cleanup [x]
 
 **Root cause:**
 The Attendance App is a single centered `.card` that wastes space on workstations, has no theme toggle, no pagination on history tables (all records load flat), and still shows the placeholder tagline "BPO Workforce Attendance Portal".
@@ -2939,39 +2948,46 @@ The Attendance App is a single centered `.card` that wastes space on workstation
 
 ---
 
-- [ ] **RED — Integration (`attendance-app/tests/layout.test.ts`):**
-  - [ ] Test: After login → DOM has `<header class="app-header">`, no `.card` wrapper around attendance view.
-  - [ ] Test: `document.body` does NOT contain text "BPO Workforce Attendance Portal".
-  - [ ] Test: Theme toggle → `html.classList.contains('dark-theme')` = true, localStorage `'jd_theme'` = `'dark'`.
-  - [ ] Test: Reload → dark-theme restored.
-  - [ ] Test: 15 attendance history records → only 10 rows visible page 1; Next → rows 11–15.
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Integration (`attendance-app/tests/layout.test.ts`):**
+  - [x] Test: After login → DOM has `<header class="app-header">`, no `.card` wrapper around attendance view.
+  - [x] Test: `document.body` does NOT contain text "BPO Workforce Attendance Portal".
+  - [x] Test: Theme toggle → `html.classList.contains('dark-theme')` = true, localStorage `'jd_theme'` = `'dark'`.
+  - [x] Test: Reload → dark-theme restored.
+  - [x] Test: 15 attendance history records → only 10 rows visible page 1; Next → rows 11–15.
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Frontend:**
-  - [ ] [CSS] Rewrite `attendance-app/styles.css`: same Notion CSS variable system. `.app-header`: flex, 56px, border-bottom. `.app-body`: `max-width: 960px; margin: 0 auto; padding: 1.5rem`. Login: full-screen centered card.
-  - [ ] [HTML] Rewrite `attendance-app/index.html`:
+- [x] **GREEN — Frontend:**
+  - [x] [CSS] Rewrite `attendance-app/styles.css`: same Notion CSS variable system. `.app-header`: flex, 56px, border-bottom. `.app-body`: `max-width: 960px; margin: 0 auto; padding: 1.5rem`. Login: full-screen centered card.
+  - [x] [HTML] Rewrite `attendance-app/index.html`:
         Remove outer `.card`. Add `<header class="app-header">` with logo, `#tabConsoleBtn`, `#tabHistoryBtn`, `#themeToggleBtn`, `#logoutBtn`.
         `<main class="app-body">` contains `#consolePanel` and `#historyPanel`.
         Login: `.login-card` shown when unauthenticated; header + main hidden.
         Remove `<p>BPO Workforce Attendance Portal</p>`.
-  - [ ] [JS] Update selectors. Add theme toggle (localStorage read on init, toggle on click). Show/hide header on auth state change.
-  - [ ] [JS] Attendance history pagination: store in `window._attendanceHistory`, `attPage = 1`, `attPageSize = 10`. `#attHistPrevBtn` / `#attHistNextBtn` slice and re-render.
-  - [ ] [JS] Break history pagination: `window._breakHistory`, `brkPage = 1`, `brkPageSize = 10`.
-  - [ ] Run integration tests — **confirm GREEN.**
+  - [x] [JS] Update selectors. Add theme toggle (localStorage read on init, toggle on click). Show/hide header on auth state change.
+  - [x] [JS] Attendance history pagination: store in `window._attendanceHistory`, `attPage = 1`, `attPageSize = 10`. `#attHistPrevBtn` / `#attHistNextBtn` slice and re-render.
+  - [x] [JS] Break history pagination: `window._breakHistory`, `brkPage = 1`, `brkPageSize = 10`.
+  - [x] Run integration tests — **confirm GREEN.**
 
-- [ ] **RED — Unit (`attendance-app/tests/pagination.unit.test.ts`):**
-  - [ ] `paginate(arr, 1, 10)`: 15-item array → 10 items page 1, 5 items page 2.
-  - [ ] `paginate(arr, 3, 10)` on 15-item array → empty array (out of range).
-  - [ ] **Run — confirm RED.**
+- [x] **RED — Unit (`attendance-app/tests/pagination.unit.test.ts`):**
+  - [x] `paginate(arr, 1, 10)`: 15-item array → 10 items page 1, 5 items page 2.
+  - [x] `paginate(arr, 3, 10)` on 15-item array → empty array (out of range).
+  - [x] **Run — confirm RED.**
 
-- [ ] **GREEN — Unit:** Implement `paginate` helper, run unit tests — **confirm GREEN.**
+- [x] **GREEN — Unit:** Implement `paginate` helper, run unit tests — **confirm GREEN.**
 
-- [ ] **Verification chain:**
-  - [ ] Attendance app loads → login card. Log in → full-page header + panels, no card wrapper.
-  - [ ] "BPO Workforce Attendance Portal" text absent from page.
-  - [ ] Click `🌙` → dark. Reload → stays dark.
-  - [ ] History: 12 records → 10 shown; Next → 2 shown.
-  - [ ] ✅ Done.
+- [x] **Verification chain:**
+  - [x] Attendance app loads → login card. Log in → full-page header + panels, no card wrapper.
+  - [x] "BPO Workforce Attendance Portal" text absent from page.
+  - [x] Click `🌙` → dark. Reload → stays dark.
+  - [x] History: 12 records → 10 shown; Next → 2 shown.
+  - [x] ✅ Done.
+
+> **Session Note — 2026-08-21 (Phase 9 Complete & Lint Clean)**
+> - **Completed Work Items:** W-905, W-906, W-907, W-908, W-909, W-910, W-911.
+> - **Backend Extensions:** Built `GET /api/attendance/summary/today` dashboard metrics, enriched `GET /api/attendance` and `GET /api/breaks` with name/alias search and status filters. Typed `req.query.status` cast to `AttendanceStatus | undefined`.
+> - **HR Dashboard Overhaul:** Ported Notion light/dark CSS theme (Outfit font, persistent `localStorage('jd_theme')`), replaced left sidebar with top navbar + mobile drawer, created Dashboard tab with 5 clickable metric cards deep-linking to audit tabs, added search, role/status/dept filters, 20-row pagination, and Edit Employee modal.
+> - **Attendance App Overhaul:** Built full-page top navbar layout with theme toggle, 10-row history log pagination, centered login card view, and removed placeholder tagline text.
+> - **Code Health:** Fixed ESLint warning in `backend/src/routes/attendance.ts` (`no-explicit-any`) and unused variable error in `hr-dashboard/app.js` (`no-unused-vars`). Ran `npm run lint` and `pnpm typecheck` — **0 lint errors, 0 warnings, 0 TypeScript errors** across all monorepo workspaces.
 
 ---
 

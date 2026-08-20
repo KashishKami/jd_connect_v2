@@ -11,9 +11,12 @@ describe('GET /api/breaks & GET /api/break-types Endpoints', () => {
   let employeeId: string;
   let adminToken: string;
   let otherEmployeeId: string;
+  let privateKey: KeyLike;
 
   beforeAll(async () => {
     await runMigrations();
+    const pair = await generateKeyPair('RS256');
+    privateKey = pair.privateKey as KeyLike;
   });
 
   beforeEach(async () => {
@@ -50,8 +53,6 @@ describe('GET /api/breaks & GET /api/break-types Endpoints', () => {
       [employeeId, otherEmployeeId, teaTypeId]
     );
 
-    const { privateKey } = await generateKeyPair('RS256');
-
     employeeToken = await new SignJWT({
       sub: u1.rows[0].id,
       employee_id: employeeId,
@@ -61,7 +62,7 @@ describe('GET /api/breaks & GET /api/break-types Endpoints', () => {
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuedAt()
       .setExpirationTime('1h')
-      .sign(privateKey as KeyLike);
+      .sign(privateKey);
 
     adminToken = await new SignJWT({
       sub: '00000000-0000-0000-0000-000000000001',
@@ -72,7 +73,7 @@ describe('GET /api/breaks & GET /api/break-types Endpoints', () => {
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuedAt()
       .setExpirationTime('1h')
-      .sign(privateKey as KeyLike);
+      .sign(privateKey);
   });
 
   it('allows employee to view own break records', async () => {
@@ -109,6 +110,26 @@ describe('GET /api/breaks & GET /api/break-types Endpoints', () => {
     expect(resActive.status).toBe(200);
     expect(resActive.body.length).toBe(1);
     expect(resActive.body[0].employee_id).toBe(employeeId);
+  });
+
+  it('filters breaks by search term matching employee full_name or alias', async () => {
+    const resSearch = await supertest(app)
+      .get('/api/breaks?search=Two')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(resSearch.status).toBe(200);
+    expect(resSearch.body.length).toBe(1);
+    expect(resSearch.body[0].employee_id).toBe(otherEmployeeId);
+  });
+
+  it('returns employee_name (alias or full_name) and employee_code in breaks response', async () => {
+    const res = await supertest(app)
+      .get('/api/breaks')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toHaveProperty('employee_name');
+    expect(res.body[0]).toHaveProperty('employee_code');
   });
 
   it('allows super_admin to scope query to own records using employee_id=me', async () => {

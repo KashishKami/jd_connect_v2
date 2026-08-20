@@ -120,7 +120,13 @@ export class BreakService {
 
   async getBreakHistory(
     actor: { id: string; roles: string[] },
-    filters: { employee_id?: string | undefined; from?: string | undefined; to?: string | undefined; status?: BreakStatus | undefined }
+    filters: {
+      employee_id?: string | undefined;
+      from?: string | undefined;
+      to?: string | undefined;
+      status?: BreakStatus | undefined;
+      search?: string | undefined;
+    }
   ): Promise<BreakRecord[]> {
     const isSuperAdminOrAdmin = actor.roles.some((r) => r === 'super_admin' || r === 'admin');
 
@@ -135,12 +141,12 @@ export class BreakService {
       targetEmployeeId = actor.id;
     }
 
-
     const repoFilters: FindBreakFilters = {
       employee_id: targetEmployeeId,
       fromDate: filters.from,
       toDate: filters.to,
       status: filters.status,
+      search: filters.search,
     };
 
     return await this.breakRepo.findRecords(repoFilters);

@@ -168,7 +168,13 @@ export class AttendanceService {
 
   async getAttendanceHistory(
     actor: { id: string; roles: string[] },
-    filters: { employee_id?: string | undefined; from?: string | undefined; to?: string | undefined }
+    filters: {
+      employee_id?: string | undefined;
+      from?: string | undefined;
+      to?: string | undefined;
+      status?: AttendanceStatus | undefined;
+      search?: string | undefined;
+    }
   ): Promise<AttendanceRecord[]> {
     const isSuperAdminOrAdmin = actor.roles.some((r) => r === 'super_admin' || r === 'admin');
 
@@ -183,11 +189,12 @@ export class AttendanceService {
       targetEmployeeId = actor.id;
     }
 
-
     const repoFilters: FindAttendanceFilters = {
       employee_id: targetEmployeeId,
       fromDate: filters.from,
       toDate: filters.to,
+      status: filters.status,
+      search: filters.search,
     };
 
     return await this.attRepo.findRecords(repoFilters);

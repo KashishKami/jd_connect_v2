@@ -6,6 +6,7 @@ export interface FindBreakFilters {
   fromDate?: string | undefined;
   toDate?: string | undefined;
   status?: BreakStatus | undefined;
+  search?: string | undefined;
 }
 
 export class BreakRepository {
@@ -130,10 +131,14 @@ export class BreakRepository {
       values.push(filters.status);
       conditions.push(`br.status = $${values.length}`);
     }
+    if (filters.search) {
+      values.push(`%${filters.search}%`);
+      conditions.push(`(e.full_name ILIKE $${values.length} OR e.alias ILIKE $${values.length})`);
+    }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const query = `
-      SELECT br.*, e.full_name AS employee_name, e.email AS employee_email, bt.name AS break_name, bt.key AS break_type_key
+      SELECT br.*, COALESCE(e.alias, e.full_name) AS employee_name, e.full_name, e.alias, e.email AS employee_email, e.employee_code, bt.name AS break_name, bt.key AS break_type_key
       FROM break_records br
       LEFT JOIN employees e ON br.employee_id = e.id
       LEFT JOIN break_types bt ON br.break_type_id = bt.id

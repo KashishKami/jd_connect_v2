@@ -3,6 +3,7 @@
 
   const loginView = document.getElementById('loginView');
   const attendanceView = document.getElementById('attendanceView');
+  const userDetailsContainer = document.getElementById('userDetailsContainer');
   const loginEmail = document.getElementById('loginEmail');
   const loginPassword = document.getElementById('loginPassword');
   const loginSubmitBtn = document.getElementById('loginSubmitBtn');
@@ -10,13 +11,9 @@
   const userNameLabel = document.getElementById('userNameLabel');
   const userEmailLabel = document.getElementById('userEmailLabel');
   const logoutBtn = document.getElementById('logoutBtn');
+  const themeToggleBtn = document.getElementById('themeToggleBtn');
 
-  // Tab controls
-  const tabConsoleBtn = document.getElementById('tabConsoleBtn');
-  const tabHistoryBtn = document.getElementById('tabHistoryBtn');
-  const consolePanel = document.getElementById('consolePanel');
-  const historyPanel = document.getElementById('historyPanel');
-
+  // Sub-tab history controls
   const subTabAttendanceBtn = document.getElementById('subTabAttendanceBtn');
   const subTabBreaksBtn = document.getElementById('subTabBreaksBtn');
   const refreshHistoryBtn = document.getElementById('refreshHistoryBtn');
@@ -25,13 +22,29 @@
   const attendanceHistoryTableBody = document.getElementById('attendanceHistoryTableBody');
   const breakHistoryTableBody = document.getElementById('breakHistoryTableBody');
 
+  // Attendance History Pagination (10 rows/page)
+  const attHistPrevBtn = document.getElementById('attHistPrevBtn');
+  const attHistNextBtn = document.getElementById('attHistNextBtn');
+  const attHistPageInfo = document.getElementById('attHistPageInfo');
+  let currentAttendancePage = 1;
+  const ATTENDANCE_PAGE_SIZE = 10;
+  let allAttendanceRecords = [];
+
+  // Break History Pagination (10 rows/page)
+  const brkHistPrevBtn = document.getElementById('brkHistPrevBtn');
+  const brkHistNextBtn = document.getElementById('brkHistNextBtn');
+  const brkHistPageInfo = document.getElementById('brkHistPageInfo');
+  let currentBreakPage = 1;
+  const BREAKS_PAGE_SIZE = 10;
+  let allBreakRecords = [];
+
   // Shift & Break DOM elements
   const clockInContainer = document.getElementById('clockInContainer');
   const activeShiftControls = document.getElementById('activeShiftControls');
   const startBreakContainer = document.getElementById('startBreakContainer');
   const endBreakContainer = document.getElementById('endBreakContainer');
   const clockInBtn = document.getElementById('clockInBtn');
-  const clockOutBtn = document.getElementById('clockOutBtn');
+  const clockOutHeaderBtn = document.getElementById('clockOutHeaderBtn');
   const statusBadge = document.getElementById('statusBadge');
   const timerEl = document.getElementById('timer');
   const breakTimerSubtext = document.getElementById('breakTimerSubtext');
@@ -51,6 +64,36 @@
   let activeBreakStartIso = null;
   let shiftTimerInterval = null;
   let breakTimerInterval = null;
+
+  // Theme Toggle (Default Notion Dark Theme)
+  function initTheme() {
+    const savedTheme = localStorage.getItem('jd_theme');
+    if (savedTheme === 'light') {
+      document.documentElement.classList.add('light-theme');
+      document.documentElement.classList.remove('dark-theme');
+      if (themeToggleBtn) themeToggleBtn.textContent = '🌙';
+    } else {
+      document.documentElement.classList.add('dark-theme');
+      document.documentElement.classList.remove('light-theme');
+      if (themeToggleBtn) themeToggleBtn.textContent = '☀️';
+    }
+  }
+
+  function toggleTheme() {
+    const isLight = document.documentElement.classList.toggle('light-theme');
+    if (isLight) {
+      document.documentElement.classList.remove('dark-theme');
+      localStorage.setItem('jd_theme', 'light');
+      if (themeToggleBtn) themeToggleBtn.textContent = '🌙';
+    } else {
+      document.documentElement.classList.add('dark-theme');
+      localStorage.setItem('jd_theme', 'dark');
+      if (themeToggleBtn) themeToggleBtn.textContent = '☀️';
+    }
+  }
+
+  initTheme();
+  if (themeToggleBtn) themeToggleBtn.addEventListener('click', toggleTheme);
 
   function showToast(message, type = 'info') {
     if (!toastContainer) return;
@@ -153,7 +196,6 @@
   function formatDateFull(isoString) {
     if (!isoString) return '-';
     try {
-      // 1. Pure date string "YYYY-MM-DD"
       if (typeof isoString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(isoString)) {
         const [year, month, day] = isoString.split('-').map(Number);
         const d = new Date(year, month - 1, day);
@@ -163,7 +205,6 @@
           year: 'numeric',
         });
       }
-      // 2. Pure date serialized as UTC midnight ISO string "YYYY-MM-DDT00:00:00..."
       if (typeof isoString === 'string' && /^\d{4}-\d{2}-\d{2}T00:00:00/.test(isoString)) {
         const [year, month, day] = isoString.slice(0, 10).split('-').map(Number);
         const d = new Date(year, month - 1, day);
@@ -173,7 +214,6 @@
           year: 'numeric',
         });
       }
-      // 3. Full TIMESTAMPTZ with non-zero time (e.g. break start_at) -> format in EST/EDT
       const d = new Date(isoString);
       if (isNaN(d.getTime())) return '-';
       return d.toLocaleDateString('en-US', {
@@ -186,9 +226,6 @@
       return '-';
     }
   }
-
-
-
 
   async function loadUserProfile() {
     if (!token) return;
@@ -244,11 +281,18 @@
   function showLoginView() {
     if (loginView) loginView.style.display = 'flex';
     if (attendanceView) attendanceView.style.display = 'none';
+    if (userDetailsContainer) userDetailsContainer.style.display = 'none';
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    if (clockOutHeaderBtn) clockOutHeaderBtn.style.display = 'none';
   }
 
   function showAttendanceView() {
     if (loginView) loginView.style.display = 'none';
     if (attendanceView) attendanceView.style.display = 'block';
+    if (userDetailsContainer) userDetailsContainer.style.display = 'flex';
+    if (logoutBtn) logoutBtn.style.display = 'block';
+    loadAttendanceHistory();
+    loadBreakHistory();
   }
 
   async function loadBreakTypes() {
@@ -287,66 +331,122 @@
     }
   }
 
+  // Attendance History Fetch & 10-row Pagination
   async function loadAttendanceHistory() {
     if (!attendanceHistoryTableBody) return;
     try {
-      attendanceHistoryTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading your attendance logs...</td></tr>';
+      attendanceHistoryTableBody.innerHTML = '<tr><td colspan="5" class="loading-cell">Loading your attendance logs...</td></tr>';
       const records = await apiRequest('/api/attendance?employee_id=me');
       if (!Array.isArray(records) || records.length === 0) {
-        attendanceHistoryTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">No attendance records found yet.</td></tr>';
+        allAttendanceRecords = [];
+        renderAttendanceHistoryPage();
         return;
       }
-
-      attendanceHistoryTableBody.innerHTML = '';
-      records.forEach((r) => {
-        const tr = document.createElement('tr');
-        const isOngoing = !r.clock_out_at;
-        const statusLabel = isOngoing ? 'On Shift' : (r.status || 'present');
-        const statusClass = isOngoing ? 'present' : (r.status === 'present' ? 'present' : 'absent');
-        tr.innerHTML = `
-          <td>${formatDateFull(r.work_date || r.shift_date || r.clock_in_at)}</td>
-          <td>${formatDate(r.clock_in_at)}</td>
-          <td>${formatDate(r.clock_out_at)}</td>
-          <td>${r.hours_worked ? Number(r.hours_worked).toFixed(2) + ' hrs' : '-'}</td>
-          <td><span class="badge-tag ${statusClass}">${statusLabel}</span></td>
-        `;
-        attendanceHistoryTableBody.appendChild(tr);
-      });
+      allAttendanceRecords = records;
+      currentAttendancePage = 1;
+      renderAttendanceHistoryPage();
     } catch (err) {
-      attendanceHistoryTableBody.innerHTML = `<tr><td colspan="5" class="empty-state">Failed to load attendance history: ${err.message}</td></tr>`;
+      attendanceHistoryTableBody.innerHTML = `<tr><td colspan="5" style="color: var(--accent-red);">Failed to load attendance history: ${err.message}</td></tr>`;
     }
   }
 
+  function renderAttendanceHistoryPage() {
+    if (!attendanceHistoryTableBody) return;
+    if (allAttendanceRecords.length === 0) {
+      attendanceHistoryTableBody.innerHTML = '<tr><td colspan="5" class="loading-cell">No attendance records found yet.</td></tr>';
+      if (attHistPageInfo) attHistPageInfo.textContent = 'Page 1 of 1';
+      if (attHistPrevBtn) attHistPrevBtn.disabled = true;
+      if (attHistNextBtn) attHistNextBtn.disabled = true;
+      return;
+    }
+
+    const totalPages = Math.ceil(allAttendanceRecords.length / ATTENDANCE_PAGE_SIZE);
+    if (currentAttendancePage > totalPages) currentAttendancePage = totalPages;
+    if (currentAttendancePage < 1) currentAttendancePage = 1;
+
+    const startIdx = (currentAttendancePage - 1) * ATTENDANCE_PAGE_SIZE;
+    const pageRecords = allAttendanceRecords.slice(startIdx, startIdx + ATTENDANCE_PAGE_SIZE);
+
+    attendanceHistoryTableBody.innerHTML = pageRecords
+      .map((r) => {
+        const isOngoing = !r.clock_out_at;
+        const statusLabel = isOngoing ? 'On Shift' : (r.status || 'present');
+        const statusClass = isOngoing ? 'present' : (r.status === 'present' ? 'present' : 'absent');
+        return `
+          <tr>
+            <td>${formatDateFull(r.work_date || r.shift_date || r.clock_in_at)}</td>
+            <td>${formatDate(r.clock_in_at)}</td>
+            <td>${formatDate(r.clock_out_at)}</td>
+            <td>${r.hours_worked ? Number(r.hours_worked).toFixed(2) + ' hrs' : '-'}</td>
+            <td><span class="badge-tag ${statusClass}">${statusLabel}</span></td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    if (attHistPageInfo) attHistPageInfo.textContent = `Page ${currentAttendancePage} of ${totalPages}`;
+    if (attHistPrevBtn) attHistPrevBtn.disabled = currentAttendancePage <= 1;
+    if (attHistNextBtn) attHistNextBtn.disabled = currentAttendancePage >= totalPages;
+  }
+
+  // Break History Fetch & 10-row Pagination
   async function loadBreakHistory() {
     if (!breakHistoryTableBody) return;
     try {
-      breakHistoryTableBody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading your break logs...</td></tr>';
+      breakHistoryTableBody.innerHTML = '<tr><td colspan="6" class="loading-cell">Loading your break logs...</td></tr>';
       const records = await apiRequest('/api/breaks?employee_id=me');
       if (!Array.isArray(records) || records.length === 0) {
-        breakHistoryTableBody.innerHTML = '<tr><td colspan="6" class="empty-state">No break records found yet.</td></tr>';
+        allBreakRecords = [];
+        renderBreakHistoryPage();
         return;
       }
+      allBreakRecords = records;
+      currentBreakPage = 1;
+      renderBreakHistoryPage();
+    } catch (err) {
+      breakHistoryTableBody.innerHTML = `<tr><td colspan="6" style="color: var(--accent-red);">Failed to load break history: ${err.message}</td></tr>`;
+    }
+  }
 
-      breakHistoryTableBody.innerHTML = '';
-      records.forEach((r) => {
-        const tr = document.createElement('tr');
+  function renderBreakHistoryPage() {
+    if (!breakHistoryTableBody) return;
+    if (allBreakRecords.length === 0) {
+      breakHistoryTableBody.innerHTML = '<tr><td colspan="6" class="loading-cell">No break records found yet.</td></tr>';
+      if (brkHistPageInfo) brkHistPageInfo.textContent = 'Page 1 of 1';
+      if (brkHistPrevBtn) brkHistPrevBtn.disabled = true;
+      if (brkHistNextBtn) brkHistNextBtn.disabled = true;
+      return;
+    }
+
+    const totalPages = Math.ceil(allBreakRecords.length / BREAKS_PAGE_SIZE);
+    if (currentBreakPage > totalPages) currentBreakPage = totalPages;
+    if (currentBreakPage < 1) currentBreakPage = 1;
+
+    const startIdx = (currentBreakPage - 1) * BREAKS_PAGE_SIZE;
+    const pageRecords = allBreakRecords.slice(startIdx, startIdx + BREAKS_PAGE_SIZE);
+
+    breakHistoryTableBody.innerHTML = pageRecords
+      .map((r) => {
         const statusClass = r.status === 'completed' ? 'completed' : (r.status === 'active' ? 'present' : 'exceeded');
         const reason = r.break_name || r.break_type_key || 'Break';
         const startAt = r.start_at || r.start_time;
         const endAt = r.end_at || r.end_time;
-        tr.innerHTML = `
-          <td>${formatDateFull(startAt)}</td>
-          <td><strong>${reason}</strong></td>
-          <td>${formatDate(startAt)}</td>
-          <td>${formatDate(endAt)}</td>
-          <td>${r.duration_minutes !== null && r.duration_minutes !== undefined ? r.duration_minutes + ' min' : '-'}</td>
-          <td><span class="badge-tag ${statusClass}">${r.status}</span></td>
+        return `
+          <tr>
+            <td>${formatDateFull(startAt)}</td>
+            <td><strong>${reason}</strong></td>
+            <td>${formatDate(startAt)}</td>
+            <td>${formatDate(endAt)}</td>
+            <td>${r.duration_minutes !== null && r.duration_minutes !== undefined ? r.duration_minutes + ' min' : '-'}</td>
+            <td><span class="badge-tag ${statusClass}">${r.status}</span></td>
+          </tr>
         `;
-        breakHistoryTableBody.appendChild(tr);
-      });
-    } catch (err) {
-      breakHistoryTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Failed to load break history: ${err.message}</td></tr>`;
-    }
+      })
+      .join('');
+
+    if (brkHistPageInfo) brkHistPageInfo.textContent = `Page ${currentBreakPage} of ${totalPages}`;
+    if (brkHistPrevBtn) brkHistPrevBtn.disabled = currentBreakPage <= 1;
+    if (brkHistNextBtn) brkHistNextBtn.disabled = currentBreakPage >= totalPages;
   }
 
   async function handleClockIn() {
@@ -358,11 +458,12 @@
 
     try {
       const res = await apiRequest('/api/attendance/clock-in', 'POST');
-      showToast('Successfully clocked in!', 'success');
+      showToast('Shift started successfully!', 'success');
       updateUiClockedIn(res.clock_in_at);
+      loadAttendanceHistory();
     } catch (err) {
       if (err.status === 409) {
-        showToast('Already clocked in for today', 'info');
+        showToast('Shift already active for today', 'info');
         initAttendanceState();
       } else {
         showToast(err.message, 'error');
@@ -382,7 +483,7 @@
     closeClockOutModal();
     try {
       const res = await apiRequest('/api/attendance/clock-out', 'POST');
-      showToast(`Clocked out! Work hours: ${res.hours_worked} hrs`, 'success');
+      showToast(`Shift ended! Work hours: ${res.hours_worked} hrs`, 'success');
       updateUiClockedOut();
       loadAttendanceHistory();
     } catch (err) {
@@ -401,6 +502,7 @@
       const res = await apiRequest('/api/breaks/start', 'POST', { break_type_key: breakTypeKey });
       showToast(`Started break: ${res.break_type_key || breakTypeKey}`, 'success');
       updateUiOnBreak(res.start_at || res.start_time);
+      loadBreakHistory();
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -420,12 +522,14 @@
 
   function updateUiClockedIn(clockInTimestamp) {
     if (statusBadge) {
-      statusBadge.textContent = 'Clocked In';
+      statusBadge.textContent = 'On Shift';
       statusBadge.className = 'status-badge clocked-in';
     }
     if (clockInContainer) clockInContainer.style.display = 'none';
-    if (activeShiftControls) activeShiftControls.style.display = 'block';
-    if (clockOutBtn) clockOutBtn.style.display = 'block';
+    if (activeShiftControls) activeShiftControls.style.display = 'flex';
+    if (activeShiftControls) activeShiftControls.style.flexDirection = 'column';
+    if (activeShiftControls) activeShiftControls.style.gap = '1.25rem';
+    if (clockOutHeaderBtn) clockOutHeaderBtn.style.display = 'block';
     if (startBreakContainer) startBreakContainer.style.display = 'flex';
     if (endBreakContainer) endBreakContainer.style.display = 'none';
 
@@ -442,7 +546,7 @@
     }
     if (clockInContainer) clockInContainer.style.display = 'block';
     if (activeShiftControls) activeShiftControls.style.display = 'none';
-    if (clockOutBtn) clockOutBtn.style.display = 'none';
+    if (clockOutHeaderBtn) clockOutHeaderBtn.style.display = 'none';
 
     stopShiftTimer();
     stopBreakTimer();
@@ -454,8 +558,10 @@
       statusBadge.className = 'status-badge on-break';
     }
     if (clockInContainer) clockInContainer.style.display = 'none';
-    if (activeShiftControls) activeShiftControls.style.display = 'block';
-    if (clockOutBtn) clockOutBtn.style.display = 'block';
+    if (activeShiftControls) activeShiftControls.style.display = 'flex';
+    if (activeShiftControls) activeShiftControls.style.flexDirection = 'column';
+    if (activeShiftControls) activeShiftControls.style.gap = '1.25rem';
+    if (clockOutHeaderBtn) clockOutHeaderBtn.style.display = 'block';
     if (startBreakContainer) startBreakContainer.style.display = 'none';
     if (endBreakContainer) endBreakContainer.style.display = 'block';
 
@@ -469,32 +575,14 @@
   if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
 
   if (clockInBtn) clockInBtn.addEventListener('click', handleClockIn);
-  if (clockOutBtn) clockOutBtn.addEventListener('click', openClockOutModal);
+  if (clockOutHeaderBtn) clockOutHeaderBtn.addEventListener('click', openClockOutModal);
   if (cancelClockOutBtn) cancelClockOutBtn.addEventListener('click', closeClockOutModal);
   if (confirmClockOutBtn) confirmClockOutBtn.addEventListener('click', executeClockOut);
 
   if (startBreakBtn) startBreakBtn.addEventListener('click', handleStartBreak);
   if (endBreakBtn) endBreakBtn.addEventListener('click', handleEndBreak);
 
-  // Tab switching
-  if (tabConsoleBtn && tabHistoryBtn && consolePanel && historyPanel) {
-    tabConsoleBtn.addEventListener('click', () => {
-      tabConsoleBtn.classList.add('active');
-      tabHistoryBtn.classList.remove('active');
-      consolePanel.style.display = 'block';
-      historyPanel.style.display = 'none';
-    });
-
-    tabHistoryBtn.addEventListener('click', () => {
-      tabHistoryBtn.classList.add('active');
-      tabConsoleBtn.classList.remove('active');
-      consolePanel.style.display = 'none';
-      historyPanel.style.display = 'block';
-      loadAttendanceHistory();
-      loadBreakHistory();
-    });
-  }
-
+  // Sub-tab controls (Attendance vs Break History)
   if (subTabAttendanceBtn && subTabBreaksBtn && attendanceHistoryView && breakHistoryView) {
     subTabAttendanceBtn.addEventListener('click', () => {
       subTabAttendanceBtn.classList.add('active');
@@ -518,6 +606,12 @@
       showToast('History refreshed', 'info');
     });
   }
+
+  // Pagination button listeners
+  if (attHistPrevBtn) attHistPrevBtn.addEventListener('click', () => { if (currentAttendancePage > 1) { currentAttendancePage--; renderAttendanceHistoryPage(); } });
+  if (attHistNextBtn) attHistNextBtn.addEventListener('click', () => { const maxPage = Math.ceil(allAttendanceRecords.length / ATTENDANCE_PAGE_SIZE); if (currentAttendancePage < maxPage) { currentAttendancePage++; renderAttendanceHistoryPage(); } });
+  if (brkHistPrevBtn) brkHistPrevBtn.addEventListener('click', () => { if (currentBreakPage > 1) { currentBreakPage--; renderBreakHistoryPage(); } });
+  if (brkHistNextBtn) brkHistNextBtn.addEventListener('click', () => { const maxPage = Math.ceil(allBreakRecords.length / BREAKS_PAGE_SIZE); if (currentBreakPage < maxPage) { currentBreakPage++; renderBreakHistoryPage(); } });
 
   // Initialize view state & parse URL query token or OAuth code if redirected from SSO
   async function initApp() {
@@ -558,8 +652,6 @@
         // Fallback to login view
       }
     }
-
-
 
     if (token) {
       showAttendanceView();

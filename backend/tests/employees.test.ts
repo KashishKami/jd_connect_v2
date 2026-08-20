@@ -223,13 +223,13 @@ describe('POST /api/employees - Employee Creation', () => {
       .get('/api/employees?search=uniquealias')
       .set('Authorization', `Bearer ${adminToken}`);
     expect(resAlias.status).toBe(200);
-    expect(resAlias.body.some((e: any) => e.email === 'searchable@jdconnect.com')).toBe(true);
+    expect(resAlias.body.some((e: { email: string }) => e.email === 'searchable@jdconnect.com')).toBe(true);
 
     const resFullName = await supertest(app)
       .get('/api/employees?search=searchable')
       .set('Authorization', `Bearer ${adminToken}`);
     expect(resFullName.status).toBe(200);
-    expect(resFullName.body.some((e: any) => e.email === 'searchable@jdconnect.com')).toBe(true);
+    expect(resFullName.body.some((e: { email: string }) => e.email === 'searchable@jdconnect.com')).toBe(true);
   });
 
   it('GET /api/employees supports role_key and status filters', async () => {
@@ -239,7 +239,7 @@ describe('POST /api/employees - Employee Creation', () => {
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.every((e: any) => e.role === 'super_admin' && e.employment_status === 'active')).toBe(true);
+    expect(res.body.every((e: { role?: string; employment_status: string }) => e.role === 'super_admin' && e.employment_status === 'active')).toBe(true);
   });
 });
 

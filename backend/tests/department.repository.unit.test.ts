@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { Pool } from 'pg';
 import { DepartmentRepository } from '../src/repositories/department.repository';
 
 describe('DepartmentRepository Unit Tests', () => {
@@ -10,7 +11,7 @@ describe('DepartmentRepository Unit Tests', () => {
           { id: 'dept-2', name: 'Sales' },
         ],
       }),
-    } as unknown as any;
+    } as unknown as Pool;
 
     const repo = new DepartmentRepository(mockPool);
     const depts = await repo.listDepartments();

@@ -10,11 +10,13 @@ describe('GET /api/attendance - Attendance History & Scoped Queries', () => {
   let employeeToken: string;
   let employeeId: string;
   let adminToken: string;
-
   let otherEmployeeId: string;
+  let privateKey: KeyLike;
 
   beforeAll(async () => {
     await runMigrations();
+    const pair = await generateKeyPair('RS256');
+    privateKey = pair.privateKey as KeyLike;
   });
 
   beforeEach(async () => {
@@ -47,8 +49,6 @@ describe('GET /api/attendance - Attendance History & Scoped Queries', () => {
       [employeeId, otherEmployeeId]
     );
 
-    const { privateKey } = await generateKeyPair('RS256');
-
     employeeToken = await new SignJWT({
       sub: u1.rows[0].id,
       employee_id: employeeId,
@@ -58,7 +58,7 @@ describe('GET /api/attendance - Attendance History & Scoped Queries', () => {
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuedAt()
       .setExpirationTime('1h')
-      .sign(privateKey as KeyLike);
+      .sign(privateKey);
 
     adminToken = await new SignJWT({
       sub: '00000000-0000-0000-0000-000000000001',
@@ -69,7 +69,7 @@ describe('GET /api/attendance - Attendance History & Scoped Queries', () => {
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuedAt()
       .setExpirationTime('1h')
-      .sign(privateKey as KeyLike);
+      .sign(privateKey);
   });
 
   it('allows employee to view own attendance records', async () => {
@@ -115,6 +115,37 @@ describe('GET /api/attendance - Attendance History & Scoped Queries', () => {
 
     expect(resMe.status).toBe(200);
     expect(resMe.body.length).toBe(0); // adminToken employee_id has no seeded attendance records
+  });
+
+  it('filters attendance by status', async () => {
+    const resLate = await supertest(app)
+      .get('/api/attendance?status=late')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(resLate.status).toBe(200);
+    expect(resLate.body.length).toBe(1);
+    expect(resLate.body[0].status).toBe('late');
+    expect(resLate.body[0].employee_id).toBe(otherEmployeeId);
+  });
+
+  it('filters attendance by search term matching full_name or alias', async () => {
+    const resSearch = await supertest(app)
+      .get('/api/attendance?search=Two')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(resSearch.status).toBe(200);
+    expect(resSearch.body.length).toBe(1);
+    expect(resSearch.body[0].employee_id).toBe(otherEmployeeId);
+  });
+
+  it('returns employee_name (alias or full_name) and employee_code in response', async () => {
+    const res = await supertest(app)
+      .get('/api/attendance')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toHaveProperty('employee_name');
+    expect(res.body[0]).toHaveProperty('employee_code');
   });
 });
 

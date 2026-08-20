@@ -38,7 +38,7 @@ export class EmployeeService {
       throw new EmployeeNotFoundError(id);
     }
 
-    const fieldUpdates: Record<string, any> = { ...updates };
+    const fieldUpdates: Record<string, unknown> = { ...updates };
 
     if (updates.role_key && !updates.role_id) {
       const roleRow = await this.empRepo.findRoleByKey(updates.role_key);

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authenticateJwt } from '../middleware/auth';
+import { AttendanceStatus } from '../types/attendance';
 import {
   attendanceService,
   AlreadyClockedInError,
@@ -47,6 +48,8 @@ router.get('/', authenticateJwt, async (req: Request, res: Response) => {
       employee_id: req.query.employee_id as string | undefined,
       from: req.query.from as string | undefined,
       to: req.query.to as string | undefined,
+      status: req.query.status as AttendanceStatus | undefined,
+      search: req.query.search as string | undefined,
     };
 
     const records = await attendanceService.getAttendanceHistory(actor, filters);

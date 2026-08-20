@@ -3,6 +3,8 @@ import { EmployeeService } from '../src/services/employee.service';
 import { UserRepository } from '../src/repositories/user.repository';
 import { EmployeeRepository } from '../src/repositories/employee.repository';
 
+import { ZulipService } from '../src/services/zulip.service';
+
 describe('EmployeeService Unit Tests', () => {
   it('hashes password and creates user + employee record', async () => {
     const mockUserRepo = {
@@ -90,7 +92,7 @@ describe('EmployeeService Unit Tests', () => {
 
     const mockZulipSvc = {
       createUser: vi.fn().mockResolvedValue({ zulipUserId: 10, email: 'adam@company.com' }),
-    } as unknown as any;
+    } as unknown as ZulipService;
 
     const service = new EmployeeService(mockUserRepo, mockEmpRepo, mockZulipSvc);
     const result = await service.createEmployee({

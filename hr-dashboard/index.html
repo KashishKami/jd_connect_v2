@@ -4,47 +4,110 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JD Connect — HR & Admin Dashboard</title>
-  <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="app-layout">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">JD CONNECT</div>
-        <div class="tagline">HR Operations Admin</div>
+    <!-- Top Navbar -->
+    <nav class="top-navbar">
+      <div class="navbar-container">
+        <div class="navbar-left">
+          <button class="hamburger-btn" id="hamburgerBtn" aria-label="Toggle Navigation Menu">☰</button>
+          <div class="brand">
+            <span class="logo">JD CONNECT</span>
+            <span class="tagline">HR Operations Admin</span>
+          </div>
+          <div class="nav-tabs desktop-tabs">
+            <button class="nav-tab-btn nav-item active" data-tab="dashboard">📊 Dashboard</button>
+            <button class="nav-tab-btn nav-item" data-tab="employees">👥 Employee Management</button>
+            <button class="nav-tab-btn nav-item" data-tab="attendance">📋 Attendance Audit</button>
+            <button class="nav-tab-btn nav-item" data-tab="breaks">☕ Break Log Audit</button>
+          </div>
+        </div>
+        <div class="navbar-right">
+          <button class="theme-toggle-btn" id="themeToggleBtn" title="Toggle Theme">🌙</button>
+          <span class="user-info" id="userInfo">Logged in as HR Admin</span>
+          <button class="btn-logout" id="logoutBtn">Logout</button>
+        </div>
       </div>
-      <nav class="nav-menu">
-        <button class="nav-item active" data-tab="employees">👥 Employee Management</button>
-        <button class="nav-item" data-tab="attendance">📋 Attendance Audit</button>
-        <button class="nav-item" data-tab="breaks">☕ Break Log Audit</button>
-        <button class="nav-item" data-tab="monitor">📊 Live Workforce Monitor</button>
-      </nav>
-      <div class="sidebar-footer">
-        <div class="user-info" id="userInfo">Logged in as HR Admin</div>
-        <button class="btn-logout" id="logoutBtn">Logout</button>
+    </nav>
+
+    <!-- Mobile Navigation Drawer -->
+    <div class="nav-drawer" id="navDrawer">
+      <div class="drawer-header">
+        <span class="logo">JD CONNECT</span>
+        <button class="drawer-close-btn" id="drawerCloseBtn">&times;</button>
       </div>
-    </aside>
+      <div class="nav-tabs mobile-tabs">
+        <button class="nav-tab-btn nav-item active" data-tab="dashboard">📊 Dashboard</button>
+        <button class="nav-tab-btn nav-item" data-tab="employees">👥 Employee Management</button>
+        <button class="nav-tab-btn nav-item" data-tab="attendance">📋 Attendance Audit</button>
+        <button class="nav-tab-btn nav-item" data-tab="breaks">☕ Break Log Audit</button>
+      </div>
+    </div>
 
     <!-- Main Content Area -->
     <main class="main-content">
+      <!-- Dashboard Tab (Default) -->
+      <section id="tab-dashboard" class="tab-content active">
+        <div class="section-header">
+          <h2>Workforce Today Overview</h2>
+        </div>
+        <div class="metrics-grid">
+          <div class="metric-card card-green clickable-card" id="cardPresent" data-target-tab="attendance" data-target-status="present">
+            <div class="metric-value" id="metric-present">0</div>
+            <div class="metric-label">Present Today</div>
+          </div>
+          <div class="metric-card card-amber clickable-card" id="cardOnBreak" data-target-tab="breaks" data-target-status="active">
+            <div class="metric-value" id="metric-on-break">0</div>
+            <div class="metric-label">On Break</div>
+          </div>
+          <div class="metric-card card-red clickable-card" id="cardAbsent" data-target-tab="attendance" data-target-status="absent">
+            <div class="metric-value" id="metric-absent">0</div>
+            <div class="metric-label">Absent Today</div>
+          </div>
+          <div class="metric-card card-purple clickable-card" id="cardLate" data-target-tab="attendance" data-target-status="late">
+            <div class="metric-value" id="metric-late">0</div>
+            <div class="metric-label">Late Today</div>
+          </div>
+          <div class="metric-card card-blue clickable-card" id="cardHalfDay" data-target-tab="attendance" data-target-status="half_day">
+            <div class="metric-value" id="metric-half-day">0</div>
+            <div class="metric-label">Half Day Today</div>
+          </div>
+        </div>
+      </section>
+
       <!-- Employee Management Tab -->
-      <section id="tab-employees" class="tab-content active">
+      <section id="tab-employees" class="tab-content">
         <div class="section-header">
           <h2>Employee Directory & Management</h2>
           <button class="btn btn-primary" id="openAddModalBtn">+ Add Employee</button>
         </div>
 
         <div class="filter-bar">
-          <input type="text" id="searchEmployeeInput" class="input-search" placeholder="Search by name, email, or code...">
+          <input type="text" id="searchEmployeeInput" class="input-search" placeholder="Search by name or alias...">
           <select id="filterDepartment" class="select-filter">
             <option value="">All Departments</option>
-            <option value="Customer Support">Customer Support</option>
-            <option value="Technical Support">Technical Support</option>
-            <option value="Quality Assurance">Quality Assurance</option>
+          </select>
+          <select id="filterRole" class="select-filter">
+            <option value="">All Roles</option>
+            <option value="employee">Employee</option>
+            <option value="team_leader">Team Leader</option>
+            <option value="manager">Manager</option>
+            <option value="hr">HR</option>
+            <option value="admin">Admin</option>
+            <option value="super_admin">Super Admin</option>
+          </select>
+          <select id="filterStatus" class="select-filter">
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="probation">Probation</option>
+            <option value="suspended">Suspended</option>
+            <option value="terminated">Terminated</option>
+            <option value="on_leave">On Leave</option>
           </select>
         </div>
 
@@ -53,20 +116,30 @@
             <thead>
               <tr>
                 <th>Code</th>
-                <th>Employee Name</th>
+                <th>Full Name</th>
+                <th>Alias</th>
                 <th>Email</th>
+                <th>Designation</th>
                 <th>Department</th>
                 <th>Role</th>
-                <th>Zulip Status</th>
+                <th>Status</th>
+                <th>Zulip</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="employeeTableBody">
               <tr>
-                <td colspan="7" class="loading-cell">Loading employee directory...</td>
+                <td colspan="10" class="loading-cell">Loading employee directory...</td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="pagination-bar" id="paginationContainer">
+          <button class="btn btn-secondary" id="prevPageBtn" disabled>&laquo; Previous</button>
+          <span class="page-indicator" id="pageIndicator">Page 1 of 1</span>
+          <button class="btn btn-secondary" id="nextPageBtn" disabled>Next &raquo;</button>
         </div>
       </section>
 
@@ -74,6 +147,18 @@
       <section id="tab-attendance" class="tab-content">
         <div class="section-header">
           <h2>Attendance Audit Records</h2>
+        </div>
+        <div class="filter-bar">
+          <input type="text" id="attSearchInput" class="input-search" placeholder="Search by employee name or alias...">
+          <input type="date" id="attDateFilter" class="select-filter">
+          <select id="attStatusFilter" class="select-filter">
+            <option value="">All Statuses</option>
+            <option value="present">Present</option>
+            <option value="late">Late</option>
+            <option value="half_day">Half Day</option>
+            <option value="absent">Absent</option>
+          </select>
+          <button class="btn btn-secondary" id="todayAttBtn">Today</button>
         </div>
         <div class="table-container">
           <table class="data-table">
@@ -92,12 +177,30 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination Controls -->
+        <div class="pagination-bar">
+          <button class="btn btn-secondary" id="attPrevBtn" disabled>&laquo; Previous</button>
+          <span class="page-indicator" id="attPageInfo">Page 1 of 1</span>
+          <button class="btn btn-secondary" id="attNextBtn" disabled>Next &raquo;</button>
+        </div>
       </section>
 
       <!-- Breaks Tab -->
       <section id="tab-breaks" class="tab-content">
         <div class="section-header">
           <h2>Break Duration Audit</h2>
+        </div>
+        <div class="filter-bar">
+          <input type="text" id="brkSearchInput" class="input-search" placeholder="Search by employee name or alias...">
+          <input type="date" id="brkDateFilter" class="select-filter">
+          <select id="brkStatusFilter" class="select-filter">
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+            <option value="exceeded">Exceeded</option>
+          </select>
+          <button class="btn btn-secondary" id="todayBrkBtn">Today</button>
         </div>
         <div class="table-container">
           <table class="data-table">
@@ -117,26 +220,12 @@
             </tbody>
           </table>
         </div>
-      </section>
 
-      <!-- Monitor Tab -->
-      <section id="tab-monitor" class="tab-content">
-        <div class="section-header">
-          <h2>Live Workforce Monitor</h2>
-        </div>
-        <div class="metrics-grid">
-          <div class="metric-card card-green">
-            <div class="metric-value" id="metricActive">0</div>
-            <div class="metric-label">Active / Working</div>
-          </div>
-          <div class="metric-card card-amber">
-            <div class="metric-value" id="metricOnBreak">0</div>
-            <div class="metric-label">Currently On Break</div>
-          </div>
-          <div class="metric-card card-blue">
-            <div class="metric-value" id="metricTotal">0</div>
-            <div class="metric-label">Total Staff On Shift</div>
-          </div>
+        <!-- Pagination Controls -->
+        <div class="pagination-bar">
+          <button class="btn btn-secondary" id="brkPrevBtn" disabled>&laquo; Previous</button>
+          <span class="page-indicator" id="brkPageInfo">Page 1 of 1</span>
+          <button class="btn btn-secondary" id="brkNextBtn" disabled>Next &raquo;</button>
         </div>
       </section>
     </main>
@@ -154,11 +243,11 @@
       <form id="loginForm">
         <div class="form-group">
           <label for="loginEmail">Email Address</label>
-          <input type="email" id="loginEmail" class="form-input" placeholder="admin@company.com" value="admin@company.com" required>
+          <input type="email" id="loginEmail" class="form-input" placeholder="admin@company.com" required>
         </div>
         <div class="form-group">
           <label for="loginPassword">Password</label>
-          <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" value="AdminPassword123!" required>
+          <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required>
         </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem;">Sign In to Dashboard</button>
@@ -180,6 +269,10 @@
           <input type="text" id="addFullName" class="form-input" placeholder="e.g. John Doe" required>
         </div>
         <div class="form-group">
+          <label for="addAlias">Alias / Call-Sign</label>
+          <input type="text" id="addAlias" class="form-input" placeholder="e.g. Johnny">
+        </div>
+        <div class="form-group">
           <label for="addEmail">Corporate Email *</label>
           <input type="email" id="addEmail" class="form-input" placeholder="john.doe@jdconnect.com" required>
         </div>
@@ -195,11 +288,86 @@
             <option value="manager">Manager</option>
             <option value="hr">HR</option>
             <option value="admin">Admin</option>
+            <option value="super_admin">Super Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="addDesignation">Designation</label>
+          <input type="text" id="addDesignation" class="form-input" placeholder="e.g. Customer Support Specialist">
+        </div>
+        <div class="form-group">
+          <label for="addDepartment">Department</label>
+          <select id="addDepartment" class="form-select">
+            <option value="">Select Department...</option>
           </select>
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" id="cancelAddModalBtn">Cancel</button>
           <button type="submit" class="btn btn-primary">Provision Employee</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Employee Modal -->
+  <div id="editEmployeeModal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Edit Employee Details</h3>
+        <button class="btn-close" id="closeEditModalBtn">&times;</button>
+      </div>
+      <form id="editEmployeeForm">
+        <input type="hidden" id="editEmployeeId">
+        <div class="form-group">
+          <label for="editFullName">Full Name *</label>
+          <input type="text" id="editFullName" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label for="editAlias">Alias / Call-Sign</label>
+          <input type="text" id="editAlias" class="form-input">
+        </div>
+        <div class="form-group">
+          <label for="editEmail">Corporate Email</label>
+          <input type="email" id="editEmail" class="form-input" disabled readonly>
+        </div>
+        <div class="form-group">
+          <label for="editDesignation">Designation</label>
+          <input type="text" id="editDesignation" class="form-input">
+        </div>
+        <div class="form-group">
+          <label for="editDepartment">Department</label>
+          <select id="editDepartment" class="form-select">
+            <option value="">None / Unassigned</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="editRole">System Role *</label>
+          <select id="editRole" class="form-select" required>
+            <option value="employee">Employee</option>
+            <option value="team_leader">Team Leader</option>
+            <option value="manager">Manager</option>
+            <option value="hr">HR</option>
+            <option value="admin">Admin</option>
+            <option value="super_admin">Super Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="editStatus">Employment Status *</label>
+          <select id="editStatus" class="form-select" required>
+            <option value="active">Active</option>
+            <option value="probation">Probation</option>
+            <option value="suspended">Suspended</option>
+            <option value="terminated">Terminated</option>
+            <option value="on_leave">On Leave</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="editPassword">Reset Password (optional)</label>
+          <input type="password" id="editPassword" class="form-input" placeholder="Leave blank to keep current password" minlength="8">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="cancelEditModalBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveEditModalBtn">Save Changes</button>
         </div>
       </form>
     </div>

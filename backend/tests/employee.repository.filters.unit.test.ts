@@ -1,15 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
+import { Pool } from 'pg';
 import { EmployeeRepository } from '../src/repositories/employee.repository';
 
 describe('EmployeeRepository Filters Unit Tests', () => {
   it('applies search, department_id, role_key, and status filters in SQL query', async () => {
     const mockPool = {
       query: vi.fn().mockResolvedValue({ rows: [] }),
-    } as unknown as any;
+    } as unknown as Pool;
 
     const repo = new EmployeeRepository();
-    // Override pool property for test
-    (repo as any).createEmployee = vi.fn();
 
     await repo.findAllEmployees({
       search: 'ada',

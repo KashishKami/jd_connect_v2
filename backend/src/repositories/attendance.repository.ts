@@ -5,6 +5,8 @@ export interface FindAttendanceFilters {
   employee_id?: string | undefined;
   fromDate?: string | undefined;
   toDate?: string | undefined;
+  status?: AttendanceStatus | undefined;
+  search?: string | undefined;
 }
 
 export class AttendanceRepository {
@@ -67,10 +69,18 @@ export class AttendanceRepository {
       values.push(filters.toDate);
       conditions.push(`a.work_date <= $${values.length}`);
     }
+    if (filters.status) {
+      values.push(filters.status);
+      conditions.push(`a.status = $${values.length}`);
+    }
+    if (filters.search) {
+      values.push(`%${filters.search}%`);
+      conditions.push(`(e.full_name ILIKE $${values.length} OR e.alias ILIKE $${values.length})`);
+    }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const query = `
-      SELECT a.*, e.full_name AS employee_name, e.email AS employee_email
+      SELECT a.*, COALESCE(e.alias, e.full_name) AS employee_name, e.full_name, e.alias, e.email AS employee_email, e.employee_code
       FROM attendance_records a
       LEFT JOIN employees e ON a.employee_id = e.id
       ${whereClause}
