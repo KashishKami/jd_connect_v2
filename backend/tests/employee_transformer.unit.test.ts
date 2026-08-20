@@ -3,16 +3,15 @@ import { deriveTempPassword, resolveEmploymentStatus } from '../scripts/migrate-
 
 describe('Employee Transformer Unit Tests (W-701 Unit)', () => {
   describe('deriveTempPassword', () => {
-    it('should derive temp password using last 4 characters of UUID', () => {
+    it('should return fixed password Hacking@159$', () => {
       const uuid = 'c62d08cb-5702-4543-8730-5a3874acb7b3';
       const result = deriveTempPassword(uuid);
-      expect(result).toBe('TempPass@b7b3!'); // last 4: b7b3
+      expect(result).toBe('Hacking@159$');
     });
 
-    it('should fall back to auth_user if UUID is null or empty', () => {
-      const result = val => deriveTempPassword(val);
-      expect(result(null)).toBe('TempPass@user!'); // last 4 of 'auth_user' is 'user'
-      expect(result('')).toBe('TempPass@user!');
+    it('should return fixed password Hacking@159$ even if UUID is null or empty', () => {
+      expect(deriveTempPassword(null)).toBe('Hacking@159$');
+      expect(deriveTempPassword('')).toBe('Hacking@159$');
     });
   });
 

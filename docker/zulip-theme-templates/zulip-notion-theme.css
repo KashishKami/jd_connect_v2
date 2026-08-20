@@ -1,0 +1,217 @@
+/* ==========================================================================
+   JD Connect — High Specificity Notion Light & Dark Theme (Outfit Font)
+   FIX: Zulip applies .dark-theme on <html> root, NOT on <body>.
+         Dark selectors: html.dark-theme body { ... }
+         Light theme guards: html:not(.dark-theme) body { ... }
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+/* --- 1. Global Font Stack --- */
+*,
+*::before,
+*::after,
+html body,
+html body * {
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* ==========================================================================
+   2. NOTION DARK THEME
+   Zulip sets class="dark-theme" on the <html> element, not <body>.
+   ========================================================================== */
+
+html.dark-theme,
+html.dark-theme body {
+  background-color: #18181b !important;
+  color: #f4f4f5 !important;
+}
+
+html.dark-theme body #app,
+html.dark-theme body .app,
+html.dark-theme body .app-main,
+html.dark-theme body #main_div,
+html.dark-theme body .column-left,
+html.dark-theme body .column-right,
+html.dark-theme body .column-middle,
+html.dark-theme body .message_feed,
+html.dark-theme body #message_feed_container,
+html.dark-theme body .message_row,
+html.dark-theme body .recipient_row,
+html.dark-theme body #left-sidebar,
+html.dark-theme body #right-sidebar,
+html.dark-theme body #header-container,
+html.dark-theme body .header-main,
+html.dark-theme body .top-navbar,
+html.dark-theme body #navbar-fixed-top,
+html.dark-theme body .column-header,
+html.dark-theme body .header,
+html.dark-theme body .banner,
+html.dark-theme body .alert,
+html.dark-theme body #organization-status,
+html.dark-theme body #compose,
+html.dark-theme body .compose-content,
+html.dark-theme body #compose_controls,
+html.dark-theme body .bottom-bar {
+  background-color: #18181b !important;
+  color: #f4f4f5 !important;
+}
+
+html.dark-theme body #search_query,
+html.dark-theme body input[type="text"],
+html.dark-theme body input[type="search"],
+html.dark-theme body .search-input {
+  background-color: #27272a !important;
+  border: 1px solid #3f3f46 !important;
+  color: #f4f4f5 !important;
+  border-radius: 6px !important;
+}
+
+html.dark-theme body #left-sidebar,
+html.dark-theme body .left-sidebar,
+html.dark-theme body .nav-sidebar,
+html.dark-theme body .sidebar-content {
+  background-color: #18181b !important;
+  border-right: 1px solid #27272a !important;
+  color: #a1a1aa !important;
+}
+
+html.dark-theme body .stream-list-item.active-sub,
+html.dark-theme body .active-filter,
+html.dark-theme body .sidebar-row.active,
+html.dark-theme body .active-sub-item,
+html.dark-theme body .active-dm {
+  background-color: #27272a !important;
+  color: #818cf8 !important;
+  font-weight: 700 !important;
+  border-radius: 6px !important;
+  border-left: 3px solid #6366f1 !important;
+}
+
+html.dark-theme body .message-header,
+html.dark-theme body .recipient_row .message_header,
+html.dark-theme body .recipient-bar,
+html.dark-theme body .header-bar,
+html.dark-theme body .recipient_row_date {
+  background-color: #27272a !important;
+  border: 1px solid #3f3f46 !important;
+  color: #f4f4f5 !important;
+}
+
+html.dark-theme body #compose-textarea,
+html.dark-theme body .compose_textarea,
+html.dark-theme body textarea {
+  background-color: #27272a !important;
+  border: 1px solid #3f3f46 !important;
+  color: #f4f4f5 !important;
+  border-radius: 8px !important;
+}
+
+html.dark-theme body a {
+  color: #818cf8 !important;
+}
+
+/* ==========================================================================
+   3. NOTION LIGHT THEME
+   Guard with html:not(.dark-theme) so it never conflicts with dark mode.
+   ========================================================================== */
+
+html:not(.dark-theme) body {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark-theme) body #app,
+html:not(.dark-theme) body .app,
+html:not(.dark-theme) body .app-main,
+html:not(.dark-theme) body #main_div,
+html:not(.dark-theme) body .column-middle,
+html:not(.dark-theme) body .message_feed,
+html:not(.dark-theme) body #message_feed_container,
+html:not(.dark-theme) body .message_row,
+html:not(.dark-theme) body .recipient_row,
+html:not(.dark-theme) body #compose,
+html:not(.dark-theme) body .compose-content,
+html:not(.dark-theme) body #compose_controls,
+html:not(.dark-theme) body .bottom-bar {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark-theme) body #header-container,
+html:not(.dark-theme) body .header-main,
+html:not(.dark-theme) body .top-navbar,
+html:not(.dark-theme) body #navbar-fixed-top,
+html:not(.dark-theme) body .column-header,
+html:not(.dark-theme) body .header,
+html:not(.dark-theme) body .banner,
+html:not(.dark-theme) body .alert {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark-theme) body #search_query,
+html:not(.dark-theme) body input[type="text"],
+html:not(.dark-theme) body input[type="search"] {
+  background-color: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  border-radius: 6px !important;
+}
+
+html:not(.dark-theme) body #left-sidebar,
+html:not(.dark-theme) body .left-sidebar,
+html:not(.dark-theme) body .column-left,
+html:not(.dark-theme) body .nav-sidebar,
+html:not(.dark-theme) body .sidebar-content,
+html:not(.dark-theme) body #right-sidebar,
+html:not(.dark-theme) body .right-sidebar,
+html:not(.dark-theme) body .column-right {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+html:not(.dark-theme) body .stream-list-item.active-sub,
+html:not(.dark-theme) body .active-filter,
+html:not(.dark-theme) body .sidebar-row.active,
+html:not(.dark-theme) body .active-sub-item,
+html:not(.dark-theme) body .active-dm {
+  background-color: #e0e7ff !important;
+  color: #3730a3 !important;
+  font-weight: 700 !important;
+  border-radius: 6px !important;
+  border-left: 3px solid #4f46e5 !important;
+}
+
+html:not(.dark-theme) body .message-header,
+html:not(.dark-theme) body .recipient_row .message_header,
+html:not(.dark-theme) body .recipient-bar,
+html:not(.dark-theme) body .header-bar,
+html:not(.dark-theme) body .recipient_row_date {
+  background-color: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark-theme) body #compose-textarea,
+html:not(.dark-theme) body .compose_textarea,
+html:not(.dark-theme) body textarea {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  border-radius: 8px !important;
+}
+
+/* --- Shared Badges --- */
+.unread_count,
+.badge,
+.count {
+  background-color: #6366f1 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  font-size: 0.72rem !important;
+  border-radius: 12px !important;
+  padding: 2px 7px !important;
+}

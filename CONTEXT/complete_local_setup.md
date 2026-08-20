@@ -144,7 +144,22 @@ services:
       SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"
       SETTING_FAKE_EMAIL_DOMAIN: "localhost"
       CERTIFICATES: "self-signed"
+      SETTING_EXTRA_CUSTOM_CSS: "/static/custom.css"
+    volumes:
+      - ./zulip-notion-theme.css:/home/zulip/prod-static/custom.css:ro
+      - ./nginx-custom-theme.conf:/etc/nginx/zulip-include/app.d/custom-theme.conf:ro
 ```
+
+Copy the custom theme and Nginx sub-filter configuration files into `docker/zulip/`:
+```bash
+# Copy theme configuration files from templates into docker/zulip/
+cp docker/zulip-theme-templates/zulip-notion-theme.css docker/zulip/zulip-notion-theme.css
+cp docker/zulip-theme-templates/nginx-custom-theme.conf docker/zulip/nginx-custom-theme.conf
+```
+
+> [!NOTE]
+> **Custom Theme & Zero Container Modifications:**
+> We never modify any files directly inside the Zulip Docker container. The custom Outfit font and Dual Notion (Light & Dark) themes are applied 100% declaratively via the volume mounts and Nginx configuration in `compose.override.yaml`. Copying these two configuration files into `docker/zulip/` ensures any fresh deployment automatically receives the customized theme on first boot.
 
 Create `docker/zulip/.env`:
 ```dotenv

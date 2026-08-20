@@ -4,10 +4,8 @@ import path from 'path';
 import { parseSqlDump } from '../src/lib/copy-parser';
 
 
-export function deriveTempPassword(oldId: string | null): string {
-  if (!oldId) return 'TempPass@1234!';
-  const clean = oldId.replace(/-/g, '').slice(-4);
-  return `TempPass@${clean}!`;
+export function deriveTempPassword(_oldId?: string | null): string {
+  return 'Hacking@159$';
 }
 
 async function main() {

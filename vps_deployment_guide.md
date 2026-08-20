@@ -290,7 +290,28 @@ services:
       SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"   # ← REPLACE: your real admin email
       SETTING_FAKE_EMAIL_DOMAIN: "localhost"             # ← leave as-is
       CERTIFICATES: "self-signed"                        # ← leave as-is (Phase 2 only)
+      SETTING_EXTRA_CUSTOM_CSS: "/static/custom.css"     # ← leave as-is
+    volumes:
+      - ./zulip-notion-theme.css:/home/zulip/prod-static/custom.css:ro
+      - ./nginx-custom-theme.conf:/etc/nginx/zulip-include/app.d/custom-theme.conf:ro
 EOF
+```
+
+**SCP the custom theme files from your Windows machine to the VPS:**
+
+> [!IMPORTANT]
+> Run these from your **Windows machine** (PowerShell), not the VPS SSH session. The theme files live in `docker/zulip-theme-templates/` in your local repo.
+
+```powershell
+# From your Windows machine — in your project root directory
+scp docker\zulip-theme-templates\zulip-notion-theme.css root@<VPS_IP>:/opt/jdconnect_v2/zulip/zulip-notion-theme.css
+scp docker\zulip-theme-templates\nginx-custom-theme.conf root@<VPS_IP>:/opt/jdconnect_v2/zulip/nginx-custom-theme.conf
+```
+
+Verify both files arrived on the VPS:
+```bash
+ls -lh /opt/jdconnect_v2/zulip/zulip-notion-theme.css /opt/jdconnect_v2/zulip/nginx-custom-theme.conf
+# Both should show file sizes > 0
 ```
 
 **Initialize and start Zulip** (one-time — takes ~5 minutes):
@@ -827,6 +848,10 @@ services:
       SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"
       SETTING_FAKE_EMAIL_DOMAIN: "localhost"
       CERTIFICATES: "self-signed"
+      SETTING_EXTRA_CUSTOM_CSS: "/static/custom.css"
+    volumes:
+      - ./zulip-notion-theme.css:/home/zulip/prod-static/custom.css:ro
+      - ./nginx-custom-theme.conf:/etc/nginx/zulip-include/app.d/custom-theme.conf:ro
     networks:
       - default
       - root_default
@@ -851,6 +876,9 @@ networks:
     external: true
 EOF
 ```
+
+> [!NOTE]
+> The theme files (`zulip-notion-theme.css` and `nginx-custom-theme.conf`) were already SCP'd to `/opt/jdconnect_v2/zulip/` in Step 6. The volume mounts here reference those files — no additional SCP is needed.
 
 > **Replace `YOURDOMAIN.com` with your actual domain** (e.g., `jdfusion.in`).
 

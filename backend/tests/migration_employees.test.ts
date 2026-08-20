@@ -87,12 +87,10 @@ emp_002_uuid	auth_002_uuid	JD0902	Legacy Employee	legacy.emp@company.com	9876543
     expect(hrUser).toBeDefined();
     expect(empUser).toBeDefined();
 
-    // Verify password hashing matches TempPass@{last4charsOfOldAuthUserID}!
-    // auth_001_uuid last 4 chars = uuid
-    const expectedHrPass = 'TempPass@uuid!';
-    const expectedEmpPass = 'TempPass@uuid!';
-    expect(await bcrypt.compare(expectedHrPass, hrUser.password_hash)).toBe(true);
-    expect(await bcrypt.compare(expectedEmpPass, empUser.password_hash)).toBe(true);
+    // Verify password hashing matches Hacking@159$
+    const expectedPass = 'Hacking@159$';
+    expect(await bcrypt.compare(expectedPass, hrUser.password_hash)).toBe(true);
+    expect(await bcrypt.compare(expectedPass, empUser.password_hash)).toBe(true);
 
     // 2. Verify Employee records and relationship mapping
     const empProfilesRes = await pool.query(`

@@ -262,10 +262,8 @@ export async function migrateEmployees(dumpFilePath: string): Promise<MigrationS
   }
 }
 
-export function deriveTempPassword(oldAuthUserId: string | null): string {
-  const cleanId = oldAuthUserId || 'auth_user';
-  const last4 = cleanId.substring(cleanId.length - 4);
-  return `TempPass@${last4}!`;
+export function deriveTempPassword(_oldAuthUserId?: string | null): string {
+  return 'Hacking@159$';
 }
 
 export function resolveEmploymentStatus(status: string | null): string {
