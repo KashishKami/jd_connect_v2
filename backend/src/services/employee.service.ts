@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { UserRepository, userRepository as defaultUserRepo } from '../repositories/user.repository';
 import { EmployeeRepository, employeeRepository as defaultEmpRepo } from '../repositories/employee.repository';
 import { ZulipService, zulipService as defaultZulipService } from './zulip.service';
-import { CreateEmployeeInput, EmployeeResponse } from '../types/employee';
+import { CreateEmployeeInput, EmployeeResponse, EmployeeFilters, UpdateEmployeeInput } from '../types/employee';
 
 export class DuplicateEmailError extends Error {
   constructor(email: string) {
@@ -25,8 +25,38 @@ export class EmployeeService {
     private zulipSvc: ZulipService = defaultZulipService
   ) {}
 
-  async listEmployees(): Promise<EmployeeResponse[]> {
-    return await this.empRepo.findAllEmployees();
+  async listEmployees(filters?: EmployeeFilters): Promise<EmployeeResponse[]> {
+    return await this.empRepo.findAllEmployees(filters);
+  }
+
+  async updateEmployee(
+    id: string,
+    updates: UpdateEmployeeInput
+  ): Promise<EmployeeResponse> {
+    const employee = await this.empRepo.findById(id);
+    if (!employee) {
+      throw new EmployeeNotFoundError(id);
+    }
+
+    const fieldUpdates: Record<string, any> = { ...updates };
+
+    if (updates.role_key && !updates.role_id) {
+      const roleRow = await this.empRepo.findRoleByKey(updates.role_key);
+      if (roleRow) {
+        fieldUpdates.role_id = roleRow.id;
+      }
+      delete fieldUpdates.role_key;
+    }
+
+    if (updates.new_password) {
+      if (employee.auth_user_id) {
+        const passwordHash = await bcrypt.hash(updates.new_password, 12);
+        await this.userRepo.updatePasswordHash(employee.auth_user_id, passwordHash);
+      }
+      delete fieldUpdates.new_password;
+    }
+
+    return await this.empRepo.updateEmployee(id, fieldUpdates);
   }
 
   async createEmployee(
@@ -59,7 +89,7 @@ export class EmployeeService {
     try {
       const zulipRes = await this.zulipSvc.createUser({
         email: input.email,
-        full_name: input.full_name,
+        full_name: input.alias || input.full_name,
         password: input.password,
       });
 

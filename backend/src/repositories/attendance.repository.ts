@@ -105,6 +105,50 @@ export class AttendanceRepository {
       total_clocked_in: totalClockedIn,
     };
   }
+
+  async getTodaySummary(): Promise<{
+    present: number;
+    on_break: number;
+    total_employees: number;
+    late: number;
+    half_day: number;
+  }> {
+    const todayESTRes = await pool.query(
+      `SELECT (NOW() AT TIME ZONE 'America/New_York')::date AS today`
+    );
+    const todayEST = todayESTRes.rows[0].today;
+
+    const presentRes = await pool.query(
+      `SELECT COUNT(*) FROM attendance_records WHERE work_date = $1`,
+      [todayEST]
+    );
+
+    const onBreakRes = await pool.query(
+      `SELECT COUNT(*) FROM break_records WHERE status = 'active'`
+    );
+
+    const totalEmpRes = await pool.query(
+      `SELECT COUNT(*) FROM employees WHERE employment_status = 'active'`
+    );
+
+    const lateRes = await pool.query(
+      `SELECT COUNT(*) FROM attendance_records WHERE work_date = $1 AND status = 'late'`,
+      [todayEST]
+    );
+
+    const halfDayRes = await pool.query(
+      `SELECT COUNT(*) FROM attendance_records WHERE work_date = $1 AND status = 'half_day'`,
+      [todayEST]
+    );
+
+    const present = parseInt(presentRes.rows[0].count, 10) || 0;
+    const on_break = parseInt(onBreakRes.rows[0].count, 10) || 0;
+    const total_employees = parseInt(totalEmpRes.rows[0].count, 10) || 0;
+    const late = parseInt(lateRes.rows[0].count, 10) || 0;
+    const half_day = parseInt(halfDayRes.rows[0].count, 10) || 0;
+
+    return { present, on_break, total_employees, late, half_day };
+  }
 }
 
 export const attendanceRepository = new AttendanceRepository();

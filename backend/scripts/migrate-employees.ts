@@ -148,11 +148,13 @@ export async function migrateEmployees(dumpFilePath: string): Promise<MigrationS
         existingZulipUserId = empCheck.rows[0].zulip_user_id;
         existingZulipProvisioned = empCheck.rows[0].zulip_provisioned;
 
+        const aliasVal = oldEmp.alias_name || null;
+
         await client.query(
           `UPDATE employees
-           SET auth_user_id = $2, employee_code = $3, full_name = $4, mobile = $5,
-               department_id = $6, role_id = $7, centre_id = $8, shift_id = $9,
-               designation = $10, joining_date = $11, employment_status = $12, profile_photo_url = $13,
+           SET auth_user_id = $2, employee_code = $3, full_name = $4, alias = $5, mobile = $6,
+               department_id = $7, role_id = $8, centre_id = $9, shift_id = $10,
+               designation = $11, joining_date = $12, employment_status = $13, profile_photo_url = $14,
                updated_at = NOW()
            WHERE id = $1`,
           [
@@ -160,6 +162,7 @@ export async function migrateEmployees(dumpFilePath: string): Promise<MigrationS
             userId,
             oldEmp.employee_code,
             oldEmp.full_name,
+            aliasVal,
             oldEmp.mobile || null,
             deptId,
             roleId,
@@ -174,16 +177,17 @@ export async function migrateEmployees(dumpFilePath: string): Promise<MigrationS
       } else {
         const empInsert = await client.query(
           `INSERT INTO employees (
-             auth_user_id, employee_code, full_name, email, mobile,
+             auth_user_id, employee_code, full_name, alias, email, mobile,
              department_id, role_id, centre_id, shift_id, designation,
              joining_date, employment_status, profile_photo_url
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING id`,
           [
             userId,
             oldEmp.employee_code,
             oldEmp.full_name,
+            aliasVal,
             email,
             oldEmp.mobile || null,
             deptId,

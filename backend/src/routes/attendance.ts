@@ -27,6 +27,15 @@ router.get('/monitor', authenticateJwt, async (_req: Request, res: Response) => 
   }
 });
 
+router.get('/summary/today', authenticateJwt, async (_req: Request, res: Response) => {
+  try {
+    const summary = await attendanceService.getTodaySummary();
+    return res.status(200).json(summary);
+  } catch (error) {
+    return res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 router.get('/', authenticateJwt, async (req: Request, res: Response) => {
   try {
     const actor = {

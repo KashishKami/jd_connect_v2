@@ -60,4 +60,60 @@ describe('EmployeeService Unit Tests', () => {
     expect(mockUserRepo.createUser).not.toHaveBeenCalled();
     expect(mockEmpRepo.createEmployee).not.toHaveBeenCalled();
   });
+
+  it('passes alias as full_name to Zulip service if provided', async () => {
+    const mockUserRepo = {
+      findByEmail: vi.fn().mockResolvedValue(null),
+      createUser: vi.fn().mockResolvedValue({ id: 'user-uuid-1', email: 'adam@company.com' }),
+    } as unknown as UserRepository;
+
+    const mockEmpRepo = {
+      createEmployee: vi.fn().mockResolvedValue({
+        id: 'emp-uuid-1',
+        auth_user_id: 'user-uuid-1',
+        employee_code: 'JD0002',
+        full_name: 'Adam Johnson',
+        alias: 'Adam',
+        email: 'adam@company.com',
+        zulip_provisioned: true,
+        zulip_user_id: 10,
+      }),
+      updateZulipProvisioning: vi.fn().mockImplementation((id, zulipId, isProv) => ({
+        id,
+        full_name: 'Adam Johnson',
+        alias: 'Adam',
+        email: 'adam@company.com',
+        zulip_provisioned: isProv,
+        zulip_user_id: zulipId,
+      })),
+    } as unknown as EmployeeRepository;
+
+    const mockZulipSvc = {
+      createUser: vi.fn().mockResolvedValue({ zulipUserId: 10, email: 'adam@company.com' }),
+    } as unknown as any;
+
+    const service = new EmployeeService(mockUserRepo, mockEmpRepo, mockZulipSvc);
+    const result = await service.createEmployee({
+      full_name: 'Adam Johnson',
+      alias: 'Adam',
+      email: 'adam@company.com',
+      password: 'Password123!',
+      role_id: 'role-uuid-1',
+    });
+
+    expect(mockEmpRepo.createEmployee).toHaveBeenCalledWith(
+      'user-uuid-1',
+      expect.objectContaining({
+        alias: 'Adam',
+      })
+    );
+
+    expect(mockZulipSvc.createUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        full_name: 'Adam',
+      })
+    );
+
+    expect(result.alias).toBe('Adam');
+  });
 });

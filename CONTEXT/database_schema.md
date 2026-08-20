@@ -202,6 +202,7 @@ CREATE TABLE employees (
   employee_code         TEXT UNIQUE NOT NULL
                           DEFAULT ('JD' || lpad(nextval('employee_code_seq')::text, 4, '0')),
   full_name             TEXT NOT NULL,
+  alias                 TEXT,                   -- Work/display name sent to Zulip (e.g. "Adam"). Added: Phase 9 W-901.
   email                 TEXT UNIQUE NOT NULL,
   mobile                TEXT,
   department_id         UUID REFERENCES departments(id),
@@ -225,6 +226,8 @@ CREATE INDEX idx_employees_dept ON employees(department_id);
 CREATE INDEX idx_employees_manager ON employees(manager_id);
 CREATE INDEX idx_employees_tl ON employees(team_leader_id);
 ```
+
+**Migration:** `backend/scripts/migrations/009_add_alias_to_employees.ts` — `ALTER TABLE employees ADD COLUMN IF NOT EXISTS alias TEXT;`
 
 ---
 

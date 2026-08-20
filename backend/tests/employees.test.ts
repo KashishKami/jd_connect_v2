@@ -142,6 +142,45 @@ describe('POST /api/employees - Employee Creation', () => {
     expect(res.body.email).toBe('keyuser@jdconnect.com');
   });
 
+  it('creates employee with alias and returns alias in response and DB', async () => {
+    const res = await supertest(app)
+      .post('/api/employees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        full_name: 'Adam Johnson',
+        alias: 'Adam',
+        email: 'adam.johnson@jdconnect.com',
+        password: 'Password123!',
+        role_key: 'employee',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('alias', 'Adam');
+
+    const empRes = await pool.query('SELECT * FROM employees WHERE email = $1', ['adam.johnson@jdconnect.com']);
+    expect(empRes.rows.length).toBe(1);
+    expect(empRes.rows[0].alias).toBe('Adam');
+  });
+
+  it('creates employee without alias resulting in null alias in DB', async () => {
+    const res = await supertest(app)
+      .post('/api/employees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        full_name: 'No Alias User',
+        email: 'noalias@jdconnect.com',
+        password: 'Password123!',
+        role_key: 'employee',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.alias).toBeNull();
+
+    const empRes = await pool.query('SELECT * FROM employees WHERE email = $1', ['noalias@jdconnect.com']);
+    expect(empRes.rows.length).toBe(1);
+    expect(empRes.rows[0].alias).toBeNull();
+  });
+
   it('GET /api/employees lists all employees with department and role', async () => {
     await supertest(app)
       .post('/api/employees')
@@ -166,6 +205,41 @@ describe('POST /api/employees - Employee Creation', () => {
     expect(emp).toHaveProperty('email');
     expect(emp).toHaveProperty('role');
     expect(emp).toHaveProperty('zulip_provisioned');
+  });
+
+  it('GET /api/employees supports search filter matching full_name or alias', async () => {
+    await supertest(app)
+      .post('/api/employees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        full_name: 'Searchable FullName',
+        alias: 'UniqueAlias',
+        email: 'searchable@jdconnect.com',
+        password: 'Password123!',
+        role_key: 'employee',
+      });
+
+    const resAlias = await supertest(app)
+      .get('/api/employees?search=uniquealias')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(resAlias.status).toBe(200);
+    expect(resAlias.body.some((e: any) => e.email === 'searchable@jdconnect.com')).toBe(true);
+
+    const resFullName = await supertest(app)
+      .get('/api/employees?search=searchable')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(resFullName.status).toBe(200);
+    expect(resFullName.body.some((e: any) => e.email === 'searchable@jdconnect.com')).toBe(true);
+  });
+
+  it('GET /api/employees supports role_key and status filters', async () => {
+    const res = await supertest(app)
+      .get('/api/employees?role_key=super_admin&status=active')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.every((e: any) => e.role === 'super_admin' && e.employment_status === 'active')).toBe(true);
   });
 });
 

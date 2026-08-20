@@ -108,6 +108,22 @@ export class AttendanceService {
     return await this.attRepo.getLiveMonitorSummary(todayEST);
   }
 
+  async getTodaySummary(): Promise<{
+    present: number;
+    on_break: number;
+    absent: number;
+    late: number;
+    half_day: number;
+    total_employees: number;
+  }> {
+    const summary = await this.attRepo.getTodaySummary();
+    const absent = Math.max(0, summary.total_employees - summary.present);
+    return {
+      ...summary,
+      absent,
+    };
+  }
+
   async clockIn(zulipUserId: number): Promise<AttendanceRecord> {
     const employee = await this.empRepo.findByZulipUserId(zulipUserId);
     if (!employee) {

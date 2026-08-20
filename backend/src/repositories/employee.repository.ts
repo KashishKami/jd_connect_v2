@@ -1,21 +1,24 @@
 import pool from '../lib/db';
-import { CreateEmployeeInput, EmployeeResponse } from '../types/employee';
+import { CreateEmployeeInput, EmployeeResponse, EmployeeFilters } from '../types/employee';
 
 export class EmployeeRepository {
+  constructor(private dbPool = pool) {}
+
   async createEmployee(
     authUserId: string,
     data: CreateEmployeeInput
   ): Promise<EmployeeResponse> {
-    const res = await pool.query<EmployeeResponse>(
+    const res = await this.dbPool.query<EmployeeResponse>(
       `INSERT INTO employees (
-         auth_user_id, full_name, email, mobile, department_id, role_id,
+         auth_user_id, full_name, alias, email, mobile, department_id, role_id,
          centre_id, shift_id, team_leader_id, manager_id, designation, zulip_provisioned
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false)
        RETURNING *`,
       [
         authUserId,
         data.full_name.trim(),
+        data.alias ? data.alias.trim() : null,
         data.email.toLowerCase().trim(),
         data.mobile || null,
         data.department_id || null,
@@ -31,18 +34,49 @@ export class EmployeeRepository {
   }
 
   async findRoleByKey(key: string): Promise<{ id: string } | null> {
-    const res = await pool.query<{ id: string }>('SELECT id FROM roles WHERE key = $1', [key]);
+    const res = await this.dbPool.query<{ id: string }>('SELECT id FROM roles WHERE key = $1', [key]);
     return res.rows[0] || null;
   }
 
-  async findAllEmployees(): Promise<EmployeeResponse[]> {
-    const res = await pool.query<EmployeeResponse>(
-      `SELECT e.*, d.name AS department, r.key AS role
-       FROM employees e
-       LEFT JOIN departments d ON e.department_id = d.id
-       LEFT JOIN roles r ON e.role_id = r.id
-       ORDER BY e.created_at DESC`
-    );
+  async findAllEmployees(
+    filters?: EmployeeFilters,
+    dbClient = this.dbPool
+  ): Promise<EmployeeResponse[]> {
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (filters?.search && filters.search.trim()) {
+      params.push(`%${filters.search.trim()}%`);
+      conditions.push(`(e.full_name ILIKE $${params.length} OR e.alias ILIKE $${params.length})`);
+    }
+
+    if (filters?.department_id && filters.department_id.trim()) {
+      params.push(filters.department_id.trim());
+      conditions.push(`e.department_id = $${params.length}`);
+    }
+
+    if (filters?.role_key && filters.role_key.trim()) {
+      params.push(filters.role_key.trim());
+      conditions.push(`r.key = $${params.length}`);
+    }
+
+    if (filters?.status && filters.status.trim()) {
+      params.push(filters.status.trim());
+      conditions.push(`e.employment_status = $${params.length}::employment_status`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const sql = `
+      SELECT e.*, d.name AS department, r.key AS role
+      FROM employees e
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN roles r ON e.role_id = r.id
+      ${whereClause}
+      ORDER BY e.created_at DESC
+    `;
+
+    const res = await dbClient.query<EmployeeResponse>(sql, params);
     return res.rows;
   }
 
@@ -75,13 +109,58 @@ export class EmployeeRepository {
     zulipUserId: number | null,
     provisioned: boolean
   ): Promise<EmployeeResponse> {
-    const res = await pool.query<EmployeeResponse>(
+    const res = await this.dbPool.query<EmployeeResponse>(
       `UPDATE employees
        SET zulip_user_id = $2, zulip_provisioned = $3, updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
       [employeeId, zulipUserId, provisioned]
     );
+    return res.rows[0];
+  }
+
+  async updateEmployee(
+    id: string,
+    updates: Record<string, any>
+  ): Promise<EmployeeResponse> {
+    const setClauses: string[] = [];
+    const params: any[] = [id];
+
+    const allowedColumns = [
+      'full_name',
+      'alias',
+      'designation',
+      'department_id',
+      'role_id',
+      'mobile',
+      'employment_status',
+      'shift_id',
+      'centre_id',
+    ];
+
+    for (const key of allowedColumns) {
+      if (key in updates) {
+        params.push(updates[key] === undefined ? null : updates[key]);
+        setClauses.push(`${key} = $${params.length}`);
+      }
+    }
+
+    if (setClauses.length === 0) {
+      const existing = await this.findById(id);
+      if (!existing) throw new Error('Employee not found');
+      return existing;
+    }
+
+    setClauses.push('updated_at = NOW()');
+
+    const sql = `
+      UPDATE employees
+      SET ${setClauses.join(', ')}
+      WHERE id = $1
+      RETURNING *
+    `;
+
+    const res = await this.dbPool.query<EmployeeResponse>(sql, params);
     return res.rows[0];
   }
 }

@@ -1,5 +1,6 @@
 export interface CreateEmployeeInput {
   full_name: string;
+  alias?: string | undefined;
   email: string;
   password: string;
   role_id?: string | undefined;
@@ -19,6 +20,7 @@ export interface EmployeeResponse {
   auth_user_id: string;
   employee_code: string;
   full_name: string;
+  alias?: string | null;
   email: string;
   mobile?: string | null;
   department_id?: string | null;
@@ -33,5 +35,26 @@ export interface EmployeeResponse {
   employment_status: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface EmployeeFilters {
+  search?: string | undefined;
+  department_id?: string | undefined;
+  role_key?: string | undefined;
+  status?: string | undefined;
+}
+
+export interface UpdateEmployeeInput {
+  full_name?: string | undefined;
+  alias?: string | undefined;
+  designation?: string | undefined;
+  department_id?: string | null | undefined;
+  role_id?: string | undefined;
+  role_key?: string | undefined;
+  mobile?: string | undefined;
+  employment_status?: string | undefined;
+  shift_id?: string | null | undefined;
+  centre_id?: string | null | undefined;
+  new_password?: string | undefined;
 }
 

@@ -2401,3 +2401,592 @@ The source data is the SQL dump located at `C:\Users\Administrator\Desktop\jdcon
   - [ ] Verify output directory `/var/backups/jdconnect/` contains compressed archive.
   - [ ] Run `/app/docker/scripts/restore_test.sh` -> restore test passes without errors.
   - [ ] ✅ Done.
+
+---
+
+---
+
+## Phase 9 — UI Overhaul, Dashboard & Employee Management Enhancement
+
+**Phase goal:** Transform both the HR Dashboard and Attendance App from minimal single-page prototypes into full, production-ready interfaces. Port the Notion light/dark theme to both apps. Rebuild the HR Dashboard with a top navbar, a real-time metric dashboard page, rich employee management (alias, designation, edit, status change), filtered/paginated attendance and break audit tables. Rebuild the Attendance App as a full-page layout with paginated history. Back all of this with new and enhanced backend endpoints.
+
+**Scope summary:**
+- DB: Add `alias` column to `employees` via migration; update migration script to persist alias
+- Backend: 6 new/enhanced API endpoints
+- HR Dashboard: Top navbar, Dashboard page, Employees overhaul, Attendance + Breaks filters & pagination, theme
+- Attendance App: Full-page layout, top navbar, paginated history, Notion theme
+- Shared: Notion CSS theme ported to both apps with light/dark toggle button
+
+---
+
+### Phase 9 Work Items
+
+---
+
+#### W-901 — DB Migration: Add `alias` Column to `employees`
+
+**Root cause:**
+The `employees` table stores `full_name` (legal name) but has no column for the Zulip display name (work alias, e.g. "Adam", "Amber"). The migration script used `alias_name` from the old DB to provision Zulip but never persisted it to the new schema. Without this column, search-by-alias is impossible and the HR dashboard cannot display or edit agent work names.
+
+**Goal:**
+1. Add `alias TEXT` (nullable) column to the `employees` table via a migration script.
+2. Update `migrate-employees.ts` to write `oldEmp.alias_name` into `employees.alias`.
+3. Update `employeeService.createEmployee` and `createEmployeeSchema` to accept and persist `alias`.
+4. Change Zulip provisioning in both `createEmployee` and `migrate-employees.ts` to send `alias` (not `full_name`) as the Zulip display name.
+
+**Approach:**
+Write `backend/scripts/migrations/009_add_alias_to_employees.ts` that runs `ALTER TABLE employees ADD COLUMN alias TEXT`. Update repository, service, and route schema. Update both the migration script and the employee service's Zulip call.
+
+---
+
+- [x] **RED — Integration (`backend/tests/employees.test.ts`):**
+  - [x] Test: GET `/api/employees` with a seeded employee whose `alias = 'Adam'` → assert response body includes `alias: 'Adam'`.
+  - [x] Test: POST `/api/employees` with `{ full_name: 'Adam Johnson', alias: 'Adam', email, password, role_key }` → assert HTTP 201, DB row has `alias = 'Adam'`, Zulip provisioned with display name `'Adam'` (not `'Adam Johnson'`).
+  - [x] Test: POST `/api/employees` without `alias` field → assert HTTP 201, `alias` is null in DB, Zulip provisioned with `full_name` as fallback display name.
+  - [x] **Run — confirm RED (column doesn't exist yet).**
+
+- [x] **GREEN — Migration & Backend:**
+  - [x] [Migration] Create `backend/migrations/013_add_alias_to_employees.sql`:
+        Execute: `ALTER TABLE employees ADD COLUMN IF NOT EXISTS alias TEXT;`
+  - [x] [Schema] Add `alias: z.string().optional()` to `createEmployeeSchema` in `backend/src/routes/employees.ts`.
+  - [x] [Repository] Update `employee.repository.ts`: include `alias` in INSERT columns for `create()` and SELECT columns for `listEmployees()` and `findById()`.
+  - [x] [Service] Update `employeeService.createEmployee(input)`:
+        Persist `alias: input.alias ?? null`.
+        In Zulip provisioning: use `input.alias || input.full_name` as the Zulip `full_name` param.
+  - [x] [Migration Script] In `backend/scripts/migrate-employees.ts`:
+        Add `alias` column to the INSERT/UPDATE statement for `employees`, setting it to `oldEmp.alias_name || null`.
+        Change the Zulip `createUser` call (line ~212) to also use this resolved alias value.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/employee.service.unit.test.ts`):**
+  - [x] Mock repo `create(...)`. Call `createEmployee({ full_name: 'John Doe', alias: 'Adam', ... })`.
+        Assert: repo called with `alias = 'Adam'`.
+        Assert: Zulip `createUser` called with `full_name = 'Adam'` (not `'John Doe'`).
+  - [x] Call `createEmployee({ full_name: 'John Doe' })` (no alias).
+        Assert: Zulip `createUser` called with `full_name = 'John Doe'`.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Implement service logic, run unit test — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Run migration: `013_add_alias_to_employees.sql`.
+  - [x] `SELECT alias FROM employees LIMIT 5;` → column exists.
+  - [x] Delete local employees and re-run `migrate-employees.ts` → alias column populated from old data.
+  - [x] Add new employee via HR Dashboard with alias "Charlie" → Zulip shows "Charlie" as display name.
+  - [x] ✅ Done.
+
+---
+
+#### W-902 — Backend: `GET /api/departments` Endpoint
+
+**Root cause:**
+The HR Dashboard "Add Employee" and "Edit Employee" modals need a department dropdown loaded from the database. Currently the dropdown has hardcoded, incorrect values. Departments live in the `departments` table and must be fetched dynamically.
+
+**Goal:**
+`GET /api/departments` returns all active departments as `[{ id, name }]`. JWT-protected. Used to populate dropdowns in Add/Edit employee modals and the department filter.
+
+**Approach:**
+Add a new `departments.ts` route. Add `listDepartments()` to a new repository file. Register in `app.ts`.
+
+---
+
+- [x] **RED — Integration (`backend/tests/departments.test.ts`):**
+  - [x] Test: GET `/api/departments` with valid JWT → HTTP 200, array of `{ id, name }` objects including seeded departments (Sales, Backend, HR, Training, Management, Marketing, Logistics).
+  - [x] Test: GET `/api/departments` with no JWT → HTTP 401.
+  - [x] **Run — confirm RED (route doesn't exist).**
+
+- [x] **GREEN — Backend:**
+  - [x] [Repository] Create `backend/src/repositories/department.repository.ts`:
+        `listDepartments()`: `SELECT id, name FROM departments WHERE is_active = true ORDER BY name`.
+  - [x] [Route] Create `backend/src/routes/departments.ts`:
+        `GET /` → `authenticateJwt` → `listDepartments()` → return 200 JSON array.
+  - [x] [App] Register in `backend/src/app.ts`: `app.use('/api/departments', departmentsRouter)`.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/department.repository.unit.test.ts`):**
+  - [x] Mock DB. Call `listDepartments()`. Assert SQL includes `WHERE is_active = true`.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] `curl -H "Authorization: Bearer <token>" http://localhost:4000/api/departments` → JSON array with real department names.
+  - [x] HR Dashboard "Add Employee" department dropdown populates from API.
+  - [x] ✅ Done.
+
+---
+
+#### W-903 — Backend: Enhanced `GET /api/employees` — Search, Filters & Enriched Response
+
+**Root cause:**
+`GET /api/employees` returns all employees with no filtering and no `alias`, `designation`, or `employment_status` in the response. The search bar does nothing. The role filter has wrong hardcoded values. There is no department or status filter.
+
+**Goal:**
+`GET /api/employees?search=<text>&department_id=<uuid>&role_key=<key>&status=<employment_status>` returns filtered, enriched list. `search` matches `full_name` OR `alias` (ILIKE). Response per employee: `{ id, employee_code, full_name, alias, email, designation, department, role, employment_status, zulip_provisioned }`.
+
+**Approach:**
+Update `listEmployees(filters?)` in the repository with JOIN on departments + roles and dynamic WHERE clauses. Update the route to parse and pass query params.
+
+---
+
+- [x] **RED — Integration (`backend/tests/employees.test.ts`):**
+  - [x] Seed: employee with `full_name = 'Adam Johnson'`, `alias = 'Adam'`.
+  - [x] Test: GET `/api/employees?search=ada` → returns Adam (alias match).
+  - [x] Test: GET `/api/employees?search=johnson` → returns Adam (full_name match).
+  - [x] Test: GET `/api/employees?department_id=<sales_uuid>` → only Sales dept employees.
+  - [x] Test: GET `/api/employees?role_key=manager` → only managers.
+  - [x] Test: GET `/api/employees?status=suspended` → only suspended employees.
+  - [x] Test: Response includes `alias`, `designation`, `employment_status`, `department` (name string), `role` (key string).
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Backend:**
+  - [x] [Repository] Update `listEmployees(filters?)` in `employee.repository.ts`:
+        JOIN `departments d ON e.department_id = d.id` (LEFT JOIN), JOIN `roles r ON e.role_id = r.id` (LEFT JOIN).
+        SELECT: `e.id, e.employee_code, e.full_name, e.alias, e.email, e.designation, e.employment_status, e.zulip_provisioned, d.name AS department, r.key AS role`.
+        Dynamic WHERE: `search` → `(e.full_name ILIKE $n OR e.alias ILIKE $n)`, `department_id` → `e.department_id = $n`, `role_key` → `r.key = $n`, `status` → `e.employment_status = $n`.
+  - [x] [Route] Update `GET /` in `employees.ts`: parse `search`, `department_id`, `role_key`, `status` from `req.query` and pass to `listEmployees(filters)`.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/employee.repository.filters.unit.test.ts`):**
+  - [x] Mock DB. Call `listEmployees({ search: 'ada' })`. Assert SQL contains `ILIKE` applied to both `full_name` and `alias`.
+  - [x] Call `listEmployees({ role_key: 'manager' })`. Assert SQL contains role filter.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Type "adam" in HR Dashboard search → table shows only Adam's row.
+  - [x] Alias column visible in employee table.
+  - [x] Department dropdown filter correctly shows only Sales employees.
+  - [x] ✅ Done.
+
+---
+
+#### W-904 — Backend: `PATCH /api/employees/:id` — Edit Employee & Password Reset
+
+**Root cause:**
+There is no endpoint to update an existing employee's profile. HR admins cannot change alias, designation, department, role, or status after creation without direct DB access. The existing standalone `POST /api/employees/:id/reset-password` route is a separate trip; consolidating it into PATCH simplifies the Edit modal.
+
+**Goal:**
+`PATCH /api/employees/:id` accepts partial updates: `full_name`, `alias`, `designation`, `department_id`, `role_key`, `mobile`, `employment_status`, `shift_id`, `centre_id`, `new_password` (optional, triggers password reset). Returns updated employee. Requires `employees.manage` permission.
+
+**Approach:**
+Add PATCH route with an all-optional Zod schema (at least one field required). Update service and repository with a dynamic SET clause builder.
+
+---
+
+- [x] **RED — Integration (`backend/tests/employee_patch.test.ts`):**
+  - [x] Seed employee with `alias = 'Adam'`, `designation = null`.
+  - [x] Test: PATCH `/api/employees/:id` with `{ alias: 'Adam Jr', designation: 'Senior Agent' }` → HTTP 200, DB updated.
+  - [x] Test: PATCH `/api/employees/:id` with `{ employment_status: 'suspended' }` → HTTP 200, `employment_status = 'suspended'` in DB.
+  - [x] Test: PATCH `/api/employees/:id` with `{ new_password: 'NewPass@123' }` → HTTP 200, employee can log in with new password.
+  - [x] Test: PATCH `/api/employees/:id` with `{}` (empty body) → HTTP 400.
+  - [x] Test: PATCH `/api/employees/:id` without `employees.manage` permission → HTTP 403.
+  - [x] **Run — confirm RED (route doesn't exist).**
+
+- [x] **GREEN — Backend:**
+  - [x] [Schema] Add `updateEmployeeSchema` to `employees.ts`:
+        All fields optional. `.refine(data => Object.keys(data).length > 0, 'At least one field required')`.
+        Fields: `full_name`, `alias`, `designation`, `department_id`, `role_key`, `mobile`, `employment_status` (z.enum of `employment_status` values), `shift_id`, `centre_id`, `new_password`.
+  - [x] [Repository] Add `updateEmployee(id, updates)` to `employee.repository.ts`:
+        Build dynamic SET clause from provided keys. If `role_key` provided, resolve to `role_id`. If `new_password` provided, bcrypt hash it and update `users.password_hash` via `auth_user_id`.
+        Return updated employee row with JOINed dept and role.
+  - [x] [Service] Add `employeeService.updateEmployee(id, updates)` wrapping repository call.
+  - [x] [Route] Add `PATCH /:id` to `employees.ts`: `authenticateJwt` → `requirePermission('employees.manage')` → validate → service call → return 200.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/employee.service.patch.unit.test.ts`):**
+  - [x] Mock `updateEmployee`. Assert called with exactly the fields provided (no undefined keys passed).
+  - [x] Assert `new_password` is bcrypt-hashed before reaching the repository (plaintext never stored).
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] Click Edit on an employee row → modal pre-populated with current alias, designation, dept, role, status.
+  - [x] Change alias → save → table row reflects new alias.
+  - [x] Set status "Suspended" → badge changes.
+  - [x] Enter new password in edit modal → employee can log in with it.
+  - [x] ✅ Done.
+
+> **Session Note — 2026-08-21 (Phase 9: W-901 to W-904)**
+> - **W-901 — DB Migration & Employee Alias:** Created migration `013_add_alias_to_employees.sql` (`ALTER TABLE employees ADD COLUMN IF NOT EXISTS alias TEXT`). Updated `CreateEmployeeInput`, `EmployeeResponse`, `createEmployeeSchema`, `employeeRepository.createEmployee`, `employeeService.createEmployee`, and `migrate-employees.ts` to persist `alias` and use `input.alias || input.full_name` as the display name sent to Zulip.
+> - **W-902 — Department Repository & Route:** Created `backend/src/repositories/department.repository.ts` with `listDepartments()` and route `backend/src/routes/departments.ts` (`GET /api/departments`) protected with `authenticateJwt`. Registered router in `app.ts`.
+> - **W-903 — Enhanced Employee Filtering:** Added `EmployeeFilters` interface and updated `employeeRepository.findAllEmployees` and `GET /api/employees` route to support dynamic ILIKE search (`full_name` or `alias`), `department_id`, `role_key`, and `status`.
+> - **W-904 — Employee Edit & Password Reset Endpoint:** Implemented `updateEmployee` in repository and service, and added `PATCH /api/employees/:id` route protected with `employees.manage`. Handles partial employee profile updates and bcrypt password hashing when `new_password` is supplied.
+> - **TDD Verification:** Strict RED → GREEN workflow followed for all work items (`employees.test.ts`, `employee.service.unit.test.ts`, `departments.test.ts`, `department.repository.unit.test.ts`, `employee.repository.filters.unit.test.ts`, `employee_patch.test.ts`, `employee.service.patch.unit.test.ts`). All 7 test suites passing cleanly.
+
+---
+
+#### W-905 — Backend: `GET /api/attendance/summary/today` — Dashboard Metrics
+
+**Root cause:**
+The HR Dashboard has no data source for a real-time metric overview. `/api/attendance/monitor` returns only `working_count`, `on_break_count`, `total_clocked_in`. The new Dashboard page needs absent, late, and half-day counts as well, all scoped to today in EST.
+
+**Goal:**
+`GET /api/attendance/summary/today` returns:
+```json
+{ "present": 42, "on_break": 5, "absent": 18, "late": 7, "half_day": 3, "total_employees": 87 }
+```
+`absent = total_employees − present`. All date comparisons in `America/New_York` timezone.
+
+**Approach:**
+New `getTodaySummary()` in attendance repository. Queries: clock-in count today (EST), active break count, total active employees, late arrivals (clock_in > shift.start + grace), half-day status rows today.
+
+---
+
+- [x] **RED — Integration (`backend/tests/attendance_summary.test.ts`):**
+  - [x] Seed: 5 employees, 3 clocked in, 1 on active break, 1 record with `status = 'late'`, 1 with `status = 'half_day'`.
+  - [x] Test: GET `/api/attendance/summary/today` → HTTP 200, `present >= 3`, `on_break >= 1`, `absent = total_employees - present`, `late >= 1`, `half_day >= 1`, `total_employees >= 5`.
+  - [x] Test: GET `/api/attendance/summary/today` no JWT → HTTP 401.
+  - [x] **Run — confirm RED (endpoint doesn't exist).**
+
+- [x] **GREEN — Backend:**
+  - [x] [Repository] Add `getTodaySummary()` to `attendance.repository.ts`:
+        `present`: `COUNT(*) FROM attendance_records WHERE work_date = (NOW() AT TIME ZONE 'America/New_York')::date`.
+        `on_break`: `COUNT(*) FROM break_records WHERE status = 'active'`.
+        `total_employees`: `COUNT(*) FROM employees WHERE employment_status = 'active'`.
+        `late`: `COUNT(*) FROM attendance_records WHERE status = 'late' AND work_date = today_EST`.
+        `half_day`: `COUNT(*) FROM attendance_records WHERE status = 'half_day' AND work_date = today_EST`.
+        Returns `{ present, on_break, absent: total - present, late, half_day, total_employees }`.
+  - [x] [Service] Add `attendanceService.getTodaySummary()`.
+  - [x] [Route] Add `GET /summary/today` to `attendance.ts`: `authenticateJwt` → `getTodaySummary()` → return 200 JSON.
+  - [x] Run integration tests — **confirm GREEN.**
+
+- [x] **RED — Unit (`backend/tests/attendance.service.summary.unit.test.ts`):**
+  - [x] Mock `getTodaySummary()` → `{ present: 10, on_break: 2, total_employees: 20, late: 1, half_day: 0 }`.
+        Assert service returns `absent: 10`.
+  - [x] **Run — confirm RED.**
+
+- [x] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
+
+- [x] **Verification chain:**
+  - [x] `curl -H "Authorization: Bearer <token>" http://localhost:4000/api/attendance/summary/today` → JSON with all 6 fields.
+  - [x] HR Dashboard home shows correct counts matching DB state.
+  - [x] ✅ Done.
+
+---
+
+#### W-906 — Backend: Status & Search Filters for `GET /api/attendance` and `GET /api/breaks`
+
+**Root cause:**
+`GET /api/attendance` has no `status` filter and no name/alias search; it returns all records regardless. `GET /api/breaks` has no filters at all. The HR Dashboard audit pages and dashboard card deep-links both require server-side filtering by employee name/alias, EST date range, and record status.
+
+**Goal:**
+- `GET /api/attendance?search=<text>&from=<YYYY-MM-DD>&to=<YYYY-MM-DD>&status=<attendance_status>` — search matches employee `full_name` OR `alias`.
+- `GET /api/breaks?search=<text>&from=<YYYY-MM-DD>&to=<YYYY-MM-DD>&status=<break_status>` — same search; date filters on `start_at` in EST.
+- Both responses include `employee_name` (alias if set, else full_name) and `employee_code`.
+
+**Approach:**
+Update attendance repository to accept `search` and `status`. Add/update breaks repository `listBreaks(filters)`. Update both routes to parse new query params.
+
+---
+
+- [ ] **RED — Integration (`backend/tests/attendance.test.ts` + `backend/tests/breaks.test.ts`):**
+  - [ ] **Attendance:** Seed records with `status = 'present'` and `status = 'late'`.
+    - [ ] Test: GET `/api/attendance?status=late` → only late records.
+    - [ ] Test: GET `/api/attendance?search=adam` → only Adam's records (matches alias).
+    - [ ] Test: GET `/api/attendance?from=2026-08-20&to=2026-08-20` → only that EST date.
+    - [ ] Test: Response includes `employee_name = alias` when alias is set.
+  - [ ] **Breaks:** Seed records with statuses `'completed'` and `'exceeded'`.
+    - [ ] Test: GET `/api/breaks?status=exceeded` → only exceeded records.
+    - [ ] Test: GET `/api/breaks?search=amber` → only Amber's breaks.
+    - [ ] Test: GET `/api/breaks?from=2026-08-20&to=2026-08-20` → filtered by `start_at` EST date.
+    - [ ] Test: GET `/api/breaks` no JWT → HTTP 401.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Backend:**
+  - [ ] [Repository] Update `getAttendanceHistory(actor, filters)`:
+        Add JOIN on `employees` for `full_name`, `alias`, `employee_code`.
+        Add `status` WHERE clause. Change employee filter to `(e.full_name ILIKE $n OR e.alias ILIKE $n)` when `search` provided.
+        Response includes `employee_name: alias || full_name`, `employee_code`.
+  - [ ] [Route] Update `GET /` in `attendance.ts`: extract `search`, `status` from `req.query`, pass through.
+  - [ ] [Repository] Update `break.repository.ts` `listBreaks(filters)`:
+        JOIN employees. WHERE `status`, `search` (ILIKE name/alias), `start_at` date in EST.
+        Return `employee_name`, `employee_code`, `break_name`, `start_at`, `end_at`, `duration_minutes`, `status`, `limit_minutes`.
+  - [ ] [Route] Update `GET /` in `breaks.ts`: extract `search`, `from`, `to`, `status` from `req.query`. Require `authenticateJwt`.
+  - [ ] Run integration tests — **confirm GREEN.**
+
+- [ ] **RED — Unit:**
+  - [ ] Mock attendance repo with `{ status: 'late' }`. Assert SQL WHERE includes `status = 'late'`.
+  - [ ] Mock breaks repo with `{ search: 'amber' }`. Assert SQL WHERE includes ILIKE on name and alias.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] HR Dashboard Attendance: type "adam" → only Adam's records. Select "Late" status → only late records.
+  - [ ] HR Dashboard Breaks: select "exceeded" → only exceeded breaks.
+  - [ ] ✅ Done.
+
+---
+
+#### W-907 — HR Dashboard: Notion Theme + Top Navbar + Remove Hardcoded Credentials
+
+**Root cause:**
+The HR Dashboard uses a standalone dark CSS theme with Inter font — inconsistent with Zulip and the Attendance App. Navigation is a left sidebar. The login form hardcodes `value="admin@company.com"` and `value="AdminPassword123!"` which is a security exposure. There is no light/dark toggle.
+
+**Goal:**
+1. Port Notion light/dark CSS variable system (Outfit font; same `--bg-primary`, `--accent-indigo` etc. as Zulip theme) to `hr-dashboard/styles.css`.
+2. Theme toggle `🌙/☀️` button on top-right; persisted to `localStorage` key `'jd_theme'`.
+3. Replace `<aside class="sidebar">` with `<nav class="top-navbar">`: tabs horizontal on ≥768px, `☰` hamburger + drawer on <768px. Logout always top-right.
+4. Remove `value="admin@company.com"` and `value="AdminPassword123!"` from login inputs.
+
+---
+
+- [ ] **RED — Integration (`hr-dashboard/tests/theme.test.ts`):**
+  - [ ] Test: Page load → `<html>` does NOT have `dark-theme` by default.
+  - [ ] Test: Click theme toggle → `html.classList.contains('dark-theme')` = true, `localStorage.getItem('jd_theme')` = `'dark'`.
+  - [ ] Test: Reload → `dark-theme` class restored.
+  - [ ] Test: Login email input `value` attribute = `''`.
+  - [ ] Test: Login password input `value` attribute = `''`.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Theme + Navbar:**
+  - [ ] [CSS] Rewrite `hr-dashboard/styles.css`:
+        CSS variable definitions under `html` (light defaults) and `html.dark-theme` (dark overrides). Same variable names as `zulip-notion-theme.css`. Font: Outfit from Google Fonts.
+        `.top-navbar`: flex, height 56px, `border-bottom: 1px solid var(--border-color)`.
+        `.nav-tabs`: `display: flex; gap: 0.25rem;` for ≥768px.
+        `.hamburger-btn`: hidden ≥768px, shown <768px. `.nav-drawer`: side panel, `.open` class makes it visible.
+        `.nav-tab-btn.active`: `background: var(--accent-indigo); color: #fff;`.
+  - [ ] [HTML] Replace `<aside class="sidebar">` with `<nav class="top-navbar">`. Add `<div class="nav-drawer">` for mobile. Remove hardcoded `value=` attributes from login inputs.
+  - [ ] [JS] Update selectors. Add theme toggle init (read localStorage → apply class). Add hamburger toggle.
+  - [ ] Run integration tests — **confirm GREEN.**
+
+- [ ] **RED — Unit (`hr-dashboard/tests/nav.unit.test.ts`):**
+  - [ ] `initTheme()` with `localStorage = 'dark'` → `dark-theme` class applied.
+  - [ ] `initTheme()` with no localStorage → `dark-theme` NOT applied.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Dashboard loads → top navbar, no sidebar.
+  - [ ] <768px window: `☰` visible, click → drawer opens.
+  - [ ] Click `🌙` → dark mode. Reload → stays dark.
+  - [ ] Login form: email and password fields are blank.
+  - [ ] ✅ Done.
+
+---
+
+#### W-908 — HR Dashboard: Dashboard Page (Default) with Clickable Metric Cards
+
+**Root cause:**
+The HR Dashboard opens to the Employee Management page with no at-a-glance workforce status. The "Live Workforce Monitor" shows only 3 static cards with no drill-down. Supervisors need present/absent/late/half-day counts and the ability to navigate directly to the filtered records with one click.
+
+**Goal:**
+1. New **Dashboard** tab is the default page on load.
+2. Five metric cards: Present Today, On Break, Absent Today, Late Today, Half Day Today.
+3. Each card is clickable → navigates to Attendance or Breaks tab with correct `status` filter and today's EST date pre-applied.
+4. Remove Live Workforce Monitor tab entirely.
+
+**Card → Tab mapping:**
+| Card | Navigates to | Filter |
+|---|---|---|
+| Present Today | Attendance | date=today (no status filter) |
+| On Break | Breaks | status=active |
+| Absent Today | Attendance | date=today, absent metric shown only |
+| Late Today | Attendance | status=late, date=today |
+| Half Day Today | Attendance | status=half_day, date=today |
+
+**Approach:**
+JS `loadDashboard()` calls `GET /api/attendance/summary/today`. Card click sets `window._pendingFilter`, switches tab, then the target tab's load function reads and clears `window._pendingFilter` before fetching.
+
+---
+
+- [ ] **RED — Integration (`hr-dashboard/tests/dashboard.test.ts`):**
+  - [ ] Test: Page load with valid token → `#tab-dashboard` active, not `#tab-employees`.
+  - [ ] Test: Dashboard fetches `/api/attendance/summary/today` → `#metric-present` shows `present` count.
+  - [ ] Test: Click `#metric-late` → `#tab-attendance` active, `#attStatusFilter` = `'late'`, `#attDateFilter` = today EST.
+  - [ ] Test: Click `#metric-on-break` → `#tab-breaks` active, `#brkStatusFilter` = `'active'`.
+  - [ ] Test: `#tab-monitor` does not exist in DOM.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Frontend:**
+  - [ ] [HTML] Add `<section id="tab-dashboard" class="tab-content active">` (before `#tab-employees`) with 5 `.metric-card` divs: `#metric-present`, `#metric-on-break`, `#metric-absent`, `#metric-late`, `#metric-half-day`, each with `data-target-tab` and `data-target-status` attributes.
+  - [ ] [HTML] Remove `<section id="tab-monitor">` and its nav tab button. Remove `loadMonitor()` refs from JS.
+  - [ ] [JS] Add `async function loadDashboard()`: fetches `/api/attendance/summary/today`, populates card text.
+  - [ ] [JS] Card click listeners: set `window._pendingFilter = { status, date: getTodayEST() }`, switch tab, call `loadAttendance()` or `loadBreaks()`.
+  - [ ] [JS] Set `#tab-dashboard` as the initial active tab on page load.
+  - [ ] Run integration tests — **confirm GREEN.**
+
+- [ ] **RED — Unit (`hr-dashboard/tests/dashboard.unit.test.ts`):**
+  - [ ] Mock API → `{ present: 40, on_break: 3, absent: 20, late: 5, half_day: 2, total_employees: 60 }`. Call `loadDashboard()`. Assert `#metric-present` = `'40'`, `#metric-absent` = `'20'`.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Unit:** Implement, run unit test — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Log in → Dashboard page is default, all 5 cards show real counts.
+  - [ ] Click "Late Today" → Attendance tab, status=late, date=today, correct records.
+  - [ ] Click "On Break" → Breaks tab, status=active, today's breaks.
+  - [ ] Live Workforce Monitor gone from nav.
+  - [ ] ✅ Done.
+
+---
+
+#### W-909 — HR Dashboard: Employees Page Overhaul
+
+**Root cause:**
+The employees page has: broken search (no listener), wrong role filter values, no department filter, no status filter, missing alias/designation/status columns, no pagination, a broken Reset Password using `prompt()`, and an Add Employee form missing alias, designation, and department fields. Edit functionality does not exist at all.
+
+**Goal:**
+1. Working search (full_name + alias, debounced 300ms, passes `search` param to API).
+2. Correct role filter, dynamic department filter (from `GET /api/departments`), employment status filter.
+3. Table: Code | Name | Alias | Email | Designation | Department | Role | Status | Zulip | Actions.
+4. Pagination: 20 rows/page with Prev/Next.
+5. Add Employee form: Full Name, Alias, Email, Password, Role (corrected values), Designation, Department.
+6. Edit modal (per row): pre-populated with all editable fields + optional "Reset Password" field. One save button calls `PATCH /api/employees/:id`.
+7. Status change (Deactivate/Suspend) available within the edit modal via the `employment_status` select.
+
+---
+
+- [ ] **RED — Integration (`hr-dashboard/tests/employees.test.ts`):**
+  - [ ] Test: Type "adam" in search → XHR to `/api/employees?search=adam`.
+  - [ ] Test: Select department → XHR includes `department_id=<uuid>`.
+  - [ ] Test: 25 employees loaded → 20 rows visible; Next → shows rows 21–25, page indicator correct.
+  - [ ] Test: Click Edit on a row → `#editAlias` value = employee's alias.
+  - [ ] Test: Submit edit → PATCH `/api/employees/:id` called with correct payload.
+  - [ ] Test: Add employee with alias → POST body includes `alias`.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Frontend:**
+  - [ ] [HTML] Update employee table `<thead>`: add Alias, Designation, Status columns.
+  - [ ] [HTML] Fix filter bar: correct role `<select>` values; add `#filterDepartment` (dynamic); add `#filterStatus` select.
+  - [ ] [HTML] Add pagination controls: `#empPrevBtn`, `#empPageInfo`, `#empNextBtn`.
+  - [ ] [HTML] Update Add Employee form: add `#addAlias`, `#addDesignation`, `#addDepartment` fields.
+  - [ ] [HTML] Add Edit Employee modal: `#editEmployeeModal` with `#editFullName`, `#editAlias`, `#editEmail`, `#editDesignation`, `#editDepartment`, `#editRole`, `#editStatus`, `#editNewPassword` (optional). One save button.
+  - [ ] [JS] `loadEmployees()`: build query from filter inputs, fetch, store in `window._allEmployees`, render page 1 (slice 0–20).
+  - [ ] [JS] Debounced (300ms) `input` on search → `loadEmployees()`. `change` on all filters → `loadEmployees()`.
+  - [ ] [JS] Pagination: `currentEmpPage`, `pageSize = 20`. Prev/Next re-slice and re-render.
+  - [ ] [JS] `loadDepartments()`: fetch `GET /api/departments` → populate dept selects and filter.
+  - [ ] [JS] Edit button per row: populate modal → show. Submit → `PATCH /api/employees/:id` → close → `loadEmployees()`.
+  - [ ] [JS] `handleAddEmployee()`: include `alias`, `designation`, `department_id` in POST body.
+  - [ ] Run integration tests — **confirm GREEN.**
+
+- [ ] **RED — Unit (`hr-dashboard/tests/employees.unit.test.ts`):**
+  - [ ] `paginate(arr, 1, 20)`: 25-item array → 20 items returned.
+  - [ ] `buildEmployeeQuery({ search: 'adam', role_key: 'manager' })` → `?search=adam&role_key=manager`.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Search "adam" → only Adam's row.
+  - [ ] 87 employees → pagination works, 20/page.
+  - [ ] Edit modal opens pre-populated; change alias; save → table updates.
+  - [ ] "Add Employee" with alias → Zulip shows alias as display name.
+  - [ ] Suspend employee via edit modal → status badge changes.
+  - [ ] ✅ Done.
+
+---
+
+#### W-910 — HR Dashboard: Attendance & Breaks Audit Pages — Filters + Pagination
+
+**Root cause:**
+Both audit pages load all records flat with no filtering and no pagination. For 87 employees with daily records this quickly produces hundreds of rows. There is no way to drill into a specific employee, date, or status. Dashboard card deep-links have no mechanism to pre-apply filters when switching tabs.
+
+**Goal:**
+Both pages get: name/alias search, EST date filter, status filter, "Today" quick-filter button, 20-row pagination. Support for `window._pendingFilter` deep-link from Dashboard cards.
+
+---
+
+- [ ] **RED — Integration (`hr-dashboard/tests/attendance.test.ts` + `hr-dashboard/tests/breaks.test.ts`):**
+  - [ ] **Attendance:**
+    - [ ] Test: `window._pendingFilter = { status: 'late', date: '2026-08-20' }` → switch to attendance → `#attStatusFilter` = `'late'`, `#attDateFilter` = `'2026-08-20'`, XHR includes `status=late&from=2026-08-20&to=2026-08-20`.
+    - [ ] Test: 45 records → 20 visible page 1; Next → rows 21–40.
+  - [ ] **Breaks:**
+    - [ ] Test: `window._pendingFilter = { status: 'active', date: '2026-08-20' }` → breaks tab → XHR includes `status=active&from=2026-08-20`.
+    - [ ] Test: 30 records → 20 visible page 1.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Frontend:**
+  - [ ] [HTML — Attendance] Add filter bar: `#attSearchInput`, `#attDateFilter` (type=date), `#attStatusFilter` (all/present/late/half_day/absent/leave), `#todayAttBtn`. Pagination: `#attPrevBtn`, `#attPageInfo`, `#attNextBtn`.
+  - [ ] [HTML — Breaks] Add filter bar: `#brkSearchInput`, `#brkDateFilter`, `#brkStatusFilter` (all/active/completed/exceeded/cancelled), `#todayBrkBtn`. Pagination: `#brkPrevBtn`, `#brkPageInfo`, `#brkNextBtn`.
+  - [ ] [JS] `loadAttendance()`: check and consume `window._pendingFilter` (pre-populate inputs, clear after). Build query string. Fetch. Store in `window._allAttendance`. Render page 1.
+  - [ ] [JS] `loadBreaks()`: same pattern.
+  - [ ] [JS] Filter input/change events → call load function. Today buttons → set date = `getTodayEST()` → load.
+  - [ ] [JS] Pagination state: `currentAttPage`, `currentBrkPage`, `pageSize = 20`.
+  - [ ] Run integration tests — **confirm GREEN.**
+
+- [ ] **RED — Unit (`hr-dashboard/tests/filters.unit.test.ts`):**
+  - [ ] `getTodayEST()` → returns `'YYYY-MM-DD'` in `America/New_York`.
+  - [ ] `buildAttendanceQuery({ search: 'adam', date: '2026-08-20', status: 'late' })` → `?search=adam&from=2026-08-20&to=2026-08-20&status=late`.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Unit:** Implement, run unit tests — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Click "Late Today" dashboard card → Attendance tab, status=late, date=today, correct records.
+  - [ ] Click "On Break" → Breaks tab, status=active, today's breaks.
+  - [ ] Manual filter by name + date → correct records.
+  - [ ] 50+ records → pagination works.
+  - [ ] ✅ Done.
+
+---
+
+#### W-911 — Attendance App: Full-Page Layout, Top Navbar, Notion Theme, Pagination & Cleanup
+
+**Root cause:**
+The Attendance App is a single centered `.card` that wastes space on workstations, has no theme toggle, no pagination on history tables (all records load flat), and still shows the placeholder tagline "BPO Workforce Attendance Portal".
+
+**Goal:**
+1. Full-page app: `<header class="app-header">` with logo, tab nav, theme toggle, logout. `<main class="app-body">` with tab panels.
+2. Port Notion CSS theme (same variables as HR Dashboard and Zulip). Theme toggle persists to `localStorage('jd_theme')`.
+3. History sub-tabs (Attendance Logs / Break Logs) paginated at **10 rows per page**.
+4. Remove "BPO Workforce Attendance Portal" text.
+5. Login view: centered `.login-card` shown only when unauthenticated; header hidden until login.
+
+---
+
+- [ ] **RED — Integration (`attendance-app/tests/layout.test.ts`):**
+  - [ ] Test: After login → DOM has `<header class="app-header">`, no `.card` wrapper around attendance view.
+  - [ ] Test: `document.body` does NOT contain text "BPO Workforce Attendance Portal".
+  - [ ] Test: Theme toggle → `html.classList.contains('dark-theme')` = true, localStorage `'jd_theme'` = `'dark'`.
+  - [ ] Test: Reload → dark-theme restored.
+  - [ ] Test: 15 attendance history records → only 10 rows visible page 1; Next → rows 11–15.
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Frontend:**
+  - [ ] [CSS] Rewrite `attendance-app/styles.css`: same Notion CSS variable system. `.app-header`: flex, 56px, border-bottom. `.app-body`: `max-width: 960px; margin: 0 auto; padding: 1.5rem`. Login: full-screen centered card.
+  - [ ] [HTML] Rewrite `attendance-app/index.html`:
+        Remove outer `.card`. Add `<header class="app-header">` with logo, `#tabConsoleBtn`, `#tabHistoryBtn`, `#themeToggleBtn`, `#logoutBtn`.
+        `<main class="app-body">` contains `#consolePanel` and `#historyPanel`.
+        Login: `.login-card` shown when unauthenticated; header + main hidden.
+        Remove `<p>BPO Workforce Attendance Portal</p>`.
+  - [ ] [JS] Update selectors. Add theme toggle (localStorage read on init, toggle on click). Show/hide header on auth state change.
+  - [ ] [JS] Attendance history pagination: store in `window._attendanceHistory`, `attPage = 1`, `attPageSize = 10`. `#attHistPrevBtn` / `#attHistNextBtn` slice and re-render.
+  - [ ] [JS] Break history pagination: `window._breakHistory`, `brkPage = 1`, `brkPageSize = 10`.
+  - [ ] Run integration tests — **confirm GREEN.**
+
+- [ ] **RED — Unit (`attendance-app/tests/pagination.unit.test.ts`):**
+  - [ ] `paginate(arr, 1, 10)`: 15-item array → 10 items page 1, 5 items page 2.
+  - [ ] `paginate(arr, 3, 10)` on 15-item array → empty array (out of range).
+  - [ ] **Run — confirm RED.**
+
+- [ ] **GREEN — Unit:** Implement `paginate` helper, run unit tests — **confirm GREEN.**
+
+- [ ] **Verification chain:**
+  - [ ] Attendance app loads → login card. Log in → full-page header + panels, no card wrapper.
+  - [ ] "BPO Workforce Attendance Portal" text absent from page.
+  - [ ] Click `🌙` → dark. Reload → stays dark.
+  - [ ] History: 12 records → 10 shown; Next → 2 shown.
+  - [ ] ✅ Done.
+
+---
+
+**Phase 9 Summary Table**
+
+| Work Item | Component | What Changes |
+|---|---|---|
+| W-901 | DB + Backend | `alias` column migration; service + schema + Zulip provisioning fix; migrate script update |
+| W-902 | Backend | `GET /api/departments` route + repository |
+| W-903 | Backend | `GET /api/employees` search/filter/enriched response |
+| W-904 | Backend | `PATCH /api/employees/:id` edit + password reset |
+| W-905 | Backend | `GET /api/attendance/summary/today` dashboard metrics |
+| W-906 | Backend | `status` + `search` filters on attendance; full filter set on breaks |
+| W-907 | HR Dashboard | Notion theme + top navbar + credential cleanup |
+| W-908 | HR Dashboard | Dashboard page + clickable metric cards; remove Monitor tab |
+| W-909 | HR Dashboard | Employees page — search, filters, alias col, pagination, edit modal |
+| W-910 | HR Dashboard | Attendance + Breaks pages — filters + pagination + deep-link |
+| W-911 | Attendance App | Full-page layout + Notion theme + pagination + tagline removal |

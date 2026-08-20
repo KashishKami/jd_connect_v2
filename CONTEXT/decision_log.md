@@ -395,3 +395,65 @@ The 10 key architectural constraints in `project_data.md` Section 10 are updated
 - Constraint 4: "All employee creation must provision RC atomically" → "All employee creation must provision Zulip atomically."
 - Constraint 8: "Rocket.Chat's Admin REST API is called only by the Backend API" → "Zulip's Admin REST API is called only by the Backend API."
 - All other constraints remain unchanged.
+
+---
+
+### Decision 13: Phase 9 — UI Overhaul, Employee Alias, and Dashboard Architecture
+
+**Date:** 2026-08-20
+**Status:** Accepted
+
+#### Context
+Phase 9 overhauled both the HR Dashboard and Attendance App to become production-ready interfaces, introduced the `alias` field to the employee schema, and added several new backend endpoints. Multiple non-obvious design decisions were made during this phase that deviate from earlier patterns or establish new ones.
+
+#### Decision 1: Add `alias` column to `employees`; use alias as Zulip display name
+
+The old `migrate-employees.ts` script sent `alias_name` to Zulip as the display name but did not persist it in the new schema. This meant the work names shown in Zulip (e.g. "Adam") were lost from the JD Connect database, making search-by-alias impossible.
+
+**Decision:** Add `alias TEXT` (nullable) to `employees`. Both the migration script and the `createEmployee` service are updated to: (a) persist alias, and (b) send `alias || full_name` as the Zulip `full_name` during provisioning. This ensures Zulip shows the agent's work alias, not their legal name.
+
+**Consequence:** `full_name` = legal name (for HR records); `alias` = Zulip display name / work name. Callers must treat these as independent fields. The `createEmployeeSchema` accepts `alias` as optional — if omitted, `full_name` is the Zulip fallback.
+
+#### Decision 2: Consolidate `reset-password` into `PATCH /api/employees/:id`
+
+The standalone `POST /api/employees/:id/reset-password` route is not removed but the new `PATCH /api/employees/:id` endpoint also handles `new_password` if provided. The Edit Employee modal in the HR Dashboard uses PATCH exclusively, keeping a single round-trip for all employee edits including optional password reset.
+
+**Consequence:** HR admins use one modal to edit any combination of employee fields. The old `reset-password` route remains active for backward compatibility but is not surfaced in the UI.
+
+#### Decision 3: Server-side filtering for employees, attendance, and breaks (no client-side filtering)
+
+All search and filter operations pass query parameters to the backend (`search`, `department_id`, `role_key`, `status`, `from`, `to`) rather than fetching all records and filtering client-side. This keeps payloads small as employee and record counts grow.
+
+**Exception:** Pagination is client-side (slice of the fetched page). The backend returns up to a reasonable maximum per request; the frontend slices into 20-row pages (10 for the attendance app history). This avoids implementing cursor/offset pagination in the backend for Phase 9 (deferred to a future phase when record volumes justify it).
+
+#### Decision 4: `window._pendingFilter` pattern for dashboard card deep-links
+
+Dashboard metric cards need to switch the active tab AND pre-apply filters (status + today's EST date) atomically. Since both apps are single-page vanilla JS without a router, a shared mutable object `window._pendingFilter = { status, date }` is set before switching tabs. The target tab's load function reads and clears it on entry before building the query string.
+
+**Consequence:** This is a simple, zero-dependency pattern appropriate for vanilla JS SPAs. If the apps ever migrate to a framework with routing (Vue Router, React Router), this pattern is replaced by query-string-based navigation. The pattern is documented here so future maintainers understand the intent.
+
+#### Decision 5: Notion light/dark theme ported to all three apps using identical CSS variables
+
+To ensure consistent branding across Zulip, the HR Dashboard, and the Attendance App, all three apps share the same CSS variable naming convention (`--bg-primary`, `--bg-secondary`, `--text-main`, `--border-color`, `--accent-indigo`, etc.) and the same `html.dark-theme` class toggle pattern. Theme preference is stored in `localStorage` under the key `'jd_theme'` and defaults to light mode.
+
+**Consequence:** The Notion theme CSS is not a shared file imported from a CDN — each app maintains its own copy of the variables in its own `styles.css`. This is intentional: it avoids cross-app CSS coupling and allows per-app overrides without affecting the others.
+
+#### Decision 6: HR Dashboard top navbar replaces sidebar; hamburger drawer for mobile
+
+The sidebar (`<aside>`) is replaced with a `<nav class="top-navbar">` for all screen sizes ≥768px. On narrower screens a `☰` button opens a side drawer. This matches standard SaaS dashboard conventions and is consistent with the Attendance App's header layout.
+
+**Consequence:** All JS tab-switching logic is updated to use `.nav-tab-btn` selectors instead of `.nav-item`. The sidebar-specific CSS classes are fully removed.
+
+#### Decision 7: `GET /api/attendance/summary/today` replaces `GET /api/attendance/monitor`
+
+The existing `/monitor` endpoint returns `working_count`, `on_break_count`, `total_clocked_in`. The new `/summary/today` endpoint returns these plus `absent`, `late`, `half_day`, and `total_employees`. The `/monitor` endpoint is NOT removed (backward compatibility) but it is no longer used by the HR Dashboard frontend.
+
+**Consequence:** The "Live Workforce Monitor" tab is removed from the HR Dashboard. All its metrics are now surfaced on the Dashboard home page with drill-down navigation.
+
+#### What Does NOT Change
+- The three-layer backend architecture (repositories → services → routes). Decision 7 stands.
+- Plain `pg` pool + raw SQL repositories. Decision 11 stands.
+- Custom JWT auth (RS256). Decision 2 stands.
+- Attendance logic decoupled from Zulip presence. Decision 6 stands.
+- Admin-only password reset (no self-service email). Decision 2 consequence stands.
+- Backend API is the sole writer to JD Connect's Postgres. Decision 7 stands.
