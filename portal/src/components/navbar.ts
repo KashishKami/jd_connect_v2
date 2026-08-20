@@ -17,18 +17,21 @@ export function renderNavbar(): HTMLElement {
   const linkList = document.createElement('ul');
   linkList.className = 'navbar-links';
 
+  const hasAudit = hasPermission('portal.attendance_audit');
+
   const navItems = [
-    { permission: 'portal.attendance', label: 'Attendance Console', path: '/' },
-    { permission: 'portal.employees', label: 'Employees', path: '/employees' },
-    { permission: 'portal.attendance_audit', label: 'Attendance Audit', path: '/attendance-audit' },
-    { permission: 'portal.breaks_audit', label: 'Breaks Audit', path: '/breaks-audit' },
-    { permission: 'portal.permissions', label: 'Permissions Matrix', path: '/permissions' },
+    { show: !hasAudit && hasPermission('portal.attendance'), label: 'Attendance Console', path: '/' },
+    { show: hasAudit, label: 'Dashboard', path: '/' },
+    { show: hasPermission('portal.employees'), label: 'Employees', path: '/employees' },
+    { show: hasPermission('portal.attendance_audit'), label: 'Attendance Audit', path: '/attendance-audit' },
+    { show: hasPermission('portal.breaks_audit'), label: 'Breaks Audit', path: '/breaks-audit' },
+    { show: hasPermission('portal.permissions'), label: 'Permissions Matrix', path: '/permissions' },
   ];
 
   const currentPath = window.location.pathname;
 
   navItems.forEach((item) => {
-    if (hasPermission(item.permission)) {
+    if (item.show) {
       const li = document.createElement('li');
       const a = document.createElement('a');
       a.className = `navbar-link ${currentPath === item.path ? 'active' : ''}`;

@@ -1,8 +1,13 @@
 import { renderNavbar } from './components/navbar';
 import { addRoute, handleRoute, navigate } from './lib/router';
-import { isAuthenticated } from './lib/auth';
+import { isAuthenticated, hasPermission } from './lib/auth';
 import { renderLoginPage } from './pages/login';
 import { renderAttendanceConsole } from './pages/attendance';
+import { renderEmployeesPage } from './pages/employees';
+import { renderAttendanceAuditPage } from './pages/attendance_audit';
+import { renderBreaksAuditPage } from './pages/breaks_audit';
+import { renderPermissionsMatrixPage } from './pages/permissions';
+import { renderDashboardPage } from './pages/dashboard';
 
 function initApp(): void {
   const appContainer = document.getElementById('app');
@@ -25,7 +30,11 @@ function initApp(): void {
     appContainer.appendChild(nav);
     appContainer.appendChild(main);
 
-    renderAttendanceConsole(main);
+    if (hasPermission('portal.attendance_audit')) {
+      renderDashboardPage(main);
+    } else {
+      renderAttendanceConsole(main);
+    }
   });
 
   addRoute('/employees', () => {
@@ -36,9 +45,11 @@ function initApp(): void {
     appContainer.innerHTML = '';
     const nav = renderNavbar();
     const main = document.createElement('main');
-    main.innerHTML = '<div style="padding: 2rem;"><h2>Employees Page (W-1009)</h2></div>';
+    main.id = 'mainContent';
     appContainer.appendChild(nav);
     appContainer.appendChild(main);
+
+    renderEmployeesPage(main);
   });
 
   addRoute('/attendance-audit', () => {
@@ -49,9 +60,11 @@ function initApp(): void {
     appContainer.innerHTML = '';
     const nav = renderNavbar();
     const main = document.createElement('main');
-    main.innerHTML = '<div style="padding: 2rem;"><h2>Attendance Audit Page (W-1010)</h2></div>';
+    main.id = 'mainContent';
     appContainer.appendChild(nav);
     appContainer.appendChild(main);
+
+    renderAttendanceAuditPage(main);
   });
 
   addRoute('/breaks-audit', () => {
@@ -62,9 +75,11 @@ function initApp(): void {
     appContainer.innerHTML = '';
     const nav = renderNavbar();
     const main = document.createElement('main');
-    main.innerHTML = '<div style="padding: 2rem;"><h2>Breaks Audit Page (W-1010)</h2></div>';
+    main.id = 'mainContent';
     appContainer.appendChild(nav);
     appContainer.appendChild(main);
+
+    renderBreaksAuditPage(main);
   });
 
   addRoute('/permissions', () => {
@@ -75,9 +90,11 @@ function initApp(): void {
     appContainer.innerHTML = '';
     const nav = renderNavbar();
     const main = document.createElement('main');
-    main.innerHTML = '<div style="padding: 2rem;"><h2>Permissions Matrix Page (W-1012)</h2></div>';
+    main.id = 'mainContent';
     appContainer.appendChild(nav);
     appContainer.appendChild(main);
+
+    renderPermissionsMatrixPage(main);
   });
 
   addRoute('*', () => {
