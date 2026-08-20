@@ -66,8 +66,13 @@ export function logout(): void {
   clearAuthToken();
 }
 
+declare const process: { env: { BACKEND_URL?: string } };
+
 export async function login(email: string, password: string): Promise<string[]> {
-  const res = await fetch('/api/auth/login', {
+  const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:4000';
+  const baseUrl = `${backendUrl}/api`;
+
+  const res = await fetch(`${baseUrl}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -79,11 +84,14 @@ export async function login(email: string, password: string): Promise<string[]> 
   }
 
   const data = await res.json();
-  setAuthToken(data.token);
+  const token = data.access_token || data.token;
+  if (token) {
+    setAuthToken(token);
+  }
 
   // Fetch permissions for caller
-  const permRes = await fetch('/api/me/permissions', {
-    headers: { Authorization: `Bearer ${data.token}` },
+  const permRes = await fetch(`${baseUrl}/me/permissions`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   let perms: string[] = [];

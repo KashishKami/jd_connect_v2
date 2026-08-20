@@ -29,6 +29,43 @@ describe('Portal Unit Tests (W-1006, W-1007, W-1008)', () => {
       expect(hasPermission('employees.create')).toBe(false);
       expect(hasPermission('portal.permissions')).toBe(false);
     });
+
+    it('handles login with backend AuthResponse access_token and fetches permissions', async () => {
+      const { login } = await import('../src/lib/auth');
+
+      const mockFetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/auth/login')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              access_token: 'mock-rs256-jwt-token',
+              token_type: 'Bearer',
+              expires_in: 900
+            })
+          } as Response);
+        }
+        if (urlStr.endsWith('/me/permissions')) {
+          const authHeader = (init?.headers as Record<string, string>)?.[ 'Authorization' ];
+          if (authHeader === 'Bearer mock-rs256-jwt-token') {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve({ permissions: ['portal.attendance', 'attendance.view_own'] })
+            } as Response);
+          }
+          return Promise.resolve({ ok: false, status: 401 } as Response);
+        }
+        return Promise.resolve({ ok: false, status: 404 } as Response);
+      });
+
+      vi.stubGlobal('fetch', mockFetch);
+
+      const perms = await login('admin@company.com', 'secret123');
+
+      expect(getAuthToken()).toBe('mock-rs256-jwt-token');
+      expect(perms).toEqual(['portal.attendance', 'attendance.view_own']);
+      expect(hasPermission('portal.attendance')).toBe(true);
+    });
   });
 
   describe('W-1006 UI Components', () => {

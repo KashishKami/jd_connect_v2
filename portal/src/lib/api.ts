@@ -1,6 +1,9 @@
 import { getAuthToken, clearAuthToken } from './auth';
 
-const API_BASE = '/api';
+declare const process: { env: { BACKEND_URL?: string } };
+
+const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:4000';
+export const API_BASE = `${backendUrl}/api`;
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
@@ -20,7 +23,9 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
   if (response.status === 401) {
     clearAuthToken();
-    window.location.href = '/login';
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
     throw new Error('Unauthorized');
   }
 

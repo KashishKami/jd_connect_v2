@@ -30,6 +30,7 @@ router.get('/', authenticateJwt, async (req: Request, res: Response) => {
       to: req.query.to as string | undefined,
       status: req.query.status as BreakStatus | undefined,
       search: req.query.search as string | undefined,
+      break_type_key: req.query.break_type_key as string | undefined,
     };
 
     const records = await breakService.getBreakHistory(actor, filters);

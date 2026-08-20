@@ -58,6 +58,30 @@ export class ZulipService {
     }
   }
 
+  async createUserViaCli(email: string, fullName: string, password: string): Promise<{ zulipUserId: number } | null> {
+    try {
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execAsync = util.promisify(exec);
+
+      const zulipDir = path.resolve(__dirname, '../../../docker/zulip');
+      const safeEmail = email.replace(/'/g, "\\'");
+      const safeName = fullName.replace(/'/g, "\\'");
+      const safePass = password.replace(/'/g, "\\'");
+
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.create_user import do_create_user; r = Realm.objects.first(); existing = UserProfile.objects.filter(delivery_email='${safeEmail}').first(); print(f'ZULIP_USER_ID:{existing.id}') if existing else print(f'ZULIP_USER_ID:{do_create_user(\\'${safeEmail}\\', \\'${safePass}\\', r, \\'${safeName}\\', acting_user=None).id}')"`;
+
+      const { stdout } = await execAsync(cmd, { cwd: zulipDir });
+      const match = stdout.match(/ZULIP_USER_ID:(\d+)/);
+      if (match && match[1]) {
+        return { zulipUserId: Number(match[1]) };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   async createUser(payload: ZulipCreateUserPayload): Promise<{ zulipUserId: number }> {
     const authHeader = 'Basic ' + Buffer.from(`${this.botEmail}:${this.botApiKey}`).toString('base64');
 
@@ -77,7 +101,9 @@ export class ZulipService {
       });
 
       if (!response.ok) {
-        // Try fetching existing user ID if already created
+        const cliUser = await this.createUserViaCli(payload.email, payload.full_name, payload.password);
+        if (cliUser) return cliUser;
+
         const existing = await this.fetchUserByEmail(payload.email);
         if (existing) return existing;
         throw new ZulipProvisioningError(`Zulip API HTTP status ${response.status}`);
@@ -85,6 +111,9 @@ export class ZulipService {
 
       const data = (await response.json()) as ZulipUserResponse;
       if (data.result !== 'success' || typeof data.user_id !== 'number') {
+        const cliUser = await this.createUserViaCli(payload.email, payload.full_name, payload.password);
+        if (cliUser) return cliUser;
+
         const existing = await this.fetchUserByEmail(payload.email);
         if (existing) return existing;
         throw new ZulipProvisioningError(data.msg || 'Failed to create Zulip user');
@@ -95,6 +124,9 @@ export class ZulipService {
       if (err instanceof ZulipProvisioningError) {
         throw err;
       }
+      const cliUser = await this.createUserViaCli(payload.email, payload.full_name, payload.password);
+      if (cliUser) return cliUser;
+
       const existing = await this.fetchUserByEmail(payload.email);
       if (existing) return existing;
       throw new ZulipProvisioningError(`Zulip API request failed: ${(err as Error).message}`);

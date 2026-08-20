@@ -1,6 +1,21 @@
 import { guardRoute } from '../lib/auth';
 import { apiFetch } from '../lib/api';
 
+interface AttendanceAuditRow {
+  id: string;
+  employee_id: string;
+  employee_name?: string;
+  full_name?: string;
+  alias?: string;
+  employee_email?: string;
+  work_date: string;
+  clock_in_at: string;
+  clock_out_at?: string;
+  hours_worked?: number;
+  status: string;
+  is_late?: boolean;
+}
+
 export function renderAttendanceAuditPage(container: HTMLElement): void {
   if (!guardRoute('portal.attendance_audit', container)) {
     return;
@@ -17,9 +32,11 @@ export function renderAttendanceAuditPage(container: HTMLElement): void {
         <input type="date" id="auditDate" class="select-filter" />
         <select id="auditStatus" class="select-filter">
           <option value="">All Statuses</option>
-          <option value="clocked_in">Clocked In</option>
-          <option value="clocked_out">Clocked Out</option>
-          <option value="on_break">On Break</option>
+          <option value="present">Present</option>
+          <option value="late">Late</option>
+          <option value="half_day">Half Day</option>
+          <option value="absent">Absent</option>
+          <option value="leave">Leave</option>
         </select>
         <button id="auditTodayBtn" class="btn btn-secondary">Today</button>
       </div>
@@ -62,32 +79,38 @@ function initAttendanceAuditLogic(container: HTMLElement): void {
 
   async function loadAuditLogs() {
     try {
-      const logs = await apiFetch<Array<{
-        first_name?: string;
-        last_name?: string;
-        email?: string;
-        work_date: string;
-        clock_in_at: string;
-        clock_out_at?: string;
-        hours_worked?: number;
-        status: string;
-      }>>('/attendance/audit');
+      const params = new URLSearchParams();
+      if (searchInput?.value.trim()) params.set('search', searchInput.value.trim());
+      if (dateInput?.value) {
+        params.set('from', dateInput.value);
+        params.set('to', dateInput.value);
+      }
+      if (statusSelect?.value) params.set('status', statusSelect.value);
+
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      const logs = await apiFetch<AttendanceAuditRow[]>(`/attendance${queryString}`);
 
       if (logs.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No attendance records found.</td></tr>';
         return;
       }
 
-      tbody.innerHTML = logs.map((l) => `
-        <tr>
-          <td><strong>${l.first_name || 'Employee'} ${l.last_name || ''}</strong></td>
-          <td>${l.work_date}</td>
-          <td>${l.clock_in_at ? new Date(l.clock_in_at).toLocaleTimeString() : '-'}</td>
-          <td>${l.clock_out_at ? new Date(l.clock_out_at).toLocaleTimeString() : '-'}</td>
-          <td>${l.hours_worked ?? '-'}</td>
-          <td><span class="badge badge-purple">${l.status}</span></td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = logs.map((l) => {
+        const empName = l.employee_name || l.full_name || 'Employee';
+        const isLate = l.is_late || l.status === 'late';
+        const badgeClass = l.status === 'present' ? 'badge-success' : (isLate ? 'badge-warning' : 'badge-purple');
+
+        return `
+          <tr>
+            <td><strong>${empName}</strong></td>
+            <td>${l.work_date}</td>
+            <td>${l.clock_in_at ? new Date(l.clock_in_at).toLocaleTimeString() : '-'}</td>
+            <td>${l.clock_out_at ? new Date(l.clock_out_at).toLocaleTimeString() : '-'}</td>
+            <td>${l.hours_worked ?? '-'}</td>
+            <td><span class="badge ${badgeClass}">${l.status}${isLate ? ' (Late)' : ''}</span></td>
+          </tr>
+        `;
+      }).join('');
     } catch {
       tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--accent-red);">Failed to load audit records.</td></tr>';
     }

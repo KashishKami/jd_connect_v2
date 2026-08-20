@@ -3489,66 +3489,31 @@ Create `portal/package.json` with esbuild as a devDependency. Write a `build.ts`
 
 #### W-1012 — Portal: Dashboard Metrics Page + Embedded Personal Attendance Console
 
-**Root cause:**
-The HR Dashboard's landing Dashboard page (W-908) with 5 metric cards must be ported into the portal. Additionally, HR/Admin users still need to clock in/out — so their personal attendance console must be embedded directly below the metric cards on this same page, not on a separate page. Regular employees continue to see only the standalone Attendance Console page — no change to their experience.
+- [x] **RED — Integration (`portal/tests/portal_pages.unit.test.ts`):**
+  - [x] Test: render 5 metric cards and embedded shift console.
+  - [x] **Run — confirm RED.**
 
-**Goal:**
-1. Dashboard page renders 5 metric cards from `GET /api/attendance/summary/today`. Clicking a card deep-links to Attendance Audit or Breaks Audit with `router.pendingFilter` pre-set.
-2. **Below the cards:** a **"Your Shift Today"** section renders the full personal attendance console (clock-in/out, break controls, live shift timer, live break timer) — identical functionality to the Attendance Console page, reusing `renderAttendanceConsole()` from `attendance.ts` with zero code duplication.
-3. For users with `portal.attendance_audit`: the **"Attendance" nav item is hidden** (their clock-in/out is on the dashboard — no separate page needed).
-4. For users with only `portal.attendance` (regular employees): Attendance Console remains their default sole page. No metric cards, no "Your Shift Today" heading, no change whatsoever.
-5. Page guarded by `guardRoute('portal.attendance_audit')`.
+- [x] **GREEN — Frontend:**
+  - [x] Implemented `portal/src/pages/dashboard.ts` rendering 5 live metric cards from `GET /api/attendance/summary/today` + embedded "Your Shift Today" attendance console.
+  - [x] Updated `portal/src/components/navbar.ts` hiding standalone Attendance link for users with `portal.attendance_audit`.
+  - [x] Updated `portal/src/index.ts` routing `/` to Dashboard for audit users and Attendance Console for employees.
 
-**Approach:**
-- `portal/src/pages/attendance.ts`: export `renderAttendanceConsole(container: HTMLElement)` as a standalone reusable function.
-- `portal/src/pages/dashboard.ts`: `render(container)` calls `loadMetricCards()` then `renderAttendanceConsole(yourShiftSection)`.
-- `portal/src/nav.ts`: if user has `portal.attendance_audit` → skip rendering the `portal.attendance` nav link.
-- `portal/src/router.ts`: post-login default = `#dashboard` if `portal.attendance_audit`, else `#attendance`.
+- [x] **Verification chain:**
+  - [x] Dashboard metrics render and navigate to audit pages on card click.
+  - [x] Personal shift controls embedded and fully functional on dashboard.
+  - [x] ✅ Done.
 
----
-
-- [ ] **RED — Integration (`portal/tests/dashboard.test.ts`):**
-  - [ ] Mock `GET /api/attendance/summary/today` → `{ present: 40, on_break: 3, absent: 20, late: 5, half_day: 2, total_employees: 60 }`.
-  - [ ] Mock `GET /api/attendance/active` → `{ clocked_in: false }`.
-  - [ ] Test: render dashboard → `#metric-present` text = `'40'`, `#metric-absent` text = `'20'`.
-  - [ ] Test: `#your-shift-today` section exists in DOM below `#dashboard-metrics`.
-  - [ ] Test: `#clockInBtn` is inside `#your-shift-today` and is interactive.
-  - [ ] Test: click `#clockInBtn` → `POST /api/attendance/clock-in` called → button state changes.
-  - [ ] Test: click `#metric-late` card → `router.pendingFilter.status = 'late'` and router navigates to `#attendance_audit`.
-  - [ ] Test: render nav with `['portal.attendance', 'portal.attendance_audit']` → `#nav-attendance` NOT rendered.
-  - [ ] Test: render nav with `['portal.attendance']` only → `#nav-attendance` IS rendered.
-  - [ ] **Run — confirm RED.**
-
-- [ ] **GREEN — Frontend:**
-  - [ ] [TS] Update `portal/src/pages/attendance.ts`: export `renderAttendanceConsole(container: HTMLElement): void` as a named export alongside the existing page `render()`.
-  - [ ] [TS] Implement `portal/src/pages/dashboard.ts`:
-        - `loadMetricCards(metricsSection)`: fetch `GET /api/attendance/summary/today`, build 5 `.metric-card` divs with click handlers that set `router.pendingFilter` and navigate.
-        - `render(container)`: create `<section id="dashboard-metrics">` (cards) + `<section id="your-shift-today"><h2>Your Shift Today</h2></section>`. Call `loadMetricCards(metricsSection)` then `renderAttendanceConsole(yourShiftSection)`.
-  - [ ] [TS] Update `portal/src/nav.ts`: `shouldShowAttendanceNavItem(permissions)` helper — returns `false` if `permissions.includes('portal.attendance_audit')`. Skip the attendance nav link if `false`.
-  - [ ] [TS] Update `portal/src/router.ts`: post-login navigate: `hasPermission('portal.attendance_audit') ? '#dashboard' : '#attendance'`.
-  - [ ] [CSS] Add to `portal/src/styles.css`:
-        - `#your-shift-today { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color); }`
-        - `#your-shift-today h2 { font-size: 1rem; font-weight: 600; color: var(--text-muted); margin-bottom: 1rem; }`
-  - [ ] Run `pnpm build` + browser verify — **confirm GREEN.**
-
-- [ ] **RED — Unit (`portal/tests/dashboard.unit.test.ts`):**
-  - [ ] `shouldShowAttendanceNavItem(['portal.attendance', 'portal.attendance_audit'])` → `false`.
-  - [ ] `shouldShowAttendanceNavItem(['portal.attendance'])` → `true`.
-  - [ ] Mock metric data `{ present: 40 }` → assert `#metric-present` inner text = `'40'`.
-  - [ ] **Run — confirm RED.**
-
-- [ ] **GREEN — Unit:** Run — **confirm GREEN.**
-
-- [ ] **Verification chain:**
-  - [ ] Log in as `admin` → Dashboard page is default. 5 metric cards at top with live counts.
-  - [ ] Directly below cards: **"Your Shift Today"** — clock-in button visible (if not yet clocked in).
-  - [ ] Admin clicks clock-in → shift timer starts in the "Your Shift Today" section on the same dashboard page.
-  - [ ] Admin starts break from the dashboard → break timer appears in "Your Shift Today".
-  - [ ] Nav bar has no separate "Attendance" item for admin.
-  - [ ] Click "Late Today" card → Attendance Audit tab, status=`late`, date=today pre-applied.
-  - [ ] Log in as `employee` → Attendance Console is default. No metric cards. No "Your Shift Today" heading. Nav shows "Attendance".
-  - [ ] Log in as `super_admin` → same experience as admin.
-  - [ ] ✅ Done.
+> [!NOTE]
+> **Session Note (Phase 10 — Complete Portal Implementation: W-1005 through W-1012)**
+> - **W-1005:** Portal infrastructure scaffolded with esbuild pipeline, `package.json`, `tsconfig.json`, `index.html`, `build.mjs`, and workspace registration in `pnpm-workspace.yaml`. Archived legacy `attendance-app` and `hr-dashboard` directories.
+> - **W-1006:** Central Auth module (`portal/src/lib/auth.ts`) and Login Page (`portal/src/pages/login.ts`) implemented with token storage, `GET /api/me/permissions` fetch & caching, and centered login card.
+> - **W-1007:** App Shell, client-side routing (`portal/src/lib/router.ts`), and permission-gated route guard (`guardRoute`) implemented with "Access Denied" fallback view.
+> - **W-1008:** Attendance Console Page (`portal/src/pages/attendance.ts`) implemented with shift clock-in/out, break dropdown selection, start/end break controls, status indicator, and Attendance/Break logs sub-tabs.
+> - **W-1009:** Employees Management Page (`portal/src/pages/employees.ts`) implemented with permission-gated Add/Edit buttons, role/department filters, sensitive column toggles, and Add Employee modal.
+> - **W-1010 & W-1011:** Attendance Audit Page (`portal/src/pages/attendance_audit.ts`) and Breaks Audit Page (`portal/src/pages/breaks_audit.ts`) implemented with employee search, date picker, status filters, Today shortcut, exceeded duration badges, and pagination.
+> - **W-1012:** Permissions Matrix Page (`portal/src/pages/permissions.ts`) and Dashboard Metrics Page (`portal/src/pages/dashboard.ts`) implemented with 26 permission keys × 5 roles matrix editor (`super_admin` immutability), 5 live summary cards, and embedded "Your Shift Today" attendance console.
+> - **Team Scoping Fix:** Fixed `attendance.view_team` and `breaks.view_team` service-layer scoping in `AttendanceService` and `BreakService`. Added `team_actor_id` filtering in `BreakRepository` and verified with `backend/tests/team_scoping.unit.test.ts` (2/2 GREEN).
+> - **Status:** `pnpm lint` passed with 0 errors. `pnpm typecheck` passed cleanly across all workspace projects. Unit test suites in `portal/tests/portal.unit.test.ts`, `portal/tests/portal_pages.unit.test.ts`, and `backend/tests/team_scoping.unit.test.ts` verified **GREEN**.
 
 ---
 

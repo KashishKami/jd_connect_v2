@@ -23,12 +23,13 @@ This is the single authoritative reference for setting up JD Connect locally. It
 
 > [!NOTE]
 > **Everything is ALREADY fully configured and running on this machine.**
-> - **JD Connect Postgres**: Running on port `5432` (`jdconnect_postgres` container, project `jdconnect-dev`). All migrations and seed data applied.
+> - **JD Connect Postgres**: Running on port `5432` (`jdconnect_postgres` container, project `jdconnect-dev`). All 14 migrations and seed data applied (including `014_expand_permissions.sql` — 26-key permission taxonomy).
 > - **Zulip Chat Platform**: Running on `https://127.0.0.1:9991` (`docker/zulip/` compose stack).
 > - **Zulip Admin Account**: `admin@company.com` / `AdminPassword123!` (Role: Organization Administrator).
 > - **Zulip Bot Account**: `jdconnect-bot@company.com` / API Key stored in root `.env` as `ZULIP_BOT_API_KEY`.
-> - **Test Suite**: 30/30 backend unit & integration tests passing cleanly.
+> - **Test Suite**: All backend unit & integration tests passing cleanly.
 > - **Employees**: All production employees migrated. Temporary passwords in `migration_passwords.csv`.
+> - **Unified Portal**: `portal/` replaces the old `attendance-app/` and `hr-dashboard/`. Built with esbuild TypeScript pipeline.
 
 ---
 
@@ -45,8 +46,7 @@ Before starting, ensure the target machine has:
 
 This section gets the full local dev environment running from scratch. End result:
 - Backend API → `http://127.0.0.1:4000`
-- Attendance App → `http://localhost:3300`
-- HR Dashboard → `http://127.0.0.1:3500`
+- Unified Portal → `http://localhost:3200`
 - Zulip → `https://127.0.0.1:9991`
 
 ---
@@ -272,18 +272,12 @@ pnpm dev
 # Accessible at http://127.0.0.1:4000
 ```
 
-**Terminal 2 — Attendance Web App:**
+**Terminal 2 — Unified Portal:**
 ```bash
-cd attendance-app
-npx serve . -p 3300
-# Accessible at http://localhost:3300
-```
-
-**Terminal 3 — HR Dashboard:**
-```bash
-cd hr-dashboard
+cd portal
 pnpm dev
-# Accessible at http://127.0.0.1:3500
+# Accessible at http://localhost:3200
+# Serves the esbuild-compiled portal (login, attendance console, dashboard, employees, audit pages)
 ```
 
 **Optional — Post daily attendance prompt to Zulip `#attendance` channel:**
@@ -294,14 +288,17 @@ pnpm --filter @jdconnect/zulip-bot start
 
 **Access Zulip:** Open `https://127.0.0.1:9991` → login with `admin@company.com` / `AdminPassword123!`.
 
+> [!NOTE]
+> The old `attendance-app/` and `hr-dashboard/` directories have been replaced by the unified `portal/`. They are archived as `attendance-app.archived/` and `hr-dashboard.archived/` for reference only.
+
 ---
 
 ### How Employee Accounts Are Created (Standard Operations)
 
 When an employee joins, account creation follows a strict dual-system flow managed by the Backend API:
 
-1. **HR Action** — HR fills employee details in the HR Dashboard (`full_name`, `email`, `password`, `role_key`, `department_id`, `centre_id`, `shift_id`).
-2. **API Request** — Dashboard sends `POST /api/employees`.
+1. **HR Action** — HR fills employee details in the **Unified Portal** (`full_name`, `email`, `password`, `role_key`, `department_id`, `centre_id`, `shift_id`) via the Employees Management page (requires `employees.create` permission).
+2. **API Request** — Portal sends `POST /api/employees`.
 3. **Database Write** — API hashes the password (`bcrypt`, 12 rounds) and creates rows in `users` and `employees` tables.
 4. **Zulip Provisioning** — API calls Zulip Admin REST API (`POST /api/v1/users`) using the Bot API Key to create the Zulip account automatically.
 5. **Cross-System Link** — The returned Zulip `user_id` is saved to `employees.zulip_user_id`.
@@ -323,8 +320,7 @@ This section runs the full JD Connect application as production Docker container
 | Service | Dev Server | Docker Test Stack |
 |---|---|---|
 | Backend API | `http://localhost:4000` | `http://localhost:4001` |
-| Attendance App | `http://localhost:3300` | `http://localhost:3301` |
-| HR Dashboard | `http://localhost:3500` | `http://localhost:3502` |
+| Unified Portal | `http://localhost:3200` | `http://localhost:3201` |
 | Postgres | `localhost:5432` (dev DB) | Shared — see below |
 | Zulip | `https://127.0.0.1:9991` | Same — shared |
 
@@ -409,8 +405,7 @@ Expected:
 NAME                        STATUS          PORTS
 jdconnect_test_postgres     Up (healthy)    0.0.0.0:5433->5432/tcp
 jdconnect_test_api          Up              0.0.0.0:4001->4000/tcp
-jdconnect_test_attendance   Up              0.0.0.0:3301->80/tcp
-jdconnect_test_hr           Up              0.0.0.0:3502->80/tcp
+jdconnect_test_portal       Up              0.0.0.0:3201->80/tcp
 ```
 
 Check API health:
@@ -426,23 +421,25 @@ Invoke-RestMethod -Uri http://localhost:4001/api/auth/login -Method POST -Conten
 # Expected: response with access_token field
 ```
 
-- HR Dashboard: `http://localhost:3502` → login → employee list loads ✅
-- Attendance App: `http://localhost:3301` → login → clock-in page loads ✅
+- Unified Portal: `http://localhost:3201` → login → Dashboard or Attendance Console loads ✅
 
 ---
 
 ### Step B3: Running the Zulip Bot in Docker Test Mode
 
-The Zulip bot runs on the host machine (not in a container). Because the Docker test API is on port `4001` and the attendance app is on `3301`, override both URLs:
+The Zulip bot runs on the host machine (not in a container). Because the Docker test API is on port `4001` and the portal is on `3201`, override both URLs:
+
+> [!NOTE]
+> The bot uses `CLOCK_APP_URL` for the link it posts in the daily Zulip message (the link employees click to open the portal). Even though we now call it the portal, the env var name in the bot code is still `CLOCK_APP_URL`.
 
 **PowerShell:**
 ```powershell
-$env:BACKEND_URL="http://localhost:4001"; $env:CLOCK_APP_URL="http://localhost:3301"; pnpm --filter @jdconnect/zulip-bot start
+$env:BACKEND_URL="http://localhost:4001"; $env:CLOCK_APP_URL="http://localhost:3201"; pnpm --filter @jdconnect/zulip-bot start
 ```
 
 **Git Bash / Linux:**
 ```bash
-BACKEND_URL=http://localhost:4001 CLOCK_APP_URL=http://localhost:3301 pnpm --filter @jdconnect/zulip-bot start
+BACKEND_URL=http://localhost:4001 CLOCK_APP_URL=http://localhost:3201 pnpm --filter @jdconnect/zulip-bot start
 ```
 
 ---
@@ -477,8 +474,7 @@ docker compose --project-name jdconnect-test -f docker/docker-compose.local-test
 **View container logs:**
 ```powershell
 docker logs jdconnect_test_api -f --tail=50
-docker logs jdconnect_test_hr -f --tail=20
-docker logs jdconnect_test_attendance -f --tail=20
+docker logs jdconnect_test_portal -f --tail=20
 docker logs jdconnect_test_postgres -f --tail=20
 ```
 
@@ -487,11 +483,11 @@ docker logs jdconnect_test_postgres -f --tail=20
 ### What the Docker Test Proves ✅
 
 - [x] `backend/Dockerfile` — multi-stage TypeScript build works, `dist/index.js` boots correctly
-- [x] `attendance-app/Dockerfile` — nginx serves files, `config.js` with correct `BACKEND_URL` injected at build time
-- [x] `hr-dashboard/Dockerfile` — same as attendance app
+- [x] `portal/Dockerfile` — esbuild compiles `portal/src/index.ts` → `dist/bundle.js`, nginx serves `dist/` correctly
 - [x] Database connectivity — API reaches Postgres via `host.docker.internal:5432`
 - [x] JWT authentication — full login → token → authenticated request chain works in container
-- [x] CORS — browser on `localhost:3301`/`3502` can call API on `localhost:4001`
+- [x] Permissions — `GET /api/me/permissions` returns correct scoped permission keys per role
+- [x] CORS — browser on `localhost:3201` can call API on `localhost:4001`
 - [x] Zulip API calls — API reaches local Zulip via `host.docker.internal:9991`
 
 **Not tested here (VPS only):**
@@ -516,7 +512,7 @@ This section documents all data migration scripts, in the order they must be run
 
 ### Migration Step 1 — Schema (SQL Migrations)
 
-**Run first. Always. Creates all 12 database tables.**
+**Run first. Always. Creates all database tables and expands the permission taxonomy.**
 
 ```powershell
 # From repo root:
@@ -528,11 +524,15 @@ Expected output:
 Applying migration: 001_create_users.sql... Successfully applied.
 Applying migration: 002_create_roles_permissions.sql... Successfully applied.
 ...
-Applying migration: 012_add_hr_role.sql... Successfully applied.
+Applying migration: 013_add_alias_to_employees.sql... Successfully applied.
+Applying migration: 014_expand_permissions.sql... Successfully applied.
 All migrations up to date.
 ```
 
 Idempotent — tracks applied migrations in `schema_migrations` table. Safe to re-run; skips already-applied files.
+
+> [!NOTE]
+> `014_expand_permissions.sql` expands the permission taxonomy from 6 coarse keys to 26 fine-grained keys and re-seeds `role_permissions` for all 5 roles. If you already have an older database, this migration runs idempotently — new keys are inserted with `ON CONFLICT DO NOTHING`, the obsolete `employees.manage` key is removed, and `role_permissions` is reseeded.
 
 ---
 
@@ -751,7 +751,7 @@ Recovery:
 Orphaned containers from a previous broken run still exist. Force-remove them:
 
 ```powershell
-docker rm -f jdconnect_test_hr jdconnect_test_attendance jdconnect_test_api jdconnect_test_postgres
+docker rm -f jdconnect_test_portal jdconnect_test_api jdconnect_test_postgres
 ```
 
 Then re-run the test stack command.
@@ -774,9 +774,9 @@ docker compose --project-name jdconnect-test --env-file .env -f docker/docker-co
 
 `--no-deps` rebuilds only the API without restarting Postgres.
 
-### `connection refused` when Attendance App or HR Dashboard calls the API
+### `connection refused` when Portal calls the API
 
-The `BACKEND_URL` is baked into the Docker image at build time as `http://localhost:4001`. The browser accesses this from your Windows machine. Ensure the API container is running and port 4001 is not blocked by firewall.
+The `BACKEND_URL` is baked into the portal's Docker image at build time as `http://localhost:4001`. The browser accesses this from your Windows machine. Ensure the API container is running and port 4001 is not blocked by firewall.
 
 ### Port already in use
 
@@ -785,7 +785,7 @@ netstat -ano | findstr :4001
 taskkill /PID <PID_NUMBER> /F
 ```
 
-Replace `:4001` with whichever port is conflicting (`3301`, `3502`, etc.).
+Replace `:4001` with whichever port is conflicting (`3200`, `3201`, etc.).
 
 ### `Cannot connect to database` error in API container logs
 
@@ -802,11 +802,11 @@ This prevents Git Bash from prepending Windows file system paths to Linux contai
 
 ## Step 7: Set Zulip Channel Descriptions (Run After Docker Containers Are Up)
 
-> **What this does:** Sets a permanent link in the `#attendance` and `#Breaks` Zulip channel descriptions so employees always have a visible shortcut to the Attendance App. The description shows at the top of the channel when viewing all topics.
+> **What this does:** Sets a permanent link in the `#attendance` and `#Breaks` Zulip channel descriptions so employees always have a visible shortcut to the Unified Portal. The description shows at the top of the channel when viewing all topics.
 >
 > **When to run:** After the Docker test stack is up (`docker compose ... up -d`) and Zulip is running at `https://127.0.0.1:9991`.
 >
-> **Port used:** `3301` — the Attendance App docker container port in the local test stack.
+> **Port used:** `3201` — the Unified Portal docker container port in the local test stack.
 
 > [!IMPORTANT]
 > Run all commands from the `docker/zulip/` directory. On **Windows Git Bash**, `MSYS_NO_PATHCONV=1` is required to prevent path conversion errors. On PowerShell or Linux, omit it.
@@ -822,7 +822,7 @@ from zerver.actions.streams import do_change_stream_description
 realm = Realm.objects.get(string_id='')
 acting_user = UserProfile.objects.get(delivery_email='admin@company.com', realm=realm)
 stream = Stream.objects.get(name='attendance', realm=realm)
-do_change_stream_description(stream, 'Clock in / Clock out: http://localhost:3301', acting_user=acting_user)
+do_change_stream_description(stream, 'Clock in / Clock out: http://localhost:3201', acting_user=acting_user)
 print('Done:', stream.description)
 "
 ```
@@ -838,7 +838,7 @@ from zerver.actions.streams import do_change_stream_description
 realm = Realm.objects.get(string_id='')
 acting_user = UserProfile.objects.get(delivery_email='admin@company.com', realm=realm)
 stream = Stream.objects.get(name='Breaks', realm=realm)
-do_change_stream_description(stream, 'Log your break here: http://localhost:3301', acting_user=acting_user)
+do_change_stream_description(stream, 'Log your break here: http://localhost:3201', acting_user=acting_user)
 print('Done:', stream.description)
 "
 ```
@@ -846,10 +846,10 @@ print('Done:', stream.description)
 Expected output for each:
 ```
 85 objects imported automatically (use -v 2 for details).
-Done: Clock in / Clock out: http://localhost:3301
+Done: Clock in / Clock out: http://localhost:3201
 ```
 
 **To verify:** Open `https://127.0.0.1:9991` → click `# attendance` in the sidebar (not a topic inside it, the channel itself) → the description with the link appears at the top.
 
-> **On the VPS (Phase 2):** Same commands, but replace `http://localhost:3301` with `http://<VPS_IP>:3300`. The `MSYS_NO_PATHCONV=1` prefix is not needed on Linux.
+> **On the VPS (Phase 2):** Same commands, but replace `http://localhost:3201` with your production portal URL. The `MSYS_NO_PATHCONV=1` prefix is not needed on Linux.
 

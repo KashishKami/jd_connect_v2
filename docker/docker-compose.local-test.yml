@@ -2,29 +2,29 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # LOCAL DOCKER IMAGE TEST — No HTTPS, no Traefik, no external dependencies.
 #
-# Purpose: Verify that all three Docker images build and run correctly
+# Purpose: Verify that both Docker images build and run correctly
 # BEFORE pushing to production. This is the local equivalent of Phase 2.
 #
 # IMPORTANT:
 #   - This uses DIFFERENT ports so it runs alongside your dev servers (no conflict).
 #   - Zulip SSO will NOT work (requires HTTPS + matching domain). That's expected.
-#   - JWT login, clock-in, clock-out, HR dashboard — everything else works fine.
+#   - JWT login, clock-in, clock-out, dashboard, employees page — everything else works fine.
 #   - Your existing local Zulip (127.0.0.1:9991) is still used by the Backend API.
 #
-# HOW TO RUN (from the repo root):
-#   docker compose -f docker/docker-compose.local-test.yml up -d --build
+# HOW TO RUN (from the repo root — --project-name flag is REQUIRED):
+#   docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d --build
 #
 # HOW TO STOP AND CLEAN UP:
-#   docker compose -f docker/docker-compose.local-test.yml down
+#   docker compose --project-name jdconnect-test -f docker/docker-compose.local-test.yml down
 #
 # ACCESS (while running):
 #   Backend API health:  http://localhost:4001/health
-#   Attendance App:      http://localhost:3301
-#   HR Dashboard:        http://localhost:3502
+#   Unified Portal:      http://localhost:3201
 #
 # FIRST TIME SETUP (after first `up --build`):
-#   docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/migrate.ts
-#   docker compose -f docker/docker-compose.local-test.yml exec api tsx scripts/seed.ts
+#   Run migrations and seed from the repo root:
+#     pnpm db:migrate
+#     pnpm db:seed
 # ─────────────────────────────────────────────────────────────────────────────
 
 networks:
@@ -72,24 +72,23 @@ services:
       NODE_ENV: production
       PORT: 4000
       DATABASE_URL: postgresql://jduser:jdpassword@host.docker.internal:5432/jdconnect
+
       JWT_SECRET: local-docker-test-jwt-secret-32-chars!!
       JWT_EXPIRATION: 15m
 
       # host.docker.internal resolves to the Windows host machine from inside Docker.
       # This lets the containerised backend reach your locally running Zulip (127.0.0.1:9991).
       ZULIP_BASE_URL: https://host.docker.internal:9991
-
       ZULIP_BOT_EMAIL: jdconnect-bot@company.com
-      # Reads the bot API key from the root .env file on the host.
-      # Copy-paste your ZULIP_BOT_API_KEY value here for local docker testing:
+      # Injected from root .env via --env-file flag. Run with:
+      #   docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d --build
       ZULIP_BOT_API_KEY: ${ZULIP_BOT_API_KEY:-replace-with-your-bot-api-key}
-
       ZULIP_ATTENDANCE_STREAM: attendance
 
-      # URLs as the BROWSER will see them (host machine ports)
-      HR_DASHBOARD_URL: http://localhost:3502
-      CLOCK_APP_URL: http://localhost:3301
-      ALLOWED_CORS_ORIGINS: http://localhost:3301,http://localhost:3502,https://127.0.0.1:9991
+      # Portal URL as the browser sees it (host machine port)
+      PORTAL_URL: http://localhost:3201
+      BACKEND_URL: http://localhost:4001
+      ALLOWED_CORS_ORIGINS: http://localhost:3201,https://127.0.0.1:9991
 
       # Required: accept Zulip's self-signed cert for internal API calls.
       # (Safe here — this is dev-only. Never set this in production.)
@@ -104,31 +103,24 @@ services:
       # Makes host.docker.internal resolve correctly on all platforms including Linux
       - "host.docker.internal:host-gateway"
 
-  # ── Attendance Web App — built from source ────────────────────────────────
-  attendance-app:
+  # ── Unified Portal — multi-stage esbuild + nginx ──────────────────────────
+  # Replaces both attendance-app and hr-dashboard.
+  # Stage 1: node:20-alpine installs pnpm deps and runs `node build.mjs`
+  # Stage 2: nginx:alpine serves the compiled dist/ and reverse-proxies /api/*
+  #          to the backend container (no CORS, no URL baking into the JS bundle)
+  portal:
     build:
-      context: ../attendance-app
-      dockerfile: Dockerfile
+      context: ..             # Monorepo root — needed for pnpm workspace install
+      dockerfile: portal/Dockerfile
       args:
-        # The browser talks to the backend via the HOST port (4001), not the container port
-        BACKEND_URL: http://localhost:4001
-    container_name: jdconnect_test_attendance
+        # Internal Docker network URL — nginx uses this to proxy /api/* to the backend.
+        # The browser never sees this URL; it only ever calls /api/... on the same origin.
+        BACKEND_INTERNAL_URL: http://api:4000
+    container_name: jdconnect_test_portal
     restart: unless-stopped
     ports:
-      - "3301:80"             # 3301 avoids conflict with dev server on 3300
-    networks:
-      - jdconnect_local_test
-
-  # ── HR & Admin Dashboard — built from source ─────────────────────────────
-  hr-dashboard:
-    build:
-      context: ../hr-dashboard
-      dockerfile: Dockerfile
-      args:
-        BACKEND_URL: http://localhost:4001
-    container_name: jdconnect_test_hr
-    restart: unless-stopped
-    ports:
-      - "3502:80"             # 3502 avoids conflict with dev server on 3500
+      - "3201:80"             # 3201 avoids conflict with dev portal on 3200
+    depends_on:
+      - api
     networks:
       - jdconnect_local_test

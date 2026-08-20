@@ -107,6 +107,8 @@ export async function runSeed() {
       ],
     };
 
+    await client.query(`DELETE FROM role_permissions`);
+
     for (const [roleKey, permKeys] of Object.entries(rolePermissionMatrix)) {
       const roleRes = await client.query(`SELECT id FROM roles WHERE key = $1`, [roleKey]);
       const roleId = roleRes.rows[0]?.id;

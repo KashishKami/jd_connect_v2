@@ -1,6 +1,7 @@
 import { breakRepository, BreakRepository, FindBreakFilters } from '../repositories/break.repository';
 import { attendanceRepository, AttendanceRepository } from '../repositories/attendance.repository';
 import { employeeRepository, EmployeeRepository } from '../repositories/employee.repository';
+import { permissionsService } from './permissions.service';
 import { getESTWorkDate } from './attendance.service';
 import { BreakRecord, BreakStatus, BreakType } from '../types/break';
 
@@ -119,34 +120,54 @@ export class BreakService {
   }
 
   async getBreakHistory(
-    actor: { id: string; roles: string[] },
+    actor: { id: string; roles: string[]; permissions?: string[] },
     filters: {
       employee_id?: string | undefined;
       from?: string | undefined;
       to?: string | undefined;
       status?: BreakStatus | undefined;
       search?: string | undefined;
+      break_type_key?: string | undefined;
     }
   ): Promise<BreakRecord[]> {
-    const isSuperAdminOrAdmin = actor.roles.some((r) => r === 'super_admin' || r === 'admin');
+    const perms = actor.permissions || await permissionsService.getMyPermissions(actor.roles);
+    const hasViewAll = perms.includes('breaks.view_all') || actor.roles.some((r) => r === 'super_admin' || r === 'admin');
+    const hasViewTeam = perms.includes('breaks.view_team');
+    const hasViewOwn = perms.includes('breaks.view_own');
 
     let targetEmployeeId = filters.employee_id;
+    let teamActorId: string | undefined = undefined;
 
-    if (targetEmployeeId === 'me') {
-      targetEmployeeId = actor.id;
-    } else if (!isSuperAdminOrAdmin) {
-      if (targetEmployeeId && targetEmployeeId !== actor.id) {
+    if (hasViewAll) {
+      if (targetEmployeeId === 'me') {
+        targetEmployeeId = actor.id;
+      }
+    } else if (hasViewTeam) {
+      if (targetEmployeeId === 'me') {
+        targetEmployeeId = actor.id;
+      } else if (targetEmployeeId) {
+        teamActorId = actor.id;
+      } else {
+        teamActorId = actor.id;
+        targetEmployeeId = undefined;
+      }
+    } else if (hasViewOwn) {
+      if (targetEmployeeId && targetEmployeeId !== 'me' && targetEmployeeId !== actor.id) {
         throw new ForbiddenError('Forbidden: You can only view your own break records');
       }
       targetEmployeeId = actor.id;
+    } else {
+      throw new ForbiddenError('Forbidden: Insufficient permissions to view break records');
     }
 
     const repoFilters: FindBreakFilters = {
       employee_id: targetEmployeeId,
+      team_actor_id: teamActorId,
       fromDate: filters.from,
       toDate: filters.to,
       status: filters.status,
       search: filters.search,
+      break_type_key: filters.break_type_key,
     };
 
     return await this.breakRepo.findRecords(repoFilters);

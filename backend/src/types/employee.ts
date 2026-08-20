@@ -12,7 +12,6 @@ export interface CreateEmployeeInput {
   team_leader_id?: string | undefined;
   manager_id?: string | undefined;
   designation?: string | undefined;
-  joining_date?: string | undefined;
 }
 
 export interface EmployeeResponse {
@@ -28,9 +27,10 @@ export interface EmployeeResponse {
   department?: string | null;
   role?: string | null;
   centre_id?: string | null;
+  centre_name?: string | null;
   shift_id?: string | null;
+  shift_name?: string | null;
   designation?: string | null;
-  joining_date?: string | null;
   zulip_provisioned: boolean;
   zulip_user_id?: number | null;
   employment_status: string;
@@ -58,4 +58,3 @@ export interface UpdateEmployeeInput {
   centre_id?: string | null | undefined;
   new_password?: string | undefined;
 }
-

@@ -1,6 +1,26 @@
 import { guardRoute } from '../lib/auth';
 import { apiFetch } from '../lib/api';
 
+interface BreakAuditRow {
+  id: string;
+  employee_id: string;
+  employee_name?: string;
+  full_name?: string;
+  alias?: string;
+  break_type_name?: string;
+  break_name?: string;
+  start_at: string;
+  end_at?: string;
+  duration_minutes?: number;
+  status: string;
+}
+
+interface BreakTypeItem {
+  id: string;
+  key: string;
+  name: string;
+}
+
 export function renderBreaksAuditPage(container: HTMLElement): void {
   if (!guardRoute('portal.breaks_audit', container)) {
     return;
@@ -57,40 +77,64 @@ export function renderBreaksAuditPage(container: HTMLElement): void {
 function initBreaksAuditLogic(container: HTMLElement): void {
   const tbody = container.querySelector('#breaksAuditTableBody') as HTMLTableSectionElement;
   const searchInput = container.querySelector('#breakSearch') as HTMLInputElement;
+  const typeSelect = container.querySelector('#breakTypeFilter') as HTMLSelectElement;
+  const statusSelect = container.querySelector('#breakStatusFilter') as HTMLSelectElement;
+
+  async function loadBreakTypes() {
+    if (!typeSelect) return;
+    try {
+      const types = await apiFetch<BreakTypeItem[]>('/break-types');
+      types.forEach((t) => {
+        const opt = document.createElement('option');
+        opt.value = t.key;
+        opt.textContent = t.name;
+        typeSelect.appendChild(opt);
+      });
+    } catch {
+      // ignore
+    }
+  }
 
   async function loadBreakAuditLogs() {
     try {
-      const logs = await apiFetch<Array<{
-        first_name?: string;
-        last_name?: string;
-        break_name?: string;
-        start_at: string;
-        end_at?: string;
-        duration_minutes?: number;
-        status: string;
-      }>>('/breaks/audit');
+      const params = new URLSearchParams();
+      if (searchInput?.value.trim()) params.set('search', searchInput.value.trim());
+      if (typeSelect?.value) params.set('break_type_key', typeSelect.value);
+      if (statusSelect?.value) params.set('status', statusSelect.value);
+
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      const logs = await apiFetch<BreakAuditRow[]>(`/breaks${queryString}`);
 
       if (logs.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No break records found.</td></tr>';
         return;
       }
 
-      tbody.innerHTML = logs.map((l) => `
-        <tr>
-          <td><strong>${l.first_name || 'Employee'} ${l.last_name || ''}</strong></td>
-          <td>${l.break_name || 'Break'}</td>
-          <td>${l.start_at ? new Date(l.start_at).toLocaleTimeString() : '-'}</td>
-          <td>${l.end_at ? new Date(l.end_at).toLocaleTimeString() : '-'}</td>
-          <td>${l.duration_minutes ?? '-'}</td>
-          <td><span class="badge ${l.status === 'exceeded' ? 'badge-danger' : 'badge-success'}">${l.status}</span></td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = logs.map((l) => {
+        const empName = l.employee_name || l.full_name || 'Employee';
+        const breakName = l.break_type_name || l.break_name || 'Break';
+        const badgeClass = l.status === 'exceeded' ? 'badge-danger' : (l.status === 'active' ? 'badge-warning' : 'badge-success');
+
+        return `
+          <tr>
+            <td><strong>${empName}</strong></td>
+            <td>${breakName}</td>
+            <td>${l.start_at ? new Date(l.start_at).toLocaleTimeString() : '-'}</td>
+            <td>${l.end_at ? new Date(l.end_at).toLocaleTimeString() : '-'}</td>
+            <td>${l.duration_minutes ?? '-'}</td>
+            <td><span class="badge ${badgeClass}">${l.status}</span></td>
+          </tr>
+        `;
+      }).join('');
     } catch {
       tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--accent-red);">Failed to load break audit logs.</td></tr>';
     }
   }
 
   if (searchInput) searchInput.oninput = () => loadBreakAuditLogs();
+  if (typeSelect) typeSelect.onchange = () => loadBreakAuditLogs();
+  if (statusSelect) statusSelect.onchange = () => loadBreakAuditLogs();
 
+  loadBreakTypes();
   loadBreakAuditLogs();
 }

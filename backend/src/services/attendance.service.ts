@@ -2,6 +2,7 @@ import { attendanceRepository, AttendanceRepository, FindAttendanceFilters } fro
 import { employeeRepository, EmployeeRepository } from '../repositories/employee.repository';
 import { breakRepository, BreakRepository } from '../repositories/break.repository';
 import { AttendanceRecord, AttendanceStatus } from '../types/attendance';
+import { permissionsService } from './permissions.service';
 
 export class AlreadyClockedInError extends Error {
   constructor() {
@@ -167,7 +168,7 @@ export class AttendanceService {
   }
 
   async getAttendanceHistory(
-    actor: { id: string; roles: string[] },
+    actor: { id: string; roles: string[]; permissions?: string[] },
     filters: {
       employee_id?: string | undefined;
       from?: string | undefined;
@@ -176,21 +177,39 @@ export class AttendanceService {
       search?: string | undefined;
     }
   ): Promise<AttendanceRecord[]> {
-    const isSuperAdminOrAdmin = actor.roles.some((r) => r === 'super_admin' || r === 'admin');
+    const perms = actor.permissions || await permissionsService.getMyPermissions(actor.roles);
+    const hasViewAll = perms.includes('attendance.view_all') || actor.roles.some((r) => r === 'super_admin' || r === 'admin');
+    const hasViewTeam = perms.includes('attendance.view_team');
+    const hasViewOwn = perms.includes('attendance.view_own');
 
     let targetEmployeeId = filters.employee_id;
+    let teamActorId: string | undefined = undefined;
 
-    if (targetEmployeeId === 'me') {
-      targetEmployeeId = actor.id;
-    } else if (!isSuperAdminOrAdmin) {
-      if (targetEmployeeId && targetEmployeeId !== actor.id) {
+    if (hasViewAll) {
+      if (targetEmployeeId === 'me') {
+        targetEmployeeId = actor.id;
+      }
+    } else if (hasViewTeam) {
+      if (targetEmployeeId === 'me') {
+        targetEmployeeId = actor.id;
+      } else if (targetEmployeeId) {
+        teamActorId = actor.id;
+      } else {
+        teamActorId = actor.id;
+        targetEmployeeId = undefined;
+      }
+    } else if (hasViewOwn) {
+      if (targetEmployeeId && targetEmployeeId !== 'me' && targetEmployeeId !== actor.id) {
         throw new ForbiddenError('Forbidden: You can only view your own attendance records');
       }
       targetEmployeeId = actor.id;
+    } else {
+      throw new ForbiddenError('Forbidden: Insufficient permissions to view attendance records');
     }
 
     const repoFilters: FindAttendanceFilters = {
       employee_id: targetEmployeeId,
+      team_actor_id: teamActorId,
       fromDate: filters.from,
       toDate: filters.to,
       status: filters.status,

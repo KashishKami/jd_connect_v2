@@ -1,6 +1,13 @@
 import pool from '../lib/db';
 import { CreateEmployeeInput, EmployeeResponse, EmployeeFilters } from '../types/employee';
 
+const EMPLOYEE_SELECT_FIELDS = `
+  e.id, e.auth_user_id, e.employee_code, e.full_name, e.alias, e.email, e.mobile,
+  e.department_id, e.role_id, e.centre_id, e.shift_id, e.team_leader_id, e.manager_id,
+  e.designation, e.employment_status, e.zulip_provisioned, e.zulip_user_id, e.created_at, e.updated_at,
+  d.name AS department, r.key AS role, c.name AS centre_name, s.name AS shift_name
+`;
+
 export class EmployeeRepository {
   constructor(private dbPool = pool) {}
 
@@ -47,7 +54,7 @@ export class EmployeeRepository {
 
     if (filters?.search && filters.search.trim()) {
       params.push(`%${filters.search.trim()}%`);
-      conditions.push(`(e.full_name ILIKE $${params.length} OR e.alias ILIKE $${params.length})`);
+      conditions.push(`(e.full_name ILIKE $${params.length} OR e.alias ILIKE $${params.length} OR e.employee_code ILIKE $${params.length})`);
     }
 
     if (filters?.department_id && filters.department_id.trim()) {
@@ -68,10 +75,12 @@ export class EmployeeRepository {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const sql = `
-      SELECT e.*, d.name AS department, r.key AS role
+      SELECT ${EMPLOYEE_SELECT_FIELDS}
       FROM employees e
       LEFT JOIN departments d ON e.department_id = d.id
       LEFT JOIN roles r ON e.role_id = r.id
+      LEFT JOIN centres c ON e.centre_id = c.id
+      LEFT JOIN shifts s ON e.shift_id = s.id
       ${whereClause}
       ORDER BY e.created_at DESC
     `;
@@ -160,10 +169,15 @@ export class EmployeeRepository {
         WHERE e.id = $1
         RETURNING *
       )
-      SELECT u.*, d.name AS department, r.key AS role
+      SELECT u.id, u.auth_user_id, u.employee_code, u.full_name, u.alias, u.email, u.mobile,
+             u.department_id, u.role_id, u.centre_id, u.shift_id, u.team_leader_id, u.manager_id,
+             u.designation, u.employment_status, u.zulip_provisioned, u.zulip_user_id, u.created_at, u.updated_at,
+             d.name AS department, r.key AS role, c.name AS centre_name, s.name AS shift_name
       FROM updated u
       LEFT JOIN departments d ON u.department_id = d.id
       LEFT JOIN roles r ON u.role_id = r.id
+      LEFT JOIN centres c ON u.centre_id = c.id
+      LEFT JOIN shifts s ON u.shift_id = s.id
     `;
 
     const res = await this.dbPool.query<EmployeeResponse>(sql, params);

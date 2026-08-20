@@ -5,13 +5,41 @@ import { createModal } from '../components/modal';
 
 interface EmployeeRow {
   id: string;
-  first_name: string;
-  last_name: string;
+  employee_code?: string;
+  full_name: string;
+  alias?: string | null;
   email: string;
-  role: string;
-  is_active: boolean;
-  mobile_number?: string;
-  designation?: string;
+  mobile?: string | null;
+  role?: string | null;
+  role_id?: string | null;
+  role_key?: string | null;
+  department?: string | null;
+  department_id?: string | null;
+  centre?: string | null;
+  centre_name?: string | null;
+  centre_id?: string | null;
+  shift_name?: string | null;
+  shift_id?: string | null;
+  designation?: string | null;
+  zulip_provisioned?: boolean;
+  zulip_user_id?: number | null;
+  employment_status: string;
+}
+
+interface DepartmentRow {
+  id: string;
+  name: string;
+}
+
+interface CentreRow {
+  id: string;
+  code: string;
+  name: string;
+}
+
+interface ShiftRow {
+  id: string;
+  name: string;
 }
 
 export function renderEmployeesPage(container: HTMLElement): void {
@@ -24,7 +52,6 @@ export function renderEmployeesPage(container: HTMLElement): void {
   const canFilterRole = hasPermission('employees.filter.by_role');
   const canFilterDept = hasPermission('employees.filter.by_department');
   const canFilterStatus = hasPermission('employees.filter.by_status');
-  const canViewSensitive = hasPermission('employees.view.sensitive');
 
   container.innerHTML = `
     <div class="main-content">
@@ -34,28 +61,29 @@ export function renderEmployeesPage(container: HTMLElement): void {
       </div>
 
       <div class="filter-bar">
-        <input type="text" id="inputSearch" class="input-search" placeholder="Search employees by name, email..." />
+        <input type="text" id="inputSearch" class="input-search" placeholder="Search employees by name, email, code..." />
         ${canFilterRole ? `
           <select id="selectRoleFilter" class="select-filter">
             <option value="">All Roles</option>
             <option value="super_admin">Super Admin</option>
             <option value="admin">Admin</option>
+            <option value="hr">HR</option>
             <option value="manager">Manager</option>
-            <option value="team_lead">Team Lead</option>
+            <option value="team_leader">Team Leader</option>
             <option value="employee">Employee</option>
           </select>` : ''}
         ${canFilterDept ? `
           <select id="selectDeptFilter" class="select-filter">
             <option value="">All Departments</option>
-            <option value="Operations">Operations</option>
-            <option value="Support">Support</option>
-            <option value="HR">HR</option>
           </select>` : ''}
         ${canFilterStatus ? `
           <select id="selectStatusFilter" class="select-filter">
             <option value="">All Statuses</option>
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+            <option value="resigned">Resigned</option>
+            <option value="terminated">Terminated</option>
+            <option value="absconded">Absconded</option>
           </select>` : ''}
       </div>
 
@@ -63,16 +91,21 @@ export function renderEmployeesPage(container: HTMLElement): void {
         <table class="data-table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Email</th>
+              <th>Code</th>
+              <th>Full Name</th>
+              <th>Alias</th>
+              <th>Email & Phone</th>
+              <th>Designation</th>
+              <th>Department</th>
+              <th>Centre</th>
               <th>Role</th>
-              ${canViewSensitive ? '<th>Mobile</th><th>Designation</th>' : ''}
               <th>Status</th>
+              <th>Zulip Provisioned</th>
               ${canEdit ? '<th>Actions</th>' : ''}
             </tr>
           </thead>
           <tbody id="employeesTableBody">
-            <tr><td colspan="7" style="text-align:center;">Loading...</td></tr>
+            <tr><td colspan="11" style="text-align:center;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -85,49 +118,127 @@ export function renderEmployeesPage(container: HTMLElement): void {
     </div>
   `;
 
-  initEmployeesLogic(container, { canCreate, canEdit, canViewSensitive });
+  initEmployeesLogic(container, { canCreate, canEdit });
 }
 
 function initEmployeesLogic(
   container: HTMLElement,
-  flags: { canCreate: boolean; canEdit: boolean; canViewSensitive: boolean }
+  flags: { canCreate: boolean; canEdit: boolean }
 ): void {
   const tbody = container.querySelector('#employeesTableBody') as HTMLTableSectionElement;
   const searchInput = container.querySelector('#inputSearch') as HTMLInputElement;
+  const roleSelect = container.querySelector('#selectRoleFilter') as HTMLSelectElement;
+  const deptSelect = container.querySelector('#selectDeptFilter') as HTMLSelectElement;
+  const statusSelect = container.querySelector('#selectStatusFilter') as HTMLSelectElement;
 
-  async function loadEmployees() {
+  let employeesCache: EmployeeRow[] = [];
+
+  async function loadDepartments() {
+    if (!deptSelect) return;
     try {
-      const employees = await apiFetch<EmployeeRow[]>('/employees');
-      const query = searchInput?.value.toLowerCase() || '';
-
-      const filtered = employees.filter((e) =>
-        `${e.first_name} ${e.last_name}`.toLowerCase().includes(query) ||
-        e.email.toLowerCase().includes(query)
-      );
-
-      if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No employees found.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = filtered.map((e) => `
-        <tr>
-          <td><strong>${e.first_name} ${e.last_name}</strong></td>
-          <td>${e.email}</td>
-          <td><span class="badge badge-purple">${e.role}</span></td>
-          ${flags.canViewSensitive ? `<td>${e.mobile_number || '-'}</td><td>${e.designation || '-'}</td>` : ''}
-          <td><span class="badge ${e.is_active ? 'badge-success' : 'badge-danger'}">${e.is_active ? 'Active' : 'Inactive'}</span></td>
-          ${flags.canEdit ? `<td><button class="btn btn-secondary btn-edit-emp" data-id="${e.id}">Edit</button></td>` : ''}
-        </tr>
-      `).join('');
+      const depts = await apiFetch<DepartmentRow[]>('/departments');
+      depts.forEach((d) => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        deptSelect.appendChild(opt);
+      });
     } catch {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--accent-red);">Failed to load employees.</td></tr>';
+      // ignore
     }
   }
 
-  if (searchInput) {
-    searchInput.oninput = () => loadEmployees();
+  async function loadEmployees() {
+    try {
+      const params = new URLSearchParams();
+      if (searchInput?.value.trim()) params.set('search', searchInput.value.trim());
+      if (roleSelect?.value) params.set('role_key', roleSelect.value);
+      if (deptSelect?.value) params.set('department_id', deptSelect.value);
+      if (statusSelect?.value) params.set('status', statusSelect.value);
+
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      employeesCache = await apiFetch<EmployeeRow[]>(`/employees${queryString}`);
+
+      if (employeesCache.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">No employees found.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = employeesCache.map((e) => {
+        const code = e.employee_code || '-';
+        const aliasBadge = e.alias ? `<span class="badge badge-purple">${e.alias}</span>` : '<span style="color:var(--text-muted);">-</span>';
+        const isActive = e.employment_status === 'active';
+        
+        let zulipCell = '<span class="badge badge-success">Provisioned</span>';
+        if (!e.zulip_provisioned) {
+          zulipCell = `
+            <div style="display:flex; align-items:center; gap:0.4rem;">
+              <span class="badge badge-warning">Pending</span>
+              <button class="btn btn-secondary btn-retry-zulip" data-id="${e.id}" style="padding: 2px 6px; font-size: 0.75rem;">Retry</button>
+            </div>
+          `;
+        }
+
+        return `
+          <tr>
+            <td><code>${code}</code></td>
+            <td><strong>${e.full_name}</strong></td>
+            <td>${aliasBadge}</td>
+            <td>
+              <div style="font-weight: 500;">${e.email}</div>
+              <div style="font-size: 0.8rem; color: var(--text-muted);">${e.mobile || 'No phone'}</div>
+            </td>
+            <td>${e.designation || '-'}</td>
+            <td>${e.department || '-'}</td>
+            <td>${e.centre || e.centre_name || '-'}</td>
+            <td><span class="badge badge-purple">${e.role || 'employee'}</span></td>
+            <td><span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">${e.employment_status}</span></td>
+            <td>${zulipCell}</td>
+            ${flags.canEdit ? `<td><button class="btn btn-secondary btn-edit-emp" data-id="${e.id}">Edit</button></td>` : ''}
+          </tr>
+        `;
+      }).join('');
+
+      // Attach edit button listeners
+      tbody.querySelectorAll('.btn-edit-emp').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          const target = ev.target as HTMLButtonElement;
+          const empId = target.dataset.id;
+          const emp = employeesCache.find((x) => x.id === empId);
+          if (emp) {
+            openEditEmployeeModal(emp, loadEmployees);
+          }
+        });
+      });
+
+      // Attach retry zulip listeners
+      tbody.querySelectorAll('.btn-retry-zulip').forEach((btn) => {
+        btn.addEventListener('click', async (ev) => {
+          const target = ev.target as HTMLButtonElement;
+          const empId = target.dataset.id;
+          if (!empId) return;
+          target.disabled = true;
+          target.textContent = 'Retrying...';
+          try {
+            await apiFetch(`/employees/${empId}/retry-zulip-provisioning`, { method: 'POST' });
+            showToast('Zulip provisioning completed successfully', 'success');
+            await loadEmployees();
+          } catch (err) {
+            showToast((err as Error).message, 'danger');
+            target.disabled = false;
+            target.textContent = 'Retry';
+          }
+        });
+      });
+    } catch {
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color: var(--accent-red);">Failed to load employees.</td></tr>';
+    }
   }
+
+  if (searchInput) searchInput.oninput = () => loadEmployees();
+  if (roleSelect) roleSelect.onchange = () => loadEmployees();
+  if (deptSelect) deptSelect.onchange = () => loadEmployees();
+  if (statusSelect) statusSelect.onchange = () => loadEmployees();
 
   const addBtn = container.querySelector('#addEmployeeBtn');
   if (addBtn && flags.canCreate) {
@@ -136,34 +247,77 @@ function initEmployeesLogic(
     });
   }
 
+  loadDepartments();
   loadEmployees();
 }
 
-function openAddEmployeeModal(onSuccess: () => void): void {
+async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
+  const [depts, centres, shifts] = await Promise.all([
+    apiFetch<DepartmentRow[]>('/departments').catch(() => []),
+    apiFetch<CentreRow[]>('/centres').catch(() => []),
+    apiFetch<ShiftRow[]>('/shifts').catch(() => []),
+  ]);
+
   const form = document.createElement('form');
   form.innerHTML = `
-    <div style="margin-bottom: 1rem;">
-      <label style="display:block; margin-bottom: 0.5rem;">First Name</label>
-      <input type="text" id="addFirstName" class="input-search" style="width:100%;" required />
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+      <div class="form-group">
+        <label>Full Name *</label>
+        <input type="text" id="addFullName" class="form-input" required />
+      </div>
+      <div class="form-group">
+        <label>Alias</label>
+        <input type="text" id="addAlias" class="form-input" placeholder="e.g. Adam" />
+      </div>
+      <div class="form-group">
+        <label>Email Address *</label>
+        <input type="email" id="addEmail" class="form-input" required />
+      </div>
+      <div class="form-group">
+        <label>Password *</label>
+        <input type="password" id="addPassword" class="form-input" required minlength="6" />
+      </div>
+      <div class="form-group">
+        <label>Role *</label>
+        <select id="addRoleKey" class="form-input" required>
+          <option value="employee">Employee</option>
+          <option value="team_leader">Team Leader</option>
+          <option value="manager">Manager</option>
+          <option value="hr">HR</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Mobile Phone Number</label>
+        <input type="text" id="addMobile" class="form-input" placeholder="+1-555-0199" />
+      </div>
+      <div class="form-group">
+        <label>Designation</label>
+        <input type="text" id="addDesignation" class="form-input" placeholder="e.g. Senior Agent" />
+      </div>
+      <div class="form-group">
+        <label>Department</label>
+        <select id="addDeptId" class="form-input">
+          <option value="">Select Department...</option>
+          ${depts.map((d) => `<option value="${d.id}">${d.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Centre Location</label>
+        <select id="addCentreId" class="form-input">
+          <option value="">Select Centre...</option>
+          ${centres.map((c) => `<option value="${c.id}">${c.name} (${c.code})</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Shift Assignment</label>
+        <select id="addShiftId" class="form-input">
+          <option value="">Select Shift...</option>
+          ${shifts.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}
+        </select>
+      </div>
     </div>
-    <div style="margin-bottom: 1rem;">
-      <label style="display:block; margin-bottom: 0.5rem;">Last Name</label>
-      <input type="text" id="addLastName" class="input-search" style="width:100%;" required />
-    </div>
-    <div style="margin-bottom: 1rem;">
-      <label style="display:block; margin-bottom: 0.5rem;">Email</label>
-      <input type="email" id="addEmail" class="input-search" style="width:100%;" required />
-    </div>
-    <div style="margin-bottom: 1.5rem;">
-      <label style="display:block; margin-bottom: 0.5rem;">Role</label>
-      <select id="addRole" class="select-filter" style="width:100%;" required>
-        <option value="employee">Employee</option>
-        <option value="team_lead">Team Lead</option>
-        <option value="manager">Manager</option>
-        <option value="admin">Admin</option>
-      </select>
-    </div>
-    <button type="submit" class="btn btn-primary" style="width:100%;">Create Employee</button>
+    <button type="submit" class="btn btn-primary" style="width:100%; margin-top: 1.5rem;">Create Employee</button>
   `;
 
   const modal = createModal({
@@ -177,13 +331,122 @@ function openAddEmployeeModal(onSuccess: () => void): void {
       await apiFetch('/employees', {
         method: 'POST',
         body: JSON.stringify({
-          first_name: (form.querySelector('#addFirstName') as HTMLInputElement).value,
-          last_name: (form.querySelector('#addLastName') as HTMLInputElement).value,
-          email: (form.querySelector('#addEmail') as HTMLInputElement).value,
-          role: (form.querySelector('#addRole') as HTMLSelectElement).value,
+          full_name: (form.querySelector('#addFullName') as HTMLInputElement).value.trim(),
+          alias: (form.querySelector('#addAlias') as HTMLInputElement).value.trim() || undefined,
+          email: (form.querySelector('#addEmail') as HTMLInputElement).value.trim(),
+          password: (form.querySelector('#addPassword') as HTMLInputElement).value,
+          role_key: (form.querySelector('#addRoleKey') as HTMLSelectElement).value,
+          mobile: (form.querySelector('#addMobile') as HTMLInputElement).value.trim() || undefined,
+          designation: (form.querySelector('#addDesignation') as HTMLInputElement).value.trim() || undefined,
+          department_id: (form.querySelector('#addDeptId') as HTMLSelectElement).value || undefined,
+          centre_id: (form.querySelector('#addCentreId') as HTMLSelectElement).value || undefined,
+          shift_id: (form.querySelector('#addShiftId') as HTMLSelectElement).value || undefined,
         }),
       });
-      showToast('Employee created successfully', 'success');
+      showToast('Employee created and provisioned successfully', 'success');
+      modal.remove();
+      onSuccess();
+    } catch (err) {
+      showToast((err as Error).message, 'danger');
+    }
+  };
+}
+
+async function openEditEmployeeModal(emp: EmployeeRow, onSuccess: () => void): Promise<void> {
+  const [depts, centres, shifts] = await Promise.all([
+    apiFetch<DepartmentRow[]>('/departments').catch(() => []),
+    apiFetch<CentreRow[]>('/centres').catch(() => []),
+    apiFetch<ShiftRow[]>('/shifts').catch(() => []),
+  ]);
+
+  const form = document.createElement('form');
+  form.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="editFullName" class="form-input" value="${emp.full_name || ''}" required />
+      </div>
+      <div class="form-group">
+        <label>Alias</label>
+        <input type="text" id="editAlias" class="form-input" value="${emp.alias || ''}" />
+      </div>
+      <div class="form-group">
+        <label>Mobile Phone Number</label>
+        <input type="text" id="editMobile" class="form-input" value="${emp.mobile || ''}" />
+      </div>
+      <div class="form-group">
+        <label>Designation</label>
+        <input type="text" id="editDesignation" class="form-input" value="${emp.designation || ''}" />
+      </div>
+      <div class="form-group">
+        <label>Department</label>
+        <select id="editDeptId" class="form-input">
+          <option value="">No Department</option>
+          ${depts.map((d) => `<option value="${d.id}" ${emp.department_id === d.id ? 'selected' : ''}>${d.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Centre Location</label>
+        <select id="editCentreId" class="form-input">
+          <option value="">No Centre</option>
+          ${centres.map((c) => `<option value="${c.id}" ${emp.centre_id === c.id ? 'selected' : ''}>${c.name} (${c.code})</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Shift Assignment</label>
+        <select id="editShiftId" class="form-input">
+          <option value="">No Shift</option>
+          ${shifts.map((s) => `<option value="${s.id}" ${emp.shift_id === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Employment Status</label>
+        <select id="editStatus" class="form-input">
+          <option value="active" ${emp.employment_status === 'active' ? 'selected' : ''}>Active</option>
+          <option value="suspended" ${emp.employment_status === 'suspended' ? 'selected' : ''}>Suspended</option>
+          <option value="resigned" ${emp.employment_status === 'resigned' ? 'selected' : ''}>Resigned</option>
+          <option value="terminated" ${emp.employment_status === 'terminated' ? 'selected' : ''}>Terminated</option>
+          <option value="absconded" ${emp.employment_status === 'absconded' ? 'selected' : ''}>Absconded</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column: 1 / -1;">
+        <label>Reset Password (optional)</label>
+        <input type="password" id="editNewPassword" class="form-input" placeholder="Leave blank to keep current" />
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary" style="width:100%; margin-top: 1.5rem;">Save Changes</button>
+  `;
+
+  const modal = createModal({
+    title: `Edit Employee: ${emp.full_name}`,
+    content: form,
+  });
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload: Record<string, unknown> = {
+        full_name: (form.querySelector('#editFullName') as HTMLInputElement).value.trim(),
+        alias: (form.querySelector('#editAlias') as HTMLInputElement).value.trim() || undefined,
+        mobile: (form.querySelector('#editMobile') as HTMLInputElement).value.trim() || undefined,
+        designation: (form.querySelector('#editDesignation') as HTMLInputElement).value.trim() || undefined,
+        department_id: (form.querySelector('#editDeptId') as HTMLSelectElement).value || null,
+        centre_id: (form.querySelector('#editCentreId') as HTMLSelectElement).value || null,
+        shift_id: (form.querySelector('#editShiftId') as HTMLSelectElement).value || null,
+        employment_status: (form.querySelector('#editStatus') as HTMLSelectElement).value,
+      };
+
+      const newPass = (form.querySelector('#editNewPassword') as HTMLInputElement).value;
+      if (newPass) {
+        payload.new_password = newPass;
+      }
+
+      await apiFetch(`/employees/${emp.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+
+      showToast('Employee updated successfully', 'success');
       modal.remove();
       onSuccess();
     } catch (err) {

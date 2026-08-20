@@ -6,6 +6,22 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Read root .env file manually
+const envPath = path.resolve(__dirname, '../.env');
+const envVars = {};
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  envContent.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+      const idx = trimmed.indexOf('=');
+      const key = trimmed.substring(0, idx).trim();
+      const val = trimmed.substring(idx + 1).trim();
+      envVars[key] = val;
+    }
+  });
+}
+
 const isWatch = process.argv.includes('--watch');
 
 const distDir = path.resolve(__dirname, 'dist');
@@ -29,6 +45,8 @@ if (fs.existsSync(htmlSrc)) {
   fs.copyFileSync(htmlSrc, htmlDist);
 }
 
+const backendUrl = envVars.BACKEND_URL || 'http://127.0.0.1:4000';
+
 const buildOptions = {
   entryPoints: [path.resolve(srcDir, 'index.ts')],
   bundle: true,
@@ -37,13 +55,16 @@ const buildOptions = {
   target: ['es2022'],
   sourcemap: true,
   minify: !isWatch,
+  define: {
+    'process.env.BACKEND_URL': JSON.stringify(backendUrl),
+  },
 };
 
 if (isWatch) {
   const ctx = await esbuild.context(buildOptions);
   await ctx.watch();
-  console.info('Watching portal for changes...');
+  console.info(`Watching portal for changes... (BACKEND_URL=${backendUrl})`);
 } else {
   await esbuild.build(buildOptions);
-  console.info('Portal built successfully.');
+  console.info(`Portal built successfully. (BACKEND_URL=${backendUrl})`);
 }

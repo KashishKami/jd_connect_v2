@@ -3,10 +3,12 @@ import { BreakRecord, BreakStatus, BreakType } from '../types/break';
 
 export interface FindBreakFilters {
   employee_id?: string | undefined;
+  team_actor_id?: string | undefined;
   fromDate?: string | undefined;
   toDate?: string | undefined;
   status?: BreakStatus | undefined;
   search?: string | undefined;
+  break_type_key?: string | undefined;
 }
 
 export class BreakRepository {
@@ -119,6 +121,10 @@ export class BreakRepository {
       values.push(filters.employee_id);
       conditions.push(`br.employee_id = $${values.length}`);
     }
+    if (filters.team_actor_id) {
+      values.push(filters.team_actor_id);
+      conditions.push(`(e.manager_id = $${values.length} OR e.team_leader_id = $${values.length} OR e.id = $${values.length})`);
+    }
     if (filters.fromDate) {
       values.push(filters.fromDate);
       conditions.push(`br.start_at >= $${values.length}`);
@@ -130,6 +136,10 @@ export class BreakRepository {
     if (filters.status) {
       values.push(filters.status);
       conditions.push(`br.status = $${values.length}`);
+    }
+    if (filters.break_type_key) {
+      values.push(filters.break_type_key);
+      conditions.push(`bt.key = $${values.length}`);
     }
     if (filters.search) {
       values.push(`%${filters.search}%`);
