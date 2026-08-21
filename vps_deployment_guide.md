@@ -559,122 +559,14 @@ curl http://<VPS_IP>:4000/health
 # https://<VPS_IP>:9991
 ```
 
-Log into the Portal with `admin@company.com` / `AdminPassword123!` — you should see the HR employee list load.
+Log into the Portal with `admin@company.com` / `AdminPassword123!` — you should see the system load.
 Log into Zulip with the same credentials.
 
-**If Phase 2 is working: proceed to Step 9.5 to migrate employee data, then Phase 3 begins.**
-
----
-
-### Step 9.5: Migrate Existing Employee Data (Go-Live Day)
-
-> [!IMPORTANT]
-> **Do NOT use the local test dump file for this step.** The local file (`jdconnect_public_data.sql` on your Windows machine) was used only during development. On actual go-live day, you generate a **fresh dump from the live old system** so it contains all data up to that exact moment. The commands below do exactly that.
-
 > [!NOTE]
-> The old `jd-connect` (Supabase stack) and the new `jdconnect_v2` stack **run on the same VPS**. There is no file transfer between servers. Everything in this step happens in a single SSH session on `82.29.165.21`.
-
-This step imports all your real employee records from the old `jd-connect` Supabase database into the new JD Connect v2 Postgres database. The migration script talks **directly to Postgres** — it does not go through the HTTP API — so it must run inside the `jdconnect_api` container, which has database access.
-
-You can run all of these commands **from any directory** on the VPS — `docker exec` and `docker cp` reference containers by name, not by path. Just SSH in and run them.
-
----
-
-**1. Dump the live database from the old Supabase container**
-
-```bash
-# Step 1a: Run pg_dump inside the supabase-db container — writes to /tmp inside the container
-docker exec supabase-db pg_dump \
-  -U postgres \
-  -d postgres \
-  --schema=public \
-  --data-only \
-  --no-owner \
-  --no-privileges \
-  -f /tmp/jdconnect_public_data.sql
-
-# Step 1b: Copy the dump out of the supabase-db container onto the VPS host filesystem
-docker cp supabase-db:/tmp/jdconnect_public_data.sql /tmp/jdconnect_public_data.sql
-```
-
-The file is now at `/tmp/jdconnect_public_data.sql` on the VPS host.
-
----
-
-**2. Copy the dump file into the new API container**
-
-```bash
-docker cp /tmp/jdconnect_public_data.sql jdconnect_api:/app/jdconnect_public_data.sql
-```
-
----
-
-**3. Run the migration script**
-
-```bash
-# Pass the file path explicitly as an argument — required on the VPS
-docker exec jdconnect_api tsx scripts/migrate-employees.ts /app/jdconnect_public_data.sql
-```
-
-> [!IMPORTANT]
-> You **must** include `/app/jdconnect_public_data.sql` as the argument. Without it, the script falls back to a hardcoded Windows path (`C:\Users\Administrator\Desktop\...`) which does not exist inside the Linux container and will crash immediately.
-
----
-
-**4. Run the migration script**
-
-> **Where to run this:** On the **new VPS**, from any directory.
-
-```bash
-# Pass the file path explicitly as an argument — required on the VPS
-docker exec jdconnect_api tsx scripts/migrate-employees.ts /app/jdconnect_public_data.sql
-```
-
-> [!IMPORTANT]
-> You **must** include `/app/jdconnect_public_data.sql` as the argument. Without it, the script falls back to a hardcoded Windows path (`C:\Users\Administrator\Desktop\...`) which does not exist inside the Linux container and will crash immediately.
-
-The script will:
-- Read the SQL dump from `/app/jdconnect_public_data.sql` inside the container
-- Map old department/centre/shift/role IDs to the new schema
-- Create a `users` row and an `employees` row for each employee
-- Provision each employee in Zulip (sets `zulip_provisioned = true` if successful)
-- Write a `migration_passwords.csv` file inside the container with each employee's temporary password
-
----
-
-**5. Copy the passwords CSV back to your machine**
-
-```bash
-# On new VPS — copy out of container first
-docker cp jdconnect_api:/app/migration_passwords.csv /opt/jdconnect_v2/migration_passwords.csv
-```
-
-```powershell
-# On Windows — SCP it down
-scp root@<NEW_VPS_IP>:/opt/jdconnect_v2/migration_passwords.csv C:\Users\Administrator\Desktop\vps_migration_passwords.csv
-```
-
-> [!CAUTION]
-> `migration_passwords.csv` contains plaintext temporary passwords. Delete it from the VPS after safely downloading it:
-> ```bash
-> rm /opt/jdconnect_v2/migration_passwords.csv
-> ```
-
-> [!NOTE]
-> The migration script is idempotent — if an employee already exists (matched by employee code or email), it is skipped. Safe to re-run if it was interrupted.
-
----
-
-**6. Verify employees loaded**
-
-> **Where to run this:** New VPS, any directory.
-
-```bash
-# Quick count check
-docker exec jdconnect_postgres psql -U <POSTGRES_USER> -d jdconnect -c "SELECT COUNT(*) FROM employees;"
-```
-
-Log into the Portal at `http://<VPS_IP>:3201` — the employee list should show all migrated records.
+> **Why Data Migration happens in Phase 3 (not Phase 2):**
+> During Phase 2, the application runs on temporary raw IP addresses (`http://<VPS_IP>:3201`). If migration is run during Phase 2, Zulip user accounts and channel notifications will be provisioned with temporary IP links.
+> 
+> By running historical data migration at the end of Phase 3 (Step 16), all user accounts, channel descriptions, and daily prompt links are created with your real, permanent production HTTPS URLs (`https://hrm.jdfusion.in` and `https://jdfusion.in`), and data is written straight into the permanent production database volume (`pgdata`).
 
 ---
 ---
@@ -693,20 +585,20 @@ Add these `A` records (set TTL to `300` while testing — raise to `3600` after 
 
 | Subdomain | Type | Value | TTL |
 |---|---|---|---|
+| `@` (root) | A | `<VPS_IP>` | 300 |
+| `hrm` | A | `<VPS_IP>` | 300 |
 | `api` | A | `<VPS_IP>` | 300 |
-| `portal` | A | `<VPS_IP>` | 300 |
-| `chat` | A | `<VPS_IP>` | 300 |
 
-Example: if your domain is `jdfusion.in`, your subdomains will be:
-- `api.jdfusion.in` → Backend API
-- `portal.jdfusion.in` → Portal (HR + Attendance)
-- `chat.jdfusion.in` → Zulip
+Example: if your domain is `jdfusion.in`, your URLs will be:
+- `https://jdfusion.in` → Zulip Chat (main root domain)
+- `https://hrm.jdfusion.in` → Portal (HRM & Attendance)
+- `https://api.jdfusion.in` → Backend API
 
 Verify DNS is propagating (repeat until you see your VPS IP):
 ```powershell
+nslookup jdfusion.in
+nslookup hrm.jdfusion.in
 nslookup api.jdfusion.in
-nslookup portal.jdfusion.in
-nslookup chat.jdfusion.in
 ```
 
 ---
@@ -846,7 +738,7 @@ secrets:
 services:
   zulip:
     environment:
-      SETTING_EXTERNAL_HOST: "chat.YOURDOMAIN.com"
+      SETTING_EXTERNAL_HOST: "YOURDOMAIN.com"
       SETTING_ZULIP_ADMINISTRATOR: "admin@company.com"
       SETTING_FAKE_EMAIL_DOMAIN: "localhost"
       CERTIFICATES: "self-signed"
@@ -860,7 +752,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
-      - "traefik.http.routers.zulip.rule=Host(`chat.YOURDOMAIN.com`)"
+      - "traefik.http.routers.zulip.rule=Host(`YOURDOMAIN.com`)"
       - "traefik.http.routers.zulip.entrypoints=websecure"
       - "traefik.http.routers.zulip.tls.certresolver=mytlschallenge"
       - "traefik.http.services.zulip.loadbalancer.server.port=443"
@@ -868,7 +760,7 @@ services:
       # This references the named serversTransport defined in /root/traefik-tls.yml (Step 12).
       # It scopes insecureSkipVerify to ONLY the Traefik → Zulip backend connection.
       - "traefik.http.services.zulip.loadbalancer.serversTransport=zulip-internal"
-      - "traefik.http.routers.zulip-http.rule=Host(`chat.YOURDOMAIN.com`)"
+      - "traefik.http.routers.zulip-http.rule=Host(`YOURDOMAIN.com`)"
       - "traefik.http.routers.zulip-http.entrypoints=web"
       - "traefik.http.routers.zulip-http.middlewares=redirect-to-https@docker"
 
@@ -901,9 +793,9 @@ Update these secrets in GitHub → **Settings** → **Secrets and variables** �
 |---|---|
 | `PROD_DOMAIN` | `jdfusion.in` (your actual domain, no subdomain prefix) |
 | `PROD_BACKEND_URL` | `https://api.jdfusion.in` |
-| `CLOCK_APP_URL` | `https://portal.jdfusion.in` |
-| `ZULIP_BASE_URL` | `https://chat.jdfusion.in` |
-| `ALLOWED_CORS_ORIGINS` | `https://portal.jdfusion.in,https://chat.jdfusion.in` |
+| `CLOCK_APP_URL` | `https://hrm.jdfusion.in` |
+| `ZULIP_BASE_URL` | `https://jdfusion.in` |
+| `ALLOWED_CORS_ORIGINS` | `https://hrm.jdfusion.in,https://jdfusion.in` |
 
 Trigger a redeploy by pushing a commit:
 ```powershell
@@ -924,15 +816,109 @@ docker logs $(docker ps --filter "name=traefik" --format "{{.Names}}" | head -1)
 
 # Test HTTPS endpoints
 curl -I https://api.jdfusion.in/health
-curl -I https://portal.jdfusion.in
-curl -I https://chat.jdfusion.in
+curl -I https://hrm.jdfusion.in
+curl -I https://jdfusion.in
 ```
 
 All should return `HTTP/2 200` with `server: Traefik` in headers.
 
 Open the apps in your browser — you should see the green padlock 🔒 on all subdomains.
 
-**Phase 3 complete. JD Connect is in production.**
+---
+
+### Step 16: Migrate Historical Data & Decommission Old Stack (Go-Live Day)
+
+Now that your production domain (`https://hrm.jdfusion.in` and `https://jdfusion.in`) is fully operational with HTTPS, perform the cutover migration from the old `jd-connect` Supabase stack.
+
+---
+
+**1. Dump the live database from the old Supabase container**
+
+```bash
+# Step 1a: Run pg_dump inside the supabase-db container
+docker exec supabase-db pg_dump \
+  -U postgres \
+  -d postgres \
+  --schema=public \
+  --data-only \
+  --no-owner \
+  --no-privileges \
+  -f /tmp/jdconnect_public_data.sql
+
+# Step 1b: Copy the dump to the VPS host filesystem
+docker cp supabase-db:/tmp/jdconnect_public_data.sql /tmp/jdconnect_public_data.sql
+```
+
+---
+
+**2. Copy dump into the new API container & run migration scripts**
+
+```bash
+# Copy dump into the active API container
+docker cp /tmp/jdconnect_public_data.sql jdconnect_api:/app/jdconnect_public_data.sql
+
+# Run employee & user migration (provisions Zulip accounts with production URLs)
+docker exec jdconnect_api tsx scripts/migrate-employees.ts /app/jdconnect_public_data.sql
+
+# Run attendance & break migration
+docker exec jdconnect_api tsx scripts/migrate-attendance.ts /app/jdconnect_public_data.sql
+
+# Run historical chat migration
+docker exec jdconnect_api tsx scripts/migrate-chat.ts /app/jdconnect_public_data.sql
+```
+
+---
+
+**3. Download temporary passwords CSV**
+
+```bash
+# On VPS — copy out of container
+docker cp jdconnect_api:/app/migration_passwords.csv /opt/jdconnect_v2/migration_passwords.csv
+```
+
+```powershell
+# On Windows (PowerShell) — download locally
+scp root@<VPS_IP>:/opt/jdconnect_v2/migration_passwords.csv C:\Users\Administrator\Desktop\vps_migration_passwords.csv
+```
+
+> [!CAUTION]
+> Delete the CSV file from the VPS host after downloading:
+> ```bash
+> rm /opt/jdconnect_v2/migration_passwords.csv
+> ```
+
+---
+
+**4. Decommission and Stop Old `jd-connect` (Supabase) Containers**
+
+Now that all employees, attendance logs, and chat records have been migrated to JD Connect v2, stop and decommission the old `jd-connect` Supabase stack:
+
+```bash
+# Stop all containers belonging to the old Supabase / jd-connect stack
+docker stop \
+  jdconnect-app \
+  supabase-db \
+  supabase-kong \
+  supabase-auth \
+  supabase-rest \
+  supabase-meta \
+  supabase-storage \
+  supabase-studio \
+  supabase-imgproxy \
+  supabase-pooler \
+  supabase-edge-functions \
+  realtime-dev.supabase-realtime 2>/dev/null || true
+```
+
+> [!TIP]
+> If the old stack was managed via Docker Compose in a directory (e.g. `/opt/jd-connect`), you can also run:
+> ```bash
+> cd /opt/jd-connect && docker compose down
+> ```
+
+---
+
+**Phase 3 & Cutover complete. JD Connect v2 is fully in production.**
 
 ---
 ---
@@ -965,8 +951,9 @@ Go to your GitHub repo → **Settings** → **Secrets and variables** → **Acti
 |---|---|---|
 | `PROD_DOMAIN` | `<VPS_IP>` (e.g. `82.29.165.21`) | `jdfusion.in` |
 | `PROD_BACKEND_URL` | `http://<VPS_IP>:4000` | `https://api.jdfusion.in` |
-| `CLOCK_APP_URL` | `http://<VPS_IP>:3201` | `https://portal.jdfusion.in` |
-| `ALLOWED_CORS_ORIGINS` | `http://<VPS_IP>:3201,https://<VPS_IP>:9991` | `https://portal.jdfusion.in,https://chat.jdfusion.in` |
+| `CLOCK_APP_URL` | `http://<VPS_IP>:3201` | `https://hrm.jdfusion.in` |
+| `ZULIP_BASE_URL` | `https://<VPS_IP>:9991` | `https://jdfusion.in` |
+| `ALLOWED_CORS_ORIGINS` | `http://<VPS_IP>:3201,https://<VPS_IP>:9991` | `https://hrm.jdfusion.in,https://jdfusion.in` |
 
 > [!NOTE]
 > `VPS_IP` is **not a separate GitHub Secret**. The pipeline automatically writes `VPS_IP=${{ secrets.VPS_HOST }}` into the `.env` file on the VPS — so the value comes from `VPS_HOST` (which already holds the raw IP). No extra secret needed.
