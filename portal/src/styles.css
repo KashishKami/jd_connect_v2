@@ -92,10 +92,10 @@ button, input, select, textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: 1150px;
-  width: 100%;
+  max-width: 1600px;
+  width: 74%;
   margin: 0 auto;
-  padding: 0 2rem;
+  padding: 0 1rem;
 }
 
 .navbar-brand {
@@ -398,9 +398,9 @@ button, input, select, textarea {
 /* Layout & Filter Bar */
 .main-content {
   flex: 1;
-  padding: 2.5rem 2rem;
-  max-width: 1150px;
-  width: 100%;
+  padding: 2.5rem 1rem;
+  max-width: 1600px;
+  width: 74%;
   margin: 0 auto;
 }
 
@@ -475,4 +475,69 @@ button, input, select, textarea {
   width: 100%;
   margin: 0;
   padding: 0;
+}
+
+/* Timer Card & Display Component */
+.timer-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.timer-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+.timer-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 1.4rem;
+  font-weight: 700;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.sliding-number {
+  color: var(--accent-indigo);
+  min-width: 1.4em;
+  text-align: center;
+  display: inline-block;
+  transition: transform 0.15s ease-out;
+}
+
+.sliding-number.break-number {
+  color: var(--accent-amber);
+}
+
+.timer-colon {
+  color: var(--text-muted);
+  font-weight: 400;
+  opacity: 0.6;
 }

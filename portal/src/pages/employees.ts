@@ -344,7 +344,7 @@ async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
       });
 
       if (res.zulip_provisioned === false) {
-        showToast(res.warning || 'Employee created, but Zulip provisioning is pending', 'warning');
+        showToast(res.warning || 'Employee created, but Zulip provisioning is pending', 'danger');
       } else {
         showToast('Employee created and provisioned in Zulip successfully', 'success');
       }
