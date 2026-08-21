@@ -39,18 +39,21 @@ export class ZulipService {
     return this.customBotApiKey || process.env.ZULIP_BOT_API_KEY || '';
   }
 
-  async fetchUserByEmail(email: string): Promise<{ zulipUserId: number } | null> {
-    const authHeader = 'Basic ' + Buffer.from(`${this.botEmail}:${this.botApiKey}`).toString('base64');
+  async fetchUserByEmailViaCli(email: string): Promise<{ zulipUserId: number } | null> {
+    if (process.env.NODE_ENV === 'test') return null;
     try {
-      const response = await fetch(`${this.baseUrl}/api/v1/users/${encodeURIComponent(email)}`, {
-        method: 'GET',
-        headers: { Authorization: authHeader },
-      });
-      if (!response.ok) return null;
-      const data = (await response.json()) as { result: string; user_id?: number; user?: { user_id: number } };
-      const userId = data.user?.user_id ?? data.user_id;
-      if (data.result === 'success' && typeof userId === 'number') {
-        return { zulipUserId: userId };
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execAsync = util.promisify(exec);
+
+      const zulipDir = path.resolve(__dirname, '../../../docker/zulip');
+      const safeEmail = email.replace(/'/g, "\\'");
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); u = UserProfile.objects.filter(realm=r, delivery_email='${safeEmail}').first(); print(f'ZULIP_USER_ID:{u.id}') if u else print('')"`;
+
+      const { stdout } = await execAsync(cmd, { cwd: zulipDir });
+      const match = stdout.match(/ZULIP_USER_ID:(\d+)/);
+      if (match && match[1]) {
+        return { zulipUserId: Number(match[1]) };
       }
       return null;
     } catch {
@@ -58,7 +61,31 @@ export class ZulipService {
     }
   }
 
+  async fetchUserByEmail(email: string): Promise<{ zulipUserId: number } | null> {
+    const authHeader = 'Basic ' + Buffer.from(`${this.botEmail}:${this.botApiKey}`).toString('base64');
+    try {
+      const response = await fetch(`${this.baseUrl}/api/v1/users/${encodeURIComponent(email)}`, {
+        method: 'GET',
+        headers: { Authorization: authHeader },
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { result: string; user_id?: number; user?: { user_id: number } };
+        const userId = data.user?.user_id ?? data.user_id;
+        if (data.result === 'success' && typeof userId === 'number') {
+          return { zulipUserId: userId };
+        }
+      }
+    } catch {
+      // Fall back to CLI lookup below
+    }
+
+    return this.fetchUserByEmailViaCli(email);
+  }
+
   async createUserViaCli(email: string, fullName: string, password: string): Promise<{ zulipUserId: number } | null> {
+    if (process.env.NODE_ENV === 'test') {
+      return null;
+    }
     try {
       const { exec } = await import('child_process');
       const util = await import('util');
@@ -69,7 +96,7 @@ export class ZulipService {
       const safeName = fullName.replace(/'/g, "\\'");
       const safePass = password.replace(/'/g, "\\'");
 
-      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.create_user import do_create_user; r = Realm.objects.first(); existing = UserProfile.objects.filter(delivery_email='${safeEmail}').first(); print(f'ZULIP_USER_ID:{existing.id}') if existing else print(f'ZULIP_USER_ID:{do_create_user(\\'${safeEmail}\\', \\'${safePass}\\', r, \\'${safeName}\\', acting_user=None).id}')"`;
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.create_user import do_create_user; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); existing = UserProfile.objects.filter(realm=r, delivery_email='${safeEmail}').first(); print(f'ZULIP_USER_ID:{existing.id}') if existing else print(f'ZULIP_USER_ID:{do_create_user(\\'${safeEmail}\\', \\'${safePass}\\', r, \\'${safeName}\\', acting_user=None).id}')"`;
 
       const { stdout } = await execAsync(cmd, { cwd: zulipDir });
       const match = stdout.match(/ZULIP_USER_ID:(\d+)/);

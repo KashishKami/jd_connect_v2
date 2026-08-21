@@ -45,7 +45,11 @@ if (fs.existsSync(htmlSrc)) {
   fs.copyFileSync(htmlSrc, htmlDist);
 }
 
-const backendUrl = envVars.BACKEND_URL || 'http://127.0.0.1:4000';
+// BACKEND_URL resolution order:
+// 1. Docker build arg (process.env.BACKEND_URL) — set by compose build.args
+// 2. Root .env file — used in local dev (pnpm build / pnpm dev)
+// 3. Hardcoded fallback for local dev without .env
+const backendUrl = process.env.BACKEND_URL || envVars.BACKEND_URL || 'http://127.0.0.1:4000';
 
 const buildOptions = {
   entryPoints: [path.resolve(srcDir, 'index.ts')],

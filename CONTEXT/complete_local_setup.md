@@ -340,22 +340,19 @@ You do **not** need to stop your dev servers. All Docker test ports are differen
 > | Stack | `--project-name` flag | Container | Port |
 > |---|---|---|---|
 > | Dev Postgres | `jdconnect-dev` | `jdconnect_postgres` | `5432` |
-> | Docker test stack | `jdconnect-test` | `jdconnect_test_postgres` | `5433` |
+> | Docker test stack | `jdconnect-test` | *(uses dev Postgres via `host.docker.internal`)* | `5432` |
 >
 > The `pnpm docker:dev:up` / `pnpm docker:dev:down` scripts already include `--project-name jdconnect-dev`. Always use those scripts for the dev stack.
 
 ---
 
-### How the Docker Test API Connects to the Database
 
 > [!IMPORTANT]
-> **The Docker test API uses your dev Postgres, NOT the test Postgres container.**
+> **The Docker test stack has no Postgres container of its own.**
 >
-> The `jdconnect_test_api` container (port 4001) connects to `host.docker.internal:5432` — which is your dev Postgres (`jdconnect_postgres`) running on your Windows host. The `jdconnect_test_postgres` container (port 5433) that starts with the test stack is **not used by the API** — it's bypassed entirely.
+> The `jdconnect_test_api` container (port 4001) connects directly to your dev Postgres (`jdconnect_postgres`) running on your Windows host via `host.docker.internal:5432`. This is intentional — it means the test stack runs against your real migrated data without needing a separate migration step.
 >
-> **Why?** This design means the Docker test stack runs against your real migrated employee data without needing a separate migration step inside the test containers.
->
-> **Consequence:** The dev Postgres (`jdconnect_postgres`) **must always be running** before starting the Docker test stack. If it goes down, every API call will fail with a 500 Internal Server Error.
+> **Consequence:** Your dev Postgres (`pnpm docker:dev:up`) **must always be running** before starting the Docker test stack. If it is down, every API call will fail with a 500 error.
 
 ---
 
@@ -403,7 +400,6 @@ docker compose --project-name jdconnect-test -f docker/docker-compose.local-test
 Expected:
 ```
 NAME                        STATUS          PORTS
-jdconnect_test_postgres     Up (healthy)    0.0.0.0:5433->5432/tcp
 jdconnect_test_api          Up              0.0.0.0:4001->4000/tcp
 jdconnect_test_portal       Up              0.0.0.0:3201->80/tcp
 ```

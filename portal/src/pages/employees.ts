@@ -67,7 +67,6 @@ export function renderEmployeesPage(container: HTMLElement): void {
             <option value="">All Roles</option>
             <option value="super_admin">Super Admin</option>
             <option value="admin">Admin</option>
-            <option value="hr">HR</option>
             <option value="manager">Manager</option>
             <option value="team_leader">Team Leader</option>
             <option value="employee">Employee</option>
@@ -275,7 +274,7 @@ async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
       </div>
       <div class="form-group">
         <label>Password *</label>
-        <input type="password" id="addPassword" class="form-input" required minlength="6" />
+        <input type="password" id="addPassword" class="form-input" required minlength="8" />
       </div>
       <div class="form-group">
         <label>Role *</label>
@@ -283,8 +282,8 @@ async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
           <option value="employee">Employee</option>
           <option value="team_leader">Team Leader</option>
           <option value="manager">Manager</option>
-          <option value="hr">HR</option>
           <option value="admin">Admin</option>
+          <option value="super_admin">Super Admin</option>
         </select>
       </div>
       <div class="form-group">
@@ -328,7 +327,7 @@ async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
   form.onsubmit = async (e) => {
     e.preventDefault();
     try {
-      await apiFetch('/employees', {
+      const res = await apiFetch<EmployeeRow & { zulip_provisioned?: boolean; warning?: string }>('/employees', {
         method: 'POST',
         body: JSON.stringify({
           full_name: (form.querySelector('#addFullName') as HTMLInputElement).value.trim(),
@@ -343,7 +342,12 @@ async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
           shift_id: (form.querySelector('#addShiftId') as HTMLSelectElement).value || undefined,
         }),
       });
-      showToast('Employee created and provisioned successfully', 'success');
+
+      if (res.zulip_provisioned === false) {
+        showToast(res.warning || 'Employee created, but Zulip provisioning is pending', 'warning');
+      } else {
+        showToast('Employee created and provisioned in Zulip successfully', 'success');
+      }
       modal.remove();
       onSuccess();
     } catch (err) {

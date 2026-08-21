@@ -31,6 +31,15 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+    if (Array.isArray(errorData.details) && errorData.details.length > 0) {
+      const detailsMsg = errorData.details
+        .map((d: { message?: string }) => d.message || String(d))
+        .filter(Boolean)
+        .join(', ');
+      if (detailsMsg) {
+        throw new Error(`${errorData.error || 'Validation failed'}: ${detailsMsg}`);
+      }
+    }
     throw new Error(errorData.error || `HTTP ${response.status}`);
   }
 

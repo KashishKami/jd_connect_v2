@@ -4,13 +4,16 @@
 #   Stage 1 (builder) — installs pnpm workspace deps, runs esbuild to produce
 #                       dist/bundle.js, dist/styles.css, dist/index.html.
 #   Stage 2 (runtime) — copies the compiled dist/ into nginx:alpine. nginx
-#                       serves the portal on port 80 AND reverse-proxies all
-#                       /api/* requests to the backend API container.
+#                       serves the portal as a static file server on port 80.
 #
-# Because portal/src/lib/api.ts uses relative paths (/api/...), no BACKEND_URL
-# is baked into the frontend bundle. Instead, nginx routes /api/* to the
-# backend via the BACKEND_INTERNAL_URL build-arg (the Docker-internal URL,
-# e.g. http://api:4000 in the compose network).
+# BACKEND_URL is passed as a Docker build arg and baked into bundle.js by esbuild.
+# Set it to the URL the BROWSER will use to reach the backend API:
+#   - Local Docker test:  http://localhost:4001
+#   - Production:         https://api.yourcompany.com
+#
+# API calls go directly from the browser to the backend (absolute URL in bundle.js).
+# CORS is handled by the backend's ALLOWED_CORS_ORIGINS env var — same approach
+# used by the old attendance-app and hr-dashboard before Phase 10.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
@@ -33,24 +36,23 @@ RUN pnpm install --frozen-lockfile --filter @jdconnect/portal
 # Copy portal source
 COPY portal/ ./portal/
 
+# BACKEND_URL is declared as an ARG so it becomes available as an env var
+# during the RUN step. build.mjs reads process.env.BACKEND_URL first, so
+# whatever is passed here via --build-arg is what esbuild bakes into bundle.js.
+ARG BACKEND_URL=http://127.0.0.1:4000
+
 # Run esbuild — produces dist/bundle.js, dist/styles.css, dist/index.html
 RUN pnpm --filter @jdconnect/portal build
 
 # ── Stage 2: Serve ────────────────────────────────────────────────────────────
 FROM nginx:alpine
 
-# The Docker-internal URL of the backend API service.
-# In the compose network this is typically http://api:4000.
-# Override at build time via --build-arg BACKEND_INTERNAL_URL=http://api:4000
-ARG BACKEND_INTERNAL_URL=http://api:4000
-
 # Copy compiled static assets from builder stage
 COPY --from=builder /app/portal/dist /usr/share/nginx/html
 
-# Write nginx config:
-#   - Serves portal static files on port 80
-#   - Reverse-proxies /api/* to the backend API container
-#   - All unknown routes fall back to index.html (client-side routing)
+# Simple nginx config: serve static files only.
+# Falls back to index.html for all unknown routes (client-side routing).
+# No /api/* proxy block — API calls go directly from the browser to the backend.
 RUN printf "\
 server {\n\
     listen 80;\n\
@@ -62,18 +64,6 @@ server {\n\
     add_header X-Frame-Options SAMEORIGIN;\n\
     add_header X-Content-Type-Options nosniff;\n\
     server_tokens off;\n\
-\n\
-    # Reverse-proxy all /api/* requests to the backend container.\n\
-    # This avoids CORS issues and means the frontend never needs to know\n\
-    # the backend's public URL — it always calls /api/... relative to its own origin.\n\
-    location /api/ {\n\
-        proxy_pass ${BACKEND_INTERNAL_URL}/api/;\n\
-        proxy_http_version 1.1;\n\
-        proxy_set_header Host \$host;\n\
-        proxy_set_header X-Real-IP \$remote_addr;\n\
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n\
-        proxy_set_header X-Forwarded-Proto \$scheme;\n\
-    }\n\
 \n\
     # Serve static assets; fall back to index.html for client-side routes\n\
     location / {\n\

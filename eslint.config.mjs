@@ -11,7 +11,8 @@ export default tseslint.config(
       "**/build/**",
       "**/.next/**",
       "**/node_modules/**",
-      "**/coverage/**"
+      "**/coverage/**",
+      "archived/**"
     ]
   },
   {

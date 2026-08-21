@@ -31,6 +31,7 @@ export interface EmployeeResponse {
   shift_id?: string | null;
   shift_name?: string | null;
   designation?: string | null;
+  joining_date?: string | null;
   zulip_provisioned: boolean;
   zulip_user_id?: number | null;
   employment_status: string;

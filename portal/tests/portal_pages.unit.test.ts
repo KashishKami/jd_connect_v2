@@ -232,4 +232,125 @@ describe('Portal Pages Unit Tests (W-1009, W-1010, W-1011, W-1012)', () => {
       expect(container.querySelector('#clockBtn')).not.toBeNull();
     });
   });
+
+  describe('Employee Creation & Zulip Provisioning Feedback Fixes', () => {
+    it('formats Zod validation error details in apiFetch', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({
+          error: 'Validation failed',
+          details: [{ path: ['password'], message: 'Password must be at least 8 characters' }],
+        }),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+
+      const { apiFetch } = await import('../src/lib/api');
+      await expect(apiFetch('/employees')).rejects.toThrow('Validation failed: Password must be at least 8 characters');
+    });
+
+    it('triggers employee creation modal and handles successful Zulip provisioning toast', async () => {
+      setUserPermissions(['portal.employees', 'employees.view', 'employees.create']);
+
+      let createdPayload: Record<string, unknown> | null = null;
+      const mockFetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes('/departments')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+        if (urlStr.includes('/centres')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+        if (urlStr.includes('/shifts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+        if (urlStr.includes('/employees') && init?.method === 'POST') {
+          createdPayload = JSON.parse(init.body as string);
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              id: 'e99',
+              full_name: createdPayload.full_name,
+              zulip_provisioned: true,
+              zulip_user_id: 42,
+            }),
+          } as Response);
+        }
+        if (urlStr.includes('/employees')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+        return Promise.resolve({ ok: false, status: 404 } as Response);
+      });
+
+      vi.stubGlobal('fetch', mockFetch);
+
+      renderEmployeesPage(container);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const addBtn = container.querySelector('#addEmployeeBtn') as HTMLButtonElement;
+      addBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const modalForm = document.querySelector('.modal-content form') as HTMLFormElement;
+      expect(modalForm).not.toBeNull();
+
+      (modalForm.querySelector('#addFullName') as HTMLInputElement).value = 'Jane Developer';
+      (modalForm.querySelector('#addEmail') as HTMLInputElement).value = 'jane@company.com';
+      (modalForm.querySelector('#addPassword') as HTMLInputElement).value = 'ValidPass123!';
+      (modalForm.querySelector('#addRoleKey') as HTMLSelectElement).value = 'admin';
+
+      const passInput = modalForm.querySelector('#addPassword') as HTMLInputElement;
+      expect(passInput.getAttribute('minlength')).toBe('8');
+
+      modalForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(createdPayload).toEqual({
+        full_name: 'Jane Developer',
+        email: 'jane@company.com',
+        password: 'ValidPass123!',
+        role_key: 'admin',
+      });
+
+      const toast = document.querySelector('.toast-container');
+      expect(toast?.textContent).toContain('provisioned in Zulip successfully');
+    });
+
+    it('displays warning toast when Zulip provisioning is pending (zulip_provisioned = false)', async () => {
+      setUserPermissions(['portal.employees', 'employees.view', 'employees.create']);
+
+      const mockFetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes('/departments') || urlStr.includes('/centres') || urlStr.includes('/shifts')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+        }
+        if (urlStr.includes('/employees') && init?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              id: 'e99',
+              full_name: 'Pending Zulip User',
+              zulip_provisioned: false,
+              warning: 'Zulip account creation failed',
+            }),
+          } as Response);
+        }
+        if (urlStr.includes('/employees')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+        return Promise.resolve({ ok: false, status: 404 } as Response);
+      });
+
+      vi.stubGlobal('fetch', mockFetch);
+
+      renderEmployeesPage(container);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const addBtn = container.querySelector('#addEmployeeBtn') as HTMLButtonElement;
+      addBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const modalForm = document.querySelector('.modal-content form') as HTMLFormElement;
+      (modalForm.querySelector('#addFullName') as HTMLInputElement).value = 'Pending Zulip User';
+      (modalForm.querySelector('#addEmail') as HTMLInputElement).value = 'pending@company.com';
+      (modalForm.querySelector('#addPassword') as HTMLInputElement).value = 'ValidPass123!';
+      (modalForm.querySelector('#addRoleKey') as HTMLSelectElement).value = 'employee';
+
+      modalForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const toast = document.querySelector('.toast-container');
+      expect(toast?.textContent).toContain('Zulip account creation failed');
+    });
+  });
 });

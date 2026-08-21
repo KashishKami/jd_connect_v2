@@ -145,7 +145,8 @@ export class EmployeeService {
         true
       );
       return updatedEmp;
-    } catch {
+    } catch (err) {
+      console.error('[EmployeeService] Zulip provisioning failed:', (err as Error).message);
       return {
         ...emp,
         zulip_provisioned: false,
@@ -167,10 +168,10 @@ export class EmployeeService {
       return employee;
     }
 
-    // Attempt creation with random/default temp password if unknown, or provision user
+    // Attempt creation with employee's work alias or full name
     const zulipRes = await this.zulipSvc.createUser({
       email: employee.email,
-      full_name: employee.full_name,
+      full_name: employee.alias || employee.full_name,
       password: 'TempPassword123!',
     });
 

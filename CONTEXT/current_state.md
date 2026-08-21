@@ -3534,3 +3534,41 @@ Create `portal/package.json` with esbuild as a devDependency. Write a `build.ts`
 > | W-1011 | Portal | Permissions Management page (new — role-permission matrix editor) |
 > | W-1012 | Portal | Dashboard Metrics page + embedded "Your Shift Today" attendance console for HR/Admin/Manager |
 
+> [!NOTE]
+> **Session Note (Phase 10 — Employee Creation & Zulip Provisioning Fixes)**
+> - **Portal Role Options Fix:** Replaced invalid `"hr"` role option with `"super_admin"` in employee forms (`portal/src/pages/employees.ts`).
+> - **Password Validation Fix:** Set form input `minlength="8"` to match backend Zod schema.
+> - **API Error Formatting Fix:** Updated `apiFetch` in `portal/src/lib/api.ts` to format Zod `details` array into explicit field error messages.
+> - **Zulip Provisioning Status Feedback:** Updated employee creation submission handler to inspect `res.zulip_provisioned` and show warning toast when Zulip provisioning is pending/failed.
+> - **Verification:** Executed `pnpm --filter @jdconnect/portal build` and `pnpm --filter @jdconnect/portal test` (**19/19 tests GREEN**).
+
+
+> **Session Note — 2026-08-21 (Post Phase 10 — Docker & Tooling Fixes)**
+>
+> #### Zulip Provisioning Debugging
+> - Investigated why Zulip provisioning appeared broken from the portal. Root cause: stale Zulip container state (expired bot session / dead container). Restarting all Docker containers resolved it. The portal was correctly calling the same backend endpoint as the old HR dashboard — nothing was bypassed or broken in code.
+> - Added `console.error` logging to the `catch` block in `EmployeeService.createEmployee()` so future Zulip provisioning failures are visible in the backend terminal instead of being silently swallowed.
+>
+> #### TypeScript Build Fix (Docker)
+> - `tsc` (strict, used in Docker production build) failed on `employee.service.ts` line 60: `Property 'joining_date' does not exist on type EmployeeResponse`. The field was present in the database schema and being stripped in the sensitive-field filter, but was never declared on the `EmployeeResponse` TypeScript interface. Added `joining_date?: string | null` to `EmployeeResponse` in `backend/src/types/employee.ts`. Dev (`ts-node`) was masking this because it does not enforce type errors at runtime.
+>
+> #### Archived Folders Consolidation
+> - `attendance-app.archived/`, `hr-dashboard.archived/`, and `rc-app.archived/` moved into a single top-level `archived/` directory (`archived/attendance-app`, `archived/hr-dashboard`, `archived/rc-app`).
+> - `archived/**` added to ESLint ignores in `eslint.config.mjs` — lint no longer scans archived code.
+> - `archived` added to `.dockerignore` — archived folders are never sent to any Docker build context.
+> - Stale references to `docker/mongodata` and `docker/rc_uploads` removed from `.dockerignore` (those paths no longer exist).
+>
+> #### Portal Dockerfile — nginx Proxy Removed
+> - **What nginx was doing (two jobs):**
+>   - *Job 1 — Static file server:* Serving the compiled `bundle.js`, `styles.css`, `index.html` over HTTP. This is necessary and kept.
+>   - *Job 2 — Reverse proxy for `/api/*`:* Forwarding all `/api/...` browser requests to the backend container on the internal Docker network (`http://api:4000`). The intent was to eliminate CORS by making the browser always call the same origin (`localhost:3201/api/...`).
+> - **Why Job 2 was removed:** The proxy never worked as intended. `build.mjs` bakes `BACKEND_URL` into `bundle.js` as an absolute URL at build time. In Docker, because the root `.env` is not copied into the build context, the fallback `http://127.0.0.1:4000` was baked in. The browser called that absolute URL directly, bypassing nginx entirely — causing a CORS error because the dev backend (`port 4000`) does not allow `localhost:3201`. The proxy only would have worked if the frontend made relative calls (`/api/...`), but esbuild substitutes an absolute string.
+> - **New approach (same as old `attendance-app` and `hr-dashboard`):** nginx serves static files only. `BACKEND_URL` is now passed as a Docker build arg (`BACKEND_URL: http://localhost:4001` in `docker-compose.local-test.yml`) and baked correctly into `bundle.js`. The browser calls `http://localhost:4001/api/...` directly. The Docker test API's `ALLOWED_CORS_ORIGINS` already includes `http://localhost:3201`, so CORS is satisfied.
+> - `portal/build.mjs` updated to read `process.env.BACKEND_URL` first (set by Docker build arg `ARG BACKEND_URL`) before falling back to the `.env` file and then the hardcoded default.
+>
+> #### docker-compose.local-test.yml Cleanup
+> - Removed isolated test Postgres container — using dev Postgres via `host.docker.internal:5432` intentionally (no separate migration step needed).
+> - Removed `BACKEND_URL` from `api` service environment (the backend never reads this variable; it is a portal build-time concern only).
+> - Portal build arg changed from `BACKEND_INTERNAL_URL: http://api:4000` (for the removed nginx proxy) to `BACKEND_URL: http://localhost:4001` (baked into bundle.js for browser use).
+> - Stale comments about `jdconnect_test_postgres` removed from `complete_local_setup.md`.
+

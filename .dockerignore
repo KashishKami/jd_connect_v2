@@ -23,6 +23,7 @@ logs
 
 # Ignore Docker volumes & specific folders
 docker/pgdata
-docker/mongodata
-docker/rc_uploads
 docker/zulip
+
+# Archived old apps — never needed in any Docker build context
+archived
