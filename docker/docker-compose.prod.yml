@@ -49,10 +49,12 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: 15m
       ZULIP_BASE_URL: ${ZULIP_BASE_URL}
+      # In production, ZULIP_BASE_URL is a real domain (e.g. https://chat.jdfusion.in).
+      # Node's fetch will send Host: chat.jdfusion.in which IS in Zulip's ALLOWED_HOSTS.
+      # ZULIP_HOST_OVERRIDE is therefore NOT needed in production.
       ZULIP_BOT_EMAIL: ${ZULIP_BOT_EMAIL}
       ZULIP_BOT_API_KEY: ${ZULIP_BOT_API_KEY}
       ZULIP_ATTENDANCE_STREAM: attendance
-      HR_DASHBOARD_URL: ${HR_DASHBOARD_URL}
       CLOCK_APP_URL: ${CLOCK_APP_URL}
       ALLOWED_CORS_ORIGINS: ${ALLOWED_CORS_ORIGINS}
     depends_on:
@@ -74,38 +76,20 @@ services:
       - "traefik.http.routers.jdconnect-api-http.entrypoints=web"
       - "traefik.http.routers.jdconnect-api-http.middlewares=redirect-to-https@docker"
 
-  # ── Attendance Web App ────────────────────────────────────────────────────
-  attendance-app:
-    image: ghcr.io/${REPO_LOWER}/attendance-app:latest
-    container_name: jdconnect_attendance
+  # ── Portal (HR Dashboard + Attendance Clock — unified app) ────────────────
+  portal:
+    image: ghcr.io/${REPO_LOWER}/portal:latest
+    container_name: jdconnect_portal
     restart: always
     networks:
       - root_default
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
-      - "traefik.http.routers.jdconnect-clock.rule=Host(`clock.${DOMAIN}`)"
-      - "traefik.http.routers.jdconnect-clock.entrypoints=websecure"
-      - "traefik.http.routers.jdconnect-clock.tls.certresolver=mytlschallenge"
-      - "traefik.http.services.jdconnect-clock.loadbalancer.server.port=80"
-      - "traefik.http.routers.jdconnect-clock-http.rule=Host(`clock.${DOMAIN}`)"
-      - "traefik.http.routers.jdconnect-clock-http.entrypoints=web"
-      - "traefik.http.routers.jdconnect-clock-http.middlewares=redirect-to-https@docker"
-
-  # ── HR & Admin Dashboard ──────────────────────────────────────────────────
-  hr-dashboard:
-    image: ghcr.io/${REPO_LOWER}/hr-dashboard:latest
-    container_name: jdconnect_hr
-    restart: always
-    networks:
-      - root_default
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=root_default"
-      - "traefik.http.routers.jdconnect-hr.rule=Host(`hr.${DOMAIN}`)"
-      - "traefik.http.routers.jdconnect-hr.entrypoints=websecure"
-      - "traefik.http.routers.jdconnect-hr.tls.certresolver=mytlschallenge"
-      - "traefik.http.services.jdconnect-hr.loadbalancer.server.port=80"
-      - "traefik.http.routers.jdconnect-hr-http.rule=Host(`hr.${DOMAIN}`)"
-      - "traefik.http.routers.jdconnect-hr-http.entrypoints=web"
-      - "traefik.http.routers.jdconnect-hr-http.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.jdconnect-portal.rule=Host(`portal.${DOMAIN}`)"
+      - "traefik.http.routers.jdconnect-portal.entrypoints=websecure"
+      - "traefik.http.routers.jdconnect-portal.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.jdconnect-portal.loadbalancer.server.port=80"
+      - "traefik.http.routers.jdconnect-portal-http.rule=Host(`portal.${DOMAIN}`)"
+      - "traefik.http.routers.jdconnect-portal-http.entrypoints=web"
+      - "traefik.http.routers.jdconnect-portal-http.middlewares=redirect-to-https@docker"

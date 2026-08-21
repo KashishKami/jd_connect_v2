@@ -5,12 +5,11 @@
 # before pointing your real domain and enabling HTTPS.
 #
 # Access after deploying:
-#   Backend API:     http://<VPS_IP>:4000
-#   Attendance App:  http://<VPS_IP>:3300
-#   HR Dashboard:    http://<VPS_IP>:3500
-#   Zulip:           https://<VPS_IP>:9991  (its own self-signed cert — accept warning)
+#   Backend API:  http://<VPS_IP>:4000
+#   Portal:       http://<VPS_IP>:3201
+#   Zulip:        https://<VPS_IP>:9991  (its own self-signed cert — accept warning)
 #
-# NOTE: Zulip is managed by its own separate compose stack in /opt/jdconnect/zulip/
+# NOTE: Zulip is managed by its own separate compose stack in /opt/jdconnect_v2/zulip/
 # ─────────────────────────────────────────────────────────────────────────────
 
 networks:
@@ -58,34 +57,29 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: 15m
       ZULIP_BASE_URL: ${ZULIP_BASE_URL}
+      # ZULIP_HOST_OVERRIDE: Django's ALLOWED_HOSTS check validates the HTTP Host header.
+      # When the backend calls Zulip via the VPS IP (e.g. https://82.x.x.x:9991), the Host
+      # header is "82.x.x.x:9991". Zulip's ALLOWED_HOSTS may not include the raw IP —
+      # set this to the value Zulip is configured with (SETTING_EXTERNAL_HOST) to fix it.
+      # Example: ZULIP_HOST_OVERRIDE: 82.29.165.21:9991
+      ZULIP_HOST_OVERRIDE: ${VPS_IP}:9991
       ZULIP_BOT_EMAIL: ${ZULIP_BOT_EMAIL}
       ZULIP_BOT_API_KEY: ${ZULIP_BOT_API_KEY}
       ZULIP_ATTENDANCE_STREAM: attendance
-      HR_DASHBOARD_URL: http://${VPS_IP}:3500
-      CLOCK_APP_URL: http://${VPS_IP}:3300
-      ALLOWED_CORS_ORIGINS: http://${VPS_IP}:3300,http://${VPS_IP}:3500,https://${VPS_IP}:9991
+      CLOCK_APP_URL: http://${VPS_IP}:3201
+      ALLOWED_CORS_ORIGINS: http://${VPS_IP}:3201,https://${VPS_IP}:9991
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - jdconnect_net
 
-  # ── Attendance Web App ────────────────────────────────────────────────────
-  attendance-app:
-    image: ghcr.io/${REPO_LOWER}/attendance-app:latest
-    container_name: jdconnect_attendance
+  # ── Portal (HR Dashboard + Attendance Clock — unified app) ────────────────
+  portal:
+    image: ghcr.io/${REPO_LOWER}/portal:latest
+    container_name: jdconnect_portal
     restart: unless-stopped
     ports:
-      - "3300:80"
-    networks:
-      - jdconnect_net
-
-  # ── HR & Admin Dashboard ──────────────────────────────────────────────────
-  hr-dashboard:
-    image: ghcr.io/${REPO_LOWER}/hr-dashboard:latest
-    container_name: jdconnect_hr
-    restart: unless-stopped
-    ports:
-      - "3500:80"
+      - "3201:80"
     networks:
       - jdconnect_net

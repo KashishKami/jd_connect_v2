@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import https from 'node:https';
 import { ZulipCreateUserPayload, ZulipUserResponse } from '../types/zulip';
 
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
@@ -73,7 +74,6 @@ export class ZulipService {
         headers['Content-Length'] = Buffer.byteLength(body).toString();
       }
 
-      const https = require('node:https') as typeof import('https');
       const req = https.request(
         {
           hostname: parsed.hostname,

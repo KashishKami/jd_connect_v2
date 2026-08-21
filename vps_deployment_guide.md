@@ -61,8 +61,7 @@ VPS
 │   Containers:
 │   ├── jdconnect_postgres         (Postgres — internal only)
 │   ├── jdconnect_api              (Backend API — image from GHCR)
-│   ├── jdconnect_attendance       (Attendance App — image from GHCR)
-│   └── jdconnect_hr               (HR Dashboard — image from GHCR)
+│   └── jdconnect_portal           (Portal — unified HR + Attendance app — image from GHCR)
 │
 └── /opt/jdconnect_v2/zulip/      ← Set up manually ONCE, never touched by CI/CD
     ├── compose.yaml              (Official Zulip — cloned from GitHub)
@@ -86,10 +85,9 @@ git push origin main
 GitHub Actions:
   1. Quality check (lint, typecheck, test, build)
   2. Build Docker image for backend → push to GHCR
-  3. Build Docker image for attendance-app → push to GHCR  
-  4. Build Docker image for hr-dashboard → push to GHCR
-  5. SCP docker-compose.prod.yml → VPS /opt/jdconnect/
-  6. SSH into VPS:
+  3. Build Docker image for portal → push to GHCR
+  4. SCP docker-compose.prod.yml → VPS /opt/jdconnect/
+  5. SSH into VPS:
        - Write .env from GitHub Secrets
        - Pull new images from GHCR
        - Restart app containers (Postgres is NOT touched)
@@ -443,12 +441,12 @@ print('BOT_API_KEY:', bot.api_key)
 >
 > **URL to use — depends on which phase you are in:**
 >
-> | Phase | Attendance App URL to use |
+> | Phase | Portal URL to use |
 > |---|---|
-> | **Phase 2** (current) | `http://<VPS_IP>:3300` |
-> | **Phase 3** (after domain + HTTPS) | `https://clock.jdfusion.in` (or your actual domain) |
+> | **Phase 2** (current) | `http://<VPS_IP>:3201` |
+> | **Phase 3** (after domain + HTTPS) | `https://portal.jdfusion.in` (or your actual domain) |
 >
-> Replace `http://<VPS_IP>:3300` in the commands below with the correct URL for your phase.
+> Replace `http://<VPS_IP>:3201` in the commands below with the correct URL for your phase.
 
 ```bash
 cd /opt/jdconnect_v2/zulip
@@ -460,7 +458,7 @@ from zerver.actions.streams import do_change_stream_description
 realm = Realm.objects.get(string_id='')
 acting_user = UserProfile.objects.get(delivery_email='admin@company.com', realm=realm)
 stream = Stream.objects.get(name='attendance', realm=realm)
-do_change_stream_description(stream, 'Clock in / Clock out: http://<VPS_IP>:3300', acting_user=acting_user)
+do_change_stream_description(stream, 'Clock in / Clock out: http://<VPS_IP>:3201', acting_user=acting_user)
 print('Done:', stream.description)
 "
 
@@ -471,7 +469,7 @@ from zerver.actions.streams import do_change_stream_description
 realm = Realm.objects.get(string_id='')
 acting_user = UserProfile.objects.get(delivery_email='admin@company.com', realm=realm)
 stream = Stream.objects.get(name='Breaks', realm=realm)
-do_change_stream_description(stream, 'Log your break here: http://<VPS_IP>:3300', acting_user=acting_user)
+do_change_stream_description(stream, 'Log your break here: http://<VPS_IP>:3201', acting_user=acting_user)
 print('Done:', stream.description)
 "
 ```
@@ -483,7 +481,7 @@ print('Done:', stream.description)
 >
 > **To verify:** Open Zulip → click `# attendance` in the sidebar (not a topic inside it, the channel itself) → the description with the link appears at the top.
 >
-> **When switching to Phase 3:** Re-run both commands with `https://clock.jdfusion.in` (or your domain) to update the descriptions.
+> **When switching to Phase 3:** Re-run both commands with `https://portal.jdfusion.in` (or your domain) to update the descriptions.
 
 Verify Zulip is accessible:
 ```bash
@@ -546,17 +544,14 @@ From your Windows machine:
 curl http://<VPS_IP>:4000/health
 # Expected: {"status":"ok"}
 
-# Attendance App (open in browser)
-# http://<VPS_IP>:3300
-
-# HR Dashboard (open in browser)
-# http://<VPS_IP>:3500
+# Portal — HR Dashboard + Attendance Clock (open in browser)
+# http://<VPS_IP>:3201
 
 # Zulip (open in browser — accept the self-signed cert warning)
 # https://<VPS_IP>:9991
 ```
 
-Log into the HR Dashboard with `admin@company.com` / `AdminPassword123!` — you should see the employee list load.
+Log into the Portal with `admin@company.com` / `AdminPassword123!` — you should see the HR employee list load.
 Log into Zulip with the same credentials.
 
 **If Phase 2 is working: proceed to Step 9.5 to migrate employee data, then Phase 3 begins.**
@@ -671,7 +666,7 @@ scp root@<NEW_VPS_IP>:/opt/jdconnect_v2/migration_passwords.csv C:\Users\Adminis
 docker exec jdconnect_postgres psql -U <POSTGRES_USER> -d jdconnect -c "SELECT COUNT(*) FROM employees;"
 ```
 
-Log into the HR Dashboard at `http://<VPS_IP>:3500` — the employee list should show all migrated records.
+Log into the Portal at `http://<VPS_IP>:3201` — the employee list should show all migrated records.
 
 ---
 ---
@@ -691,19 +686,18 @@ Add these `A` records (set TTL to `300` while testing — raise to `3600` after 
 | Subdomain | Type | Value | TTL |
 |---|---|---|---|
 | `api` | A | `<VPS_IP>` | 300 |
-| `clock` | A | `<VPS_IP>` | 300 |
-| `hr` | A | `<VPS_IP>` | 300 |
+| `portal` | A | `<VPS_IP>` | 300 |
 | `chat` | A | `<VPS_IP>` | 300 |
 
 Example: if your domain is `jdfusion.in`, your subdomains will be:
 - `api.jdfusion.in` → Backend API
-- `clock.jdfusion.in` → Attendance App
-- `hr.jdfusion.in` → HR Dashboard
+- `portal.jdfusion.in` → Portal (HR + Attendance)
 - `chat.jdfusion.in` → Zulip
 
 Verify DNS is propagating (repeat until you see your VPS IP):
 ```powershell
 nslookup api.jdfusion.in
+nslookup portal.jdfusion.in
 nslookup chat.jdfusion.in
 ```
 
@@ -728,14 +722,14 @@ source: "docker/docker-compose.prod.yml"
 **Change 2 — SSH script** (the `docker compose` restart line, around line 240):
 ```bash
 # Before (Phase 2):
-docker compose -f docker-compose.vps-test.yml up -d --no-deps api attendance-app hr-dashboard
+docker compose -f docker-compose.vps-test.yml up -d api portal
 
 # After (Phase 3):
-docker compose -f docker-compose.prod.yml up -d --no-deps api attendance-app hr-dashboard
+docker compose -f docker-compose.prod.yml up -d api portal
 ```
 
 **Why two separate compose files?**
-- `docker-compose.vps-test.yml` exposes ports directly (`4000:4000`, `3300:80`, `3500:80`). Browsers connect straight to the VPS IP + port. No Traefik involved.
+- `docker-compose.vps-test.yml` exposes ports directly (`4000:4000`, `3201:80`). Browsers connect straight to the VPS IP + port. No Traefik involved.
 - `docker-compose.prod.yml` exposes **no ports** — Traefik reads the `Host()` labels and routes traffic based on your domain name. If there is no domain pointed at the VPS, the services are completely unreachable.
 
 You cannot use `docker-compose.prod.yml` in Phase 2 (raw IP access would be blocked), and you cannot use `docker-compose.vps-test.yml` in Phase 3 (Traefik labels are absent, so your domain subdomains won't route). They are structurally different files.
@@ -899,10 +893,9 @@ Update these secrets in GitHub → **Settings** → **Secrets and variables** �
 |---|---|
 | `PROD_DOMAIN` | `jdfusion.in` (your actual domain, no subdomain prefix) |
 | `PROD_BACKEND_URL` | `https://api.jdfusion.in` |
-| `HR_DASHBOARD_URL` | `https://hr.jdfusion.in` |
-| `CLOCK_APP_URL` | `https://clock.jdfusion.in` |
+| `CLOCK_APP_URL` | `https://portal.jdfusion.in` |
 | `ZULIP_BASE_URL` | `https://chat.jdfusion.in` |
-| `ALLOWED_CORS_ORIGINS` | `https://clock.jdfusion.in,https://hr.jdfusion.in,https://chat.jdfusion.in` |
+| `ALLOWED_CORS_ORIGINS` | `https://portal.jdfusion.in,https://chat.jdfusion.in` |
 
 Trigger a redeploy by pushing a commit:
 ```powershell
@@ -910,7 +903,7 @@ git commit --allow-empty -m "deploy: switch to Phase 3 production domains"
 git push origin main
 ```
 
-> The pipeline will rebuild the attendance-app and hr-dashboard images with the new `BACKEND_URL` baked in, and redeploy all containers with the production `.env` written from the updated secrets.
+> The pipeline will rebuild the portal image with the new `BACKEND_URL` baked in, and redeploy all containers with the production `.env` written from the updated secrets.
 
 ---
 
@@ -923,8 +916,7 @@ docker logs $(docker ps --filter "name=traefik" --format "{{.Names}}" | head -1)
 
 # Test HTTPS endpoints
 curl -I https://api.jdfusion.in/health
-curl -I https://clock.jdfusion.in
-curl -I https://hr.jdfusion.in
+curl -I https://portal.jdfusion.in
 curl -I https://chat.jdfusion.in
 ```
 
@@ -965,9 +957,8 @@ Go to your GitHub repo → **Settings** → **Secrets and variables** → **Acti
 |---|---|---|
 | `PROD_DOMAIN` | `<VPS_IP>` (e.g. `82.29.165.21`) | `jdfusion.in` |
 | `PROD_BACKEND_URL` | `http://<VPS_IP>:4000` | `https://api.jdfusion.in` |
-| `HR_DASHBOARD_URL` | `http://<VPS_IP>:3500` | `https://hr.jdfusion.in` |
-| `CLOCK_APP_URL` | `http://<VPS_IP>:3300` | `https://clock.jdfusion.in` |
-| `ALLOWED_CORS_ORIGINS` | `http://<VPS_IP>:3300,http://<VPS_IP>:3500,https://<VPS_IP>:9991` | `https://clock.jdfusion.in,https://hr.jdfusion.in,https://chat.jdfusion.in` |
+| `CLOCK_APP_URL` | `http://<VPS_IP>:3201` | `https://portal.jdfusion.in` |
+| `ALLOWED_CORS_ORIGINS` | `http://<VPS_IP>:3201,https://<VPS_IP>:9991` | `https://portal.jdfusion.in,https://chat.jdfusion.in` |
 
 > [!NOTE]
 > `VPS_IP` is **not a separate GitHub Secret**. The pipeline automatically writes `VPS_IP=${{ secrets.VPS_HOST }}` into the `.env` file on the VPS — so the value comes from `VPS_HOST` (which already holds the raw IP). No extra secret needed.
@@ -1021,11 +1012,9 @@ docker logs jdconnect_api -f --tail=100
 
 ### Restart a single container
 ```bash
-docker restart jdconnect_api          # Backend API
-
-docker restart jdconnect_attendance   # Attendance App
-docker restart jdconnect_hr           # HR Dashboard
-docker restart jdconnect_postgres     # Postgres (careful — brief downtime)
+docker restart jdconnect_api      # Backend API
+docker restart jdconnect_portal   # Portal (HR + Attendance)
+docker restart jdconnect_postgres # Postgres (careful — brief downtime)
 ```
 
 ### Update Zulip (when a new Zulip version is released)
@@ -1070,7 +1059,7 @@ Following the JD CRM pattern: the VPS only runs pre-built Docker images. Buildin
 The backend URL is baked into the Docker image at build time (`BACKEND_URL` build arg). After changing `PROD_BACKEND_URL` in GitHub Secrets, trigger a redeploy — the pipeline rebuilds the images with the new URL.
 
 ### Zulip's external SSO (OIDC) — when does it work?
-The "Sign in with Zulip" button in the Attendance App requires full HTTPS with matching domains (Phase 3). It does not work in Phase 2 (plain HTTP, raw VPS IP). The JWT login in the Attendance App works in all phases.
+The "Sign in with Zulip" button in the Portal requires full HTTPS with matching domains (Phase 3). It does not work in Phase 2 (plain HTTP, raw VPS IP). The JWT login in the Portal works in all phases.
 
 ### Can I use a different domain structure?
 Yes. Instead of subdomains (`api.jdfusion.in`), you can use:
