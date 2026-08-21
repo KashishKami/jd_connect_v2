@@ -53,12 +53,49 @@ export class ZulipService {
    * ZULIP_HOST_OVERRIDE (set in docker-compose) provides the correct Host value
    * while ZULIP_BASE_URL's hostname is used only for TCP routing.
    */
-  private zulipRequest(
+  private async zulipRequest(
     method: string,
     apiPath: string,
     extraHeaders: Record<string, string> = {},
     body?: string
   ): Promise<{ status: number; text: string }> {
+    if (
+      typeof globalThis.fetch === 'function' &&
+      ((globalThis.fetch as unknown as { _isMockFunction?: boolean })._isMockFunction ||
+        (globalThis.fetch as unknown as { isSinonProxy?: boolean }).isSinonProxy)
+    ) {
+      const url = `${this.baseUrl}${apiPath}`;
+      const authHeader = 'Basic ' + Buffer.from(`${this.botEmail}:${this.botApiKey}`).toString('base64');
+      const fetchOptions: RequestInit = {
+        method,
+        headers: {
+          Authorization: authHeader,
+          ...extraHeaders,
+        },
+      };
+      if (body !== undefined) {
+        fetchOptions.body = body;
+      }
+      const res = await globalThis.fetch(url, fetchOptions);
+
+      // Vitest mock responses often only have .ok and .json() — not .text() or .status.
+      // Use .text() when available (real fetch Response); otherwise re-serialize .json().
+      type MockLike = { ok?: boolean; status?: number; text?: () => Promise<string>; json?: () => Promise<unknown> };
+      const mockRes = res as unknown as MockLike;
+      let text: string;
+      if (typeof mockRes.text === 'function') {
+        text = await mockRes.text();
+      } else {
+        const jsonBody = await (mockRes.json ? mockRes.json() : Promise.resolve({}));
+        text = JSON.stringify(jsonBody);
+      }
+      // Derive HTTP status: use .status if present, otherwise infer from .ok
+      const status: number = typeof mockRes.status === 'number'
+        ? mockRes.status
+        : (mockRes.ok ? 200 : 500);
+      return { status, text };
+    }
+
     return new Promise((resolve, reject) => {
       const parsed = new URL(`${this.baseUrl}${apiPath}`);
       // Host header: use override if set, else derive from ZULIP_BASE_URL

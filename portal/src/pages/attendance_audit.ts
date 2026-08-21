@@ -1,5 +1,6 @@
 import { guardRoute } from '../lib/auth';
 import { apiFetch } from '../lib/api';
+import { formatESTTime } from '../lib/format';
 
 interface AttendanceAuditRow {
   id: string;
@@ -25,6 +26,7 @@ export function renderAttendanceAuditPage(container: HTMLElement): void {
     <div class="main-content">
       <div class="section-header">
         <h2>Attendance Audit & History</h2>
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">ℹ️ All dates and times are displayed in EST (Eastern Standard Time)</span>
       </div>
 
       <div class="filter-bar">
@@ -32,6 +34,7 @@ export function renderAttendanceAuditPage(container: HTMLElement): void {
         <input type="date" id="auditDate" class="select-filter" />
         <select id="auditStatus" class="select-filter">
           <option value="">All Statuses</option>
+          <option value="logged_in">Logged in</option>
           <option value="present">Present</option>
           <option value="late">Late</option>
           <option value="half_day">Half Day</option>
@@ -77,6 +80,64 @@ function initAttendanceAuditLogic(container: HTMLElement): void {
   const statusSelect = container.querySelector('#auditStatus') as HTMLSelectElement;
   const todayBtn = container.querySelector('#auditTodayBtn') as HTMLButtonElement;
 
+  const prevBtn = container.querySelector('#auditPrev') as HTMLButtonElement;
+  const nextBtn = container.querySelector('#auditNext') as HTMLButtonElement;
+  const pageInfo = container.querySelector('#auditPageInfo') as HTMLSpanElement;
+
+  let allLogs: AttendanceAuditRow[] = [];
+  let currentPage = 1;
+  const PAGE_SIZE = 20;
+
+  function renderPage() {
+    if (allLogs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No attendance records found.</td></tr>';
+      if (pageInfo) pageInfo.textContent = 'Page 1 of 1';
+      if (prevBtn) prevBtn.disabled = true;
+      if (nextBtn) nextBtn.disabled = true;
+      return;
+    }
+
+    const totalPages = Math.ceil(allLogs.length / PAGE_SIZE) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const pageSlice = allLogs.slice(startIdx, startIdx + PAGE_SIZE);
+
+    tbody.innerHTML = pageSlice.map((l) => {
+      const empName = l.employee_name || l.full_name || 'Employee';
+      const isUnclosed = !l.clock_out_at && l.clock_in_at && l.status !== 'present';
+      const isLate = l.is_late || l.status === 'late';
+      
+      let badgeClass = 'badge-purple';
+      let statusText = l.status;
+      if (l.status === 'present') {
+        badgeClass = 'badge-success';
+      } else if (isUnclosed) {
+        badgeClass = 'badge-warning';
+        statusText = 'Logged in';
+      } else if (isLate) {
+        badgeClass = 'badge-warning';
+        statusText = `${l.status} (Late)`;
+      }
+
+      return `
+        <tr>
+          <td><strong>${empName}</strong></td>
+          <td>${l.work_date}</td>
+          <td>${formatESTTime(l.clock_in_at)}</td>
+          <td>${formatESTTime(l.clock_out_at)}</td>
+          <td>${l.hours_worked ?? '-'}</td>
+          <td><span class="badge ${badgeClass}">${statusText}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+  }
+
   async function loadAuditLogs() {
     try {
       const params = new URLSearchParams();
@@ -88,32 +149,33 @@ function initAttendanceAuditLogic(container: HTMLElement): void {
       if (statusSelect?.value) params.set('status', statusSelect.value);
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
-      const logs = await apiFetch<AttendanceAuditRow[]>(`/attendance${queryString}`);
-
-      if (logs.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No attendance records found.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = logs.map((l) => {
-        const empName = l.employee_name || l.full_name || 'Employee';
-        const isLate = l.is_late || l.status === 'late';
-        const badgeClass = l.status === 'present' ? 'badge-success' : (isLate ? 'badge-warning' : 'badge-purple');
-
-        return `
-          <tr>
-            <td><strong>${empName}</strong></td>
-            <td>${l.work_date}</td>
-            <td>${l.clock_in_at ? new Date(l.clock_in_at).toLocaleTimeString() : '-'}</td>
-            <td>${l.clock_out_at ? new Date(l.clock_out_at).toLocaleTimeString() : '-'}</td>
-            <td>${l.hours_worked ?? '-'}</td>
-            <td><span class="badge ${badgeClass}">${l.status}${isLate ? ' (Late)' : ''}</span></td>
-          </tr>
-        `;
-      }).join('');
+      allLogs = await apiFetch<AttendanceAuditRow[]>(`/attendance${queryString}`);
+      currentPage = 1;
+      renderPage();
     } catch {
       tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--accent-red);">Failed to load audit records.</td></tr>';
     }
+  }
+
+  if (prevBtn) {
+    prevBtn.onclick = () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderPage();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+  }
+
+  if (nextBtn) {
+    nextBtn.onclick = () => {
+      const totalPages = Math.ceil(allLogs.length / PAGE_SIZE);
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderPage();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
   }
 
   if (todayBtn) {

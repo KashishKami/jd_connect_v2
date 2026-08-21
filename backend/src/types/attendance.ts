@@ -1,4 +1,5 @@
 export type AttendanceStatus =
+  | 'logged_in'
   | 'present'
   | 'half_day'
   | 'absent'

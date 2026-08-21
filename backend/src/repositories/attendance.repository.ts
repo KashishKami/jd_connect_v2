@@ -21,6 +21,27 @@ export class AttendanceRepository {
     return result.rows[0] || null;
   }
 
+  async findAnyOpenRecord(employeeId: string): Promise<AttendanceRecord | null> {
+    const result = await pool.query(
+      `SELECT * FROM attendance_records
+       WHERE employee_id = $1 AND clock_out_at IS NULL
+       ORDER BY clock_in_at DESC
+       LIMIT 1`,
+      [employeeId]
+    );
+
+    return result.rows[0] || null;
+  }
+
+  async findAllOpenRecords(): Promise<AttendanceRecord[]> {
+    const result = await pool.query(
+      `SELECT * FROM attendance_records
+       WHERE clock_out_at IS NULL`
+    );
+
+    return result.rows;
+  }
+
   async createClockIn(employeeId: string, workDate: string, clockInAt: Date): Promise<AttendanceRecord> {
     const result = await pool.query(
       `INSERT INTO attendance_records (employee_id, work_date, clock_in_at, status, source)
@@ -75,8 +96,12 @@ export class AttendanceRepository {
       conditions.push(`a.work_date <= $${values.length}`);
     }
     if (filters.status) {
-      values.push(filters.status);
-      conditions.push(`a.status = $${values.length}`);
+      if ((filters.status as string) === 'logged_in') {
+        conditions.push(`a.clock_out_at IS NULL AND a.clock_in_at IS NOT NULL`);
+      } else {
+        values.push(filters.status);
+        conditions.push(`a.status = $${values.length}`);
+      }
     }
     if (filters.search) {
       values.push(`%${filters.search}%`);

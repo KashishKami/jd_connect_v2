@@ -18,9 +18,9 @@ export class EmployeeRepository {
     const res = await this.dbPool.query<EmployeeResponse>(
       `INSERT INTO employees (
          auth_user_id, full_name, alias, email, mobile, department_id, role_id,
-         centre_id, shift_id, team_leader_id, manager_id, designation, zulip_provisioned
+         centre_id, shift_id, team_leader_id, manager_id, designation, employee_code, joining_date, zulip_provisioned
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, 'EMP-' || UPPER(SUBSTRING(MD5(RANDOM()::TEXT), 1, 6))), $14, false)
        RETURNING *`,
       [
         authUserId,
@@ -35,6 +35,8 @@ export class EmployeeRepository {
         data.team_leader_id || null,
         data.manager_id || null,
         data.designation || null,
+        data.employee_code ? data.employee_code.trim() : null,
+        data.joining_date || null,
       ]
     );
     return res.rows[0];
@@ -63,8 +65,10 @@ export class EmployeeRepository {
     }
 
     if (filters?.role_key && filters.role_key.trim()) {
-      params.push(filters.role_key.trim());
-      conditions.push(`r.key = $${params.length}`);
+      const roleVal = filters.role_key.trim();
+      params.push(roleVal);
+      const roleIdx = params.length;
+      conditions.push(`(r.key::text = $${roleIdx} OR r.name ILIKE $${roleIdx})`);
     }
 
     if (filters?.status && filters.status.trim()) {
@@ -89,12 +93,16 @@ export class EmployeeRepository {
     return res.rows;
   }
 
-  async findByZulipUserId(zulipUserId: number): Promise<EmployeeResponse | null> {
+  async findZulipUser(zulipUserId: number): Promise<EmployeeResponse | null> {
     const res = await pool.query<EmployeeResponse>(
       'SELECT * FROM employees WHERE zulip_user_id = $1',
       [zulipUserId]
     );
     return res.rows[0] || null;
+  }
+
+  async findByZulipUserId(zulipUserId: number): Promise<EmployeeResponse | null> {
+    return this.findZulipUser(zulipUserId);
   }
 
   async findByEmail(email: string): Promise<EmployeeResponse | null> {
@@ -138,6 +146,8 @@ export class EmployeeRepository {
     const allowedColumns = [
       'full_name',
       'alias',
+      'employee_code',
+      'joining_date',
       'designation',
       'department_id',
       'role_id',

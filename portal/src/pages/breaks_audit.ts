@@ -1,5 +1,6 @@
 import { guardRoute } from '../lib/auth';
 import { apiFetch } from '../lib/api';
+import { formatESTTime } from '../lib/format';
 
 interface BreakAuditRow {
   id: string;
@@ -30,6 +31,7 @@ export function renderBreaksAuditPage(container: HTMLElement): void {
     <div class="main-content">
       <div class="section-header">
         <h2>Breaks Audit & Overbreak Monitor</h2>
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">ℹ️ All dates and times are displayed in EST (Eastern Standard Time)</span>
       </div>
 
       <div class="filter-bar">
@@ -80,6 +82,14 @@ function initBreaksAuditLogic(container: HTMLElement): void {
   const typeSelect = container.querySelector('#breakTypeFilter') as HTMLSelectElement;
   const statusSelect = container.querySelector('#breakStatusFilter') as HTMLSelectElement;
 
+  const prevBtn = container.querySelector('#breakAuditPrev') as HTMLButtonElement;
+  const nextBtn = container.querySelector('#breakAuditNext') as HTMLButtonElement;
+  const pageInfo = container.querySelector('#breakAuditPageInfo') as HTMLSpanElement;
+
+  let allLogs: BreakAuditRow[] = [];
+  let currentPage = 1;
+  const PAGE_SIZE = 20;
+
   async function loadBreakTypes() {
     if (!typeSelect) return;
     try {
@@ -95,6 +105,44 @@ function initBreaksAuditLogic(container: HTMLElement): void {
     }
   }
 
+  function renderPage() {
+    if (allLogs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No break records found.</td></tr>';
+      if (pageInfo) pageInfo.textContent = 'Page 1 of 1';
+      if (prevBtn) prevBtn.disabled = true;
+      if (nextBtn) nextBtn.disabled = true;
+      return;
+    }
+
+    const totalPages = Math.ceil(allLogs.length / PAGE_SIZE) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const pageSlice = allLogs.slice(startIdx, startIdx + PAGE_SIZE);
+
+    tbody.innerHTML = pageSlice.map((l) => {
+      const empName = l.employee_name || l.full_name || 'Employee';
+      const breakName = l.break_type_name || l.break_name || 'Break';
+      const badgeClass = l.status === 'exceeded' ? 'badge-danger' : (l.status === 'active' ? 'badge-warning' : 'badge-success');
+
+      return `
+        <tr>
+          <td><strong>${empName}</strong></td>
+          <td>${breakName}</td>
+          <td>${formatESTTime(l.start_at)}</td>
+          <td>${formatESTTime(l.end_at)}</td>
+          <td>${l.duration_minutes ?? '-'}</td>
+          <td><span class="badge ${badgeClass}">${l.status}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+  }
+
   async function loadBreakAuditLogs() {
     try {
       const params = new URLSearchParams();
@@ -103,32 +151,33 @@ function initBreaksAuditLogic(container: HTMLElement): void {
       if (statusSelect?.value) params.set('status', statusSelect.value);
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
-      const logs = await apiFetch<BreakAuditRow[]>(`/breaks${queryString}`);
-
-      if (logs.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No break records found.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = logs.map((l) => {
-        const empName = l.employee_name || l.full_name || 'Employee';
-        const breakName = l.break_type_name || l.break_name || 'Break';
-        const badgeClass = l.status === 'exceeded' ? 'badge-danger' : (l.status === 'active' ? 'badge-warning' : 'badge-success');
-
-        return `
-          <tr>
-            <td><strong>${empName}</strong></td>
-            <td>${breakName}</td>
-            <td>${l.start_at ? new Date(l.start_at).toLocaleTimeString() : '-'}</td>
-            <td>${l.end_at ? new Date(l.end_at).toLocaleTimeString() : '-'}</td>
-            <td>${l.duration_minutes ?? '-'}</td>
-            <td><span class="badge ${badgeClass}">${l.status}</span></td>
-          </tr>
-        `;
-      }).join('');
+      allLogs = await apiFetch<BreakAuditRow[]>(`/breaks${queryString}`);
+      currentPage = 1;
+      renderPage();
     } catch {
       tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--accent-red);">Failed to load break audit logs.</td></tr>';
     }
+  }
+
+  if (prevBtn) {
+    prevBtn.onclick = () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderPage();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+  }
+
+  if (nextBtn) {
+    nextBtn.onclick = () => {
+      const totalPages = Math.ceil(allLogs.length / PAGE_SIZE);
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderPage();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
   }
 
   if (searchInput) searchInput.oninput = () => loadBreakAuditLogs();

@@ -11,6 +11,8 @@ const createEmployeeSchema = z.object({
   alias: z.string().optional(),
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  employee_code: z.string().optional(),
+  joining_date: z.string().optional(),
   role_id: z.string().uuid('Invalid role_id UUID').optional(),
   role_key: z.string().optional(),
   mobile: z.string().optional(),
@@ -31,6 +33,8 @@ const resetPasswordSchema = z.object({
 const updateEmployeeSchema = z.object({
   full_name: z.string().min(1).optional(),
   alias: z.string().optional(),
+  employee_code: z.string().optional(),
+  joining_date: z.string().nullable().optional(),
   designation: z.string().optional(),
   department_id: z.string().uuid().nullable().optional(),
   role_key: z.string().optional(),
@@ -53,7 +57,9 @@ router.get(
       const filters = {
         search: typeof req.query.search === 'string' ? req.query.search : undefined,
         department_id: typeof req.query.department_id === 'string' ? req.query.department_id : undefined,
-        role_key: typeof req.query.role_key === 'string' ? req.query.role_key : undefined,
+        role_key: typeof req.query.role_key === 'string'
+          ? req.query.role_key
+          : (typeof req.query.role === 'string' ? req.query.role : undefined),
         status: typeof req.query.status === 'string' ? req.query.status : undefined,
       };
       const callerPermissions = await permissionsService.getMyPermissions(req.employee?.roles || []);

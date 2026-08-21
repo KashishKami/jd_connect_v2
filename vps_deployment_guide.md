@@ -312,6 +312,14 @@ ls -lh /opt/jdconnect_v2/zulip/zulip-notion-theme.css /opt/jdconnect_v2/zulip/ng
 # Both should show file sizes > 0
 ```
 
+> [!IMPORTANT]
+> **Configure the Floating Portal Button URL in `nginx-custom-theme.conf`:**
+> Open `/opt/jdconnect_v2/zulip/nginx-custom-theme.conf` on the VPS and replace `YOUR_PORTAL_URL` with your actual Portal URL:
+> - **Phase 2 (IP Access):** Set `href="http://<VPS_IP>:3201"`.
+> - **Phase 3 (Domain + HTTPS):** Update `href="https://portal.jdfusion.in"` (or your production domain).
+>
+> *(Nginx injects this floating button into every Zulip page so users can jump straight to the Portal at any time).*
+
 **Initialize and start Zulip** (one-time — takes ~5 minutes):
 ```bash
 cd /opt/jdconnect_v2/zulip

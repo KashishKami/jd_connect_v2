@@ -3,6 +3,8 @@ export interface CreateEmployeeInput {
   alias?: string | undefined;
   email: string;
   password: string;
+  employee_code?: string | undefined;
+  joining_date?: string | undefined;
   role_id?: string | undefined;
   role_key?: string | undefined;
   mobile?: string | undefined;
@@ -49,6 +51,8 @@ export interface EmployeeFilters {
 export interface UpdateEmployeeInput {
   full_name?: string | undefined;
   alias?: string | undefined;
+  employee_code?: string | undefined;
+  joining_date?: string | null | undefined;
   designation?: string | undefined;
   department_id?: string | null | undefined;
   role_id?: string | undefined;

@@ -158,8 +158,10 @@ cp docker/zulip-theme-templates/nginx-custom-theme.conf docker/zulip/nginx-custo
 ```
 
 > [!NOTE]
-> **Custom Theme & Zero Container Modifications:**
-> We never modify any files directly inside the Zulip Docker container. The custom Outfit font and Dual Notion (Light & Dark) themes are applied 100% declaratively via the volume mounts and Nginx configuration in `compose.override.yaml`. Copying these two configuration files into `docker/zulip/` ensures any fresh deployment automatically receives the customized theme on first boot.
+> **Custom Theme, Floating Portal Button & Zero Container Modifications:**
+> We never modify any files directly inside the Zulip Docker container. The custom Outfit font, Dual Notion themes, and floating Portal navigation button are applied 100% declaratively via volume mounts and Nginx `sub_filter` in `compose.override.yaml`.
+> 
+> **Important:** In `docker/zulip/nginx-custom-theme.conf`, make sure `href="..."` points to your environment's Portal URL (`http://localhost:3201` for local development).
 
 Create `docker/zulip/.env`:
 ```dotenv

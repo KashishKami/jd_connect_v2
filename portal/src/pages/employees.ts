@@ -6,6 +6,7 @@ import { createModal } from '../components/modal';
 interface EmployeeRow {
   id: string;
   employee_code?: string;
+  joining_date?: string | null;
   full_name: string;
   alias?: string | null;
   email: string;
@@ -49,9 +50,9 @@ export function renderEmployeesPage(container: HTMLElement): void {
 
   const canCreate = hasPermission('employees.create');
   const canEdit = hasPermission('employees.edit');
-  const canFilterRole = hasPermission('employees.filter.by_role');
-  const canFilterDept = hasPermission('employees.filter.by_department');
-  const canFilterStatus = hasPermission('employees.filter.by_status');
+  const canFilterRole = true;
+  const canFilterDept = true;
+  const canFilterStatus = true;
 
   container.innerHTML = `
     <div class="main-content">
@@ -67,6 +68,7 @@ export function renderEmployeesPage(container: HTMLElement): void {
             <option value="">All Roles</option>
             <option value="super_admin">Super Admin</option>
             <option value="admin">Admin</option>
+            <option value="hr">HR</option>
             <option value="manager">Manager</option>
             <option value="team_leader">Team Leader</option>
             <option value="employee">Employee</option>
@@ -130,7 +132,13 @@ function initEmployeesLogic(
   const deptSelect = container.querySelector('#selectDeptFilter') as HTMLSelectElement;
   const statusSelect = container.querySelector('#selectStatusFilter') as HTMLSelectElement;
 
+  const prevBtn = container.querySelector('#empPrev') as HTMLButtonElement;
+  const nextBtn = container.querySelector('#empNext') as HTMLButtonElement;
+  const pageInfo = container.querySelector('#empPageInfo') as HTMLSpanElement;
+
   let employeesCache: EmployeeRow[] = [];
+  let currentPage = 1;
+  const PAGE_SIZE = 20;
 
   async function loadDepartments() {
     if (!deptSelect) return;
@@ -147,6 +155,94 @@ function initEmployeesLogic(
     }
   }
 
+  function renderPage() {
+    if (employeesCache.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">No employees found.</td></tr>';
+      if (pageInfo) pageInfo.textContent = 'Page 1 of 1';
+      if (prevBtn) prevBtn.disabled = true;
+      if (nextBtn) nextBtn.disabled = true;
+      return;
+    }
+
+    const totalPages = Math.ceil(employeesCache.length / PAGE_SIZE) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const pageSlice = employeesCache.slice(startIdx, startIdx + PAGE_SIZE);
+
+    tbody.innerHTML = pageSlice.map((e) => {
+      const code = e.employee_code || '-';
+      const aliasBadge = e.alias ? `<span class="badge badge-purple">${e.alias}</span>` : '<span style="color:var(--text-muted);">-</span>';
+      const isActive = e.employment_status === 'active';
+      
+      let zulipCell = '<span class="badge badge-success">Provisioned</span>';
+      if (!e.zulip_provisioned) {
+        zulipCell = `
+          <div style="display:flex; align-items:center; gap:0.4rem;">
+            <span class="badge badge-warning">Pending</span>
+            <button class="btn btn-secondary btn-retry-zulip" data-id="${e.id}" style="padding: 2px 6px; font-size: 0.75rem;">Retry</button>
+          </div>
+        `;
+      }
+
+      return `
+        <tr>
+          <td><code>${code}</code></td>
+          <td><strong>${e.full_name}</strong></td>
+          <td>${aliasBadge}</td>
+          <td>
+            <div style="font-weight: 500;">${e.email}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">${e.mobile || 'No phone'}</div>
+          </td>
+          <td>${e.designation || '-'}</td>
+          <td>${e.department || '-'}</td>
+          <td>${e.centre || e.centre_name || '-'}</td>
+          <td><span class="badge badge-purple">${e.role || 'employee'}</span></td>
+          <td><span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">${e.employment_status}</span></td>
+          <td>${zulipCell}</td>
+          ${flags.canEdit ? `<td><button class="btn btn-secondary btn-edit-emp" data-id="${e.id}">Edit</button></td>` : ''}
+        </tr>
+      `;
+    }).join('');
+
+    // Attach edit button listeners
+    tbody.querySelectorAll('.btn-edit-emp').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        const target = ev.target as HTMLButtonElement;
+        const empId = target.dataset.id;
+        const emp = employeesCache.find((x) => x.id === empId);
+        if (emp) {
+          openEditEmployeeModal(emp, loadEmployees);
+        }
+      });
+    });
+
+    // Attach retry zulip listeners
+    tbody.querySelectorAll('.btn-retry-zulip').forEach((btn) => {
+      btn.addEventListener('click', async (ev) => {
+        const target = ev.target as HTMLButtonElement;
+        const empId = target.dataset.id;
+        if (!empId) return;
+        target.disabled = true;
+        target.textContent = 'Retrying...';
+        try {
+          await apiFetch(`/employees/${empId}/retry-zulip-provisioning`, { method: 'POST' });
+          showToast('Zulip provisioning completed successfully', 'success');
+          await loadEmployees();
+        } catch (err) {
+          showToast((err as Error).message, 'danger');
+          target.disabled = false;
+          target.textContent = 'Retry';
+        }
+      });
+    });
+
+    if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+  }
+
   async function loadEmployees() {
     try {
       const params = new URLSearchParams();
@@ -157,81 +253,32 @@ function initEmployeesLogic(
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
       employeesCache = await apiFetch<EmployeeRow[]>(`/employees${queryString}`);
-
-      if (employeesCache.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">No employees found.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = employeesCache.map((e) => {
-        const code = e.employee_code || '-';
-        const aliasBadge = e.alias ? `<span class="badge badge-purple">${e.alias}</span>` : '<span style="color:var(--text-muted);">-</span>';
-        const isActive = e.employment_status === 'active';
-        
-        let zulipCell = '<span class="badge badge-success">Provisioned</span>';
-        if (!e.zulip_provisioned) {
-          zulipCell = `
-            <div style="display:flex; align-items:center; gap:0.4rem;">
-              <span class="badge badge-warning">Pending</span>
-              <button class="btn btn-secondary btn-retry-zulip" data-id="${e.id}" style="padding: 2px 6px; font-size: 0.75rem;">Retry</button>
-            </div>
-          `;
-        }
-
-        return `
-          <tr>
-            <td><code>${code}</code></td>
-            <td><strong>${e.full_name}</strong></td>
-            <td>${aliasBadge}</td>
-            <td>
-              <div style="font-weight: 500;">${e.email}</div>
-              <div style="font-size: 0.8rem; color: var(--text-muted);">${e.mobile || 'No phone'}</div>
-            </td>
-            <td>${e.designation || '-'}</td>
-            <td>${e.department || '-'}</td>
-            <td>${e.centre || e.centre_name || '-'}</td>
-            <td><span class="badge badge-purple">${e.role || 'employee'}</span></td>
-            <td><span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">${e.employment_status}</span></td>
-            <td>${zulipCell}</td>
-            ${flags.canEdit ? `<td><button class="btn btn-secondary btn-edit-emp" data-id="${e.id}">Edit</button></td>` : ''}
-          </tr>
-        `;
-      }).join('');
-
-      // Attach edit button listeners
-      tbody.querySelectorAll('.btn-edit-emp').forEach((btn) => {
-        btn.addEventListener('click', (ev) => {
-          const target = ev.target as HTMLButtonElement;
-          const empId = target.dataset.id;
-          const emp = employeesCache.find((x) => x.id === empId);
-          if (emp) {
-            openEditEmployeeModal(emp, loadEmployees);
-          }
-        });
-      });
-
-      // Attach retry zulip listeners
-      tbody.querySelectorAll('.btn-retry-zulip').forEach((btn) => {
-        btn.addEventListener('click', async (ev) => {
-          const target = ev.target as HTMLButtonElement;
-          const empId = target.dataset.id;
-          if (!empId) return;
-          target.disabled = true;
-          target.textContent = 'Retrying...';
-          try {
-            await apiFetch(`/employees/${empId}/retry-zulip-provisioning`, { method: 'POST' });
-            showToast('Zulip provisioning completed successfully', 'success');
-            await loadEmployees();
-          } catch (err) {
-            showToast((err as Error).message, 'danger');
-            target.disabled = false;
-            target.textContent = 'Retry';
-          }
-        });
-      });
+      currentPage = 1;
+      renderPage();
     } catch {
       tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color: var(--accent-red);">Failed to load employees.</td></tr>';
     }
+  }
+
+  if (prevBtn) {
+    prevBtn.onclick = () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderPage();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+  }
+
+  if (nextBtn) {
+    nextBtn.onclick = () => {
+      const totalPages = Math.ceil(employeesCache.length / PAGE_SIZE);
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderPage();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
   }
 
   if (searchInput) searchInput.oninput = () => loadEmployees();
@@ -265,6 +312,14 @@ async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
         <input type="text" id="addFullName" class="form-input" required />
       </div>
       <div class="form-group">
+        <label>Employee Code</label>
+        <input type="text" id="addEmployeeCode" class="form-input" placeholder="e.g. EMP-101" />
+      </div>
+      <div class="form-group">
+        <label>Joining Date</label>
+        <input type="date" id="addJoiningDate" class="form-input" />
+      </div>
+      <div class="form-group">
         <label>Alias</label>
         <input type="text" id="addAlias" class="form-input" placeholder="e.g. Adam" />
       </div>
@@ -282,6 +337,7 @@ async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
           <option value="employee">Employee</option>
           <option value="team_leader">Team Leader</option>
           <option value="manager">Manager</option>
+          <option value="hr">HR</option>
           <option value="admin">Admin</option>
           <option value="super_admin">Super Admin</option>
         </select>
@@ -331,6 +387,8 @@ async function openAddEmployeeModal(onSuccess: () => void): Promise<void> {
         method: 'POST',
         body: JSON.stringify({
           full_name: (form.querySelector('#addFullName') as HTMLInputElement).value.trim(),
+          employee_code: (form.querySelector('#addEmployeeCode') as HTMLInputElement).value.trim() || undefined,
+          joining_date: (form.querySelector('#addJoiningDate') as HTMLInputElement).value || undefined,
           alias: (form.querySelector('#addAlias') as HTMLInputElement).value.trim() || undefined,
           email: (form.querySelector('#addEmail') as HTMLInputElement).value.trim(),
           password: (form.querySelector('#addPassword') as HTMLInputElement).value,
@@ -369,6 +427,14 @@ async function openEditEmployeeModal(emp: EmployeeRow, onSuccess: () => void): P
       <div class="form-group">
         <label>Full Name</label>
         <input type="text" id="editFullName" class="form-input" value="${emp.full_name || ''}" required />
+      </div>
+      <div class="form-group">
+        <label>Employee Code</label>
+        <input type="text" id="editEmployeeCode" class="form-input" value="${emp.employee_code || ''}" />
+      </div>
+      <div class="form-group">
+        <label>Joining Date</label>
+        <input type="date" id="editJoiningDate" class="form-input" value="${emp.joining_date ? emp.joining_date.substring(0, 10) : ''}" />
       </div>
       <div class="form-group">
         <label>Alias</label>
@@ -431,6 +497,8 @@ async function openEditEmployeeModal(emp: EmployeeRow, onSuccess: () => void): P
     try {
       const payload: Record<string, unknown> = {
         full_name: (form.querySelector('#editFullName') as HTMLInputElement).value.trim(),
+        employee_code: (form.querySelector('#editEmployeeCode') as HTMLInputElement).value.trim() || undefined,
+        joining_date: (form.querySelector('#editJoiningDate') as HTMLInputElement).value || null,
         alias: (form.querySelector('#editAlias') as HTMLInputElement).value.trim() || undefined,
         mobile: (form.querySelector('#editMobile') as HTMLInputElement).value.trim() || undefined,
         designation: (form.querySelector('#editDesignation') as HTMLInputElement).value.trim() || undefined,
