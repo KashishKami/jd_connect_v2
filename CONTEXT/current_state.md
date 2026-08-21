@@ -3572,3 +3572,27 @@ Create `portal/package.json` with esbuild as a devDependency. Write a `build.ts`
 > - Portal build arg changed from `BACKEND_INTERNAL_URL: http://api:4000` (for the removed nginx proxy) to `BACKEND_URL: http://localhost:4001` (baked into bundle.js for browser use).
 > - Stale comments about `jdconnect_test_postgres` removed from `complete_local_setup.md`.
 
+> **Session Note — 2026-08-21 (Zulip Provisioning Fix — Docker Container)**
+>
+> #### Root Cause: Django ALLOWED_HOSTS Rejection
+> - Zulip provisioning worked in dev (`pnpm dev`) but always failed silently in the Docker test container. This was a **pre-existing bug** — not a regression from Phase 10. The old HR dashboard would have had the same failure if anyone had tried to create an employee from the Docker test stack.
+> - Root cause: the backend in Docker calls Zulip via `ZULIP_BASE_URL: https://host.docker.internal:9991`. Node's HTTP client automatically sets the `Host` request header to `host.docker.internal:9991`. Django (which backs Zulip) validates every incoming request's `Host` header against its `ALLOWED_HOSTS` list. `host.docker.internal` is not in that list — Django rejected the request immediately with an HTML `400 Bad Request` page before any Zulip API handler ever ran.
+> - In dev, `ZULIP_BASE_URL=https://127.0.0.1:9991` → Host header = `127.0.0.1:9991` → IS in Django's `ALLOWED_HOSTS` → works fine.
+>
+> #### Why `fetch()` Could Not Be Fixed with a Custom Host Header
+> - First fix attempt: add a `Host: 127.0.0.1:9991` header to every Zulip `fetch()` call. This failed because Node's native `fetch` (backed by `undici`) treats `Host` as a **forbidden header** — the spec prevents JavaScript from overriding it. The custom header was silently dropped and `host.docker.internal` was still sent.
+>
+> #### Fix: Replace `fetch()` with `node:https` for Zulip API Calls
+> - `node:https.request()` has no forbidden-header restriction. You can set `Host` to any value explicitly.
+> - Added a private `zulipRequest(method, apiPath, headers?, body?)` helper in `ZulipService` that uses `node:https` directly. The helper connects to `parsed.hostname` (e.g. `host.docker.internal`) for TCP routing, but sets the `Host` header to `ZULIP_HOST_OVERRIDE` (e.g. `127.0.0.1:9991`) so Django accepts the request.
+> - Both `createUser()` and `fetchUserByEmail()` now use `this.zulipRequest()` instead of `fetch()`.
+> - Added `ZULIP_HOST_OVERRIDE: 127.0.0.1:9991` to the `api` service in `docker-compose.local-test.yml`. This decouples the TCP routing hostname from the HTTP `Host` header.
+>
+> #### Additional Bug Fixed: `fetchUserByEmail` Wrong API Endpoint
+> - `fetchUserByEmail` was calling `GET /api/v1/users/{email}` (email as a path parameter). This is not a valid Zulip API endpoint — the path parameter must be an **integer** user ID. Zulip returned 400 for any email-based lookup.
+> - Fixed to call `GET /api/v1/users` (list all realm members) and filter the result by `delivery_email` in code. This is the correct approach per the Zulip API.
+>
+> #### Debugging Logging Added
+> - Added `console.error` logging to the `!response.ok` branch in `createUser()` so Zulip's rejection reason is always visible in container logs.
+> - Added `console.info` / `console.error` logging to `fetchUserByEmail()` to trace the list call status and whether a user was found.
+> - These logs are intentional and should be kept — they are `warn`/`error` level (not `info`) so `no-console` ESLint rule allows them.

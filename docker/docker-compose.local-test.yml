@@ -51,8 +51,11 @@ services:
       JWT_EXPIRATION: 15m
 
       # host.docker.internal resolves to the Windows host machine from inside Docker.
-      # This lets the containerised backend reach your locally running Zulip (127.0.0.1:9991).
+      # ZULIP_BASE_URL uses host.docker.internal for TCP routing (to reach Zulip from inside the container).
+      # ZULIP_HOST_OVERRIDE overrides the HTTP Host header to 127.0.0.1:9991 — this is required because
+      # Django's ALLOWED_HOSTS validation rejects requests with Host: host.docker.internal (HTML 400).
       ZULIP_BASE_URL: https://host.docker.internal:9991
+      ZULIP_HOST_OVERRIDE: 127.0.0.1:9991
       ZULIP_BOT_EMAIL: jdconnect-bot@company.com
       # Injected from root .env via --env-file flag. Run with:
       #   docker compose --project-name jdconnect-test --env-file .env -f docker/docker-compose.local-test.yml up -d --build

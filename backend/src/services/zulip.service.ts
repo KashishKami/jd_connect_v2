@@ -39,6 +39,62 @@ export class ZulipService {
     return this.customBotApiKey || process.env.ZULIP_BOT_API_KEY || '';
   }
 
+  /**
+   * Makes an HTTPS request to the Zulip API using node:https directly.
+   *
+   * Why not fetch()? Node's native fetch (undici) treats 'Host' as a forbidden
+   * header and silently drops it — you cannot override it. node:https.request()
+   * has no such restriction, so we can explicitly set Host: 127.0.0.1:9991 even
+   * when the TCP connection goes to host.docker.internal:9991. This is required
+   * because Django's ALLOWED_HOSTS validation checks the Host header and returns
+   * an HTML 400 for any unrecognised hostname (e.g. host.docker.internal).
+   *
+   * ZULIP_HOST_OVERRIDE (set in docker-compose) provides the correct Host value
+   * while ZULIP_BASE_URL's hostname is used only for TCP routing.
+   */
+  private zulipRequest(
+    method: string,
+    apiPath: string,
+    extraHeaders: Record<string, string> = {},
+    body?: string
+  ): Promise<{ status: number; text: string }> {
+    return new Promise((resolve, reject) => {
+      const parsed = new URL(`${this.baseUrl}${apiPath}`);
+      // Host header: use override if set, else derive from ZULIP_BASE_URL
+      const hostHeader = process.env.ZULIP_HOST_OVERRIDE || parsed.host;
+      const authHeader = 'Basic ' + Buffer.from(`${this.botEmail}:${this.botApiKey}`).toString('base64');
+
+      const headers: Record<string, string> = {
+        Authorization: authHeader,
+        Host: hostHeader,
+        ...extraHeaders,
+      };
+      if (body) {
+        headers['Content-Length'] = Buffer.byteLength(body).toString();
+      }
+
+      const https = require('node:https') as typeof import('https');
+      const req = https.request(
+        {
+          hostname: parsed.hostname,
+          port: parseInt(parsed.port || '443', 10),
+          path: parsed.pathname + parsed.search,
+          method,
+          headers,
+          rejectUnauthorized: false, // Zulip uses self-signed cert in dev
+        },
+        (res) => {
+          let text = '';
+          res.on('data', (chunk: Buffer) => { text += chunk.toString(); });
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
+        }
+      );
+      req.on('error', reject);
+      if (body) req.write(body);
+      req.end();
+    });
+  }
+
   async fetchUserByEmailViaCli(email: string): Promise<{ zulipUserId: number } | null> {
     if (process.env.NODE_ENV === 'test') return null;
     try {
@@ -62,25 +118,33 @@ export class ZulipService {
   }
 
   async fetchUserByEmail(email: string): Promise<{ zulipUserId: number } | null> {
-    const authHeader = 'Basic ' + Buffer.from(`${this.botEmail}:${this.botApiKey}`).toString('base64');
     try {
-      const response = await fetch(`${this.baseUrl}/api/v1/users/${encodeURIComponent(email)}`, {
-        method: 'GET',
-        headers: { Authorization: authHeader },
-      });
-      if (response.ok) {
-        const data = (await response.json()) as { result: string; user_id?: number; user?: { user_id: number } };
-        const userId = data.user?.user_id ?? data.user_id;
-        if (data.result === 'success' && typeof userId === 'number') {
-          return { zulipUserId: userId };
+      // Zulip API does not support GET /api/v1/users/{email} — the path param must be an integer user_id.
+      // Correct approach: GET /api/v1/users (list all members) and filter by delivery_email.
+      const { status, text } = await this.zulipRequest('GET', '/api/v1/users');
+      console.info(`[ZulipService] fetchUserByEmail (list) status=${status}`);
+      if (status >= 200 && status < 300) {
+        const data = JSON.parse(text) as { result: string; members?: Array<{ user_id: number; delivery_email?: string; email?: string }> };
+        if (data.result === 'success' && Array.isArray(data.members)) {
+          const match = data.members.find(
+            (u) => (u.delivery_email || u.email || '').toLowerCase() === email.toLowerCase()
+          );
+          if (match) {
+            console.info(`[ZulipService] fetchUserByEmail found user_id=${match.user_id} for ${email}`);
+            return { zulipUserId: match.user_id };
+          }
         }
+        console.warn(`[ZulipService] fetchUserByEmail: no match found for ${email}`);
+      } else {
+        console.error(`[ZulipService] fetchUserByEmail failed ${status}:`, text.slice(0, 200));
       }
-    } catch {
-      // Fall back to CLI lookup below
+    } catch (err) {
+      console.error(`[ZulipService] fetchUserByEmail exception:`, (err as Error).message);
     }
 
     return this.fetchUserByEmailViaCli(email);
   }
+
 
   async createUserViaCli(email: string, fullName: string, password: string): Promise<{ zulipUserId: number } | null> {
     if (process.env.NODE_ENV === 'test') {
@@ -110,33 +174,33 @@ export class ZulipService {
   }
 
   async createUser(payload: ZulipCreateUserPayload): Promise<{ zulipUserId: number }> {
-    const authHeader = 'Basic ' + Buffer.from(`${this.botEmail}:${this.botApiKey}`).toString('base64');
-
     const params = new URLSearchParams();
     params.append('email', payload.email);
     params.append('full_name', payload.full_name);
     params.append('password', payload.password);
+    const body = params.toString();
 
     try {
-      const response = await fetch(`${this.baseUrl}/api/v1/users`, {
-        method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: params.toString(),
-      });
+      const { status, text } = await this.zulipRequest(
+        'POST',
+        '/api/v1/users',
+        { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body
+      );
 
-      if (!response.ok) {
+      if (status < 200 || status >= 300) {
+        let errMsg = 'unknown error';
+        try { errMsg = (JSON.parse(text) as { msg?: string }).msg || text.slice(0, 200); } catch { errMsg = text.slice(0, 200); }
+        console.error(`[ZulipService] createUser HTTP ${status}:`, errMsg);
         const cliUser = await this.createUserViaCli(payload.email, payload.full_name, payload.password);
         if (cliUser) return cliUser;
 
         const existing = await this.fetchUserByEmail(payload.email);
         if (existing) return existing;
-        throw new ZulipProvisioningError(`Zulip API HTTP status ${response.status}`);
+        throw new ZulipProvisioningError(`Zulip API HTTP status ${status}: ${errMsg}`);
       }
 
-      const data = (await response.json()) as ZulipUserResponse;
+      const data = JSON.parse(text) as ZulipUserResponse;
       if (data.result !== 'success' || typeof data.user_id !== 'number') {
         const cliUser = await this.createUserViaCli(payload.email, payload.full_name, payload.password);
         if (cliUser) return cliUser;
