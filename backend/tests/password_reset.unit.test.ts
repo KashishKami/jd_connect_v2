@@ -22,7 +22,7 @@ describe('EmployeeService.resetPassword Unit Tests', () => {
     expect(mockUserRepo.updatePasswordHash).not.toHaveBeenCalled();
   });
 
-  it('updates password hash successfully when employee exists', async () => {
+  it('updates password hash and Zulip password successfully when employee exists', async () => {
     const mockUserRepo = {
       updatePasswordHash: vi.fn().mockResolvedValue(true),
     } as unknown as UserRepository;
@@ -31,10 +31,16 @@ describe('EmployeeService.resetPassword Unit Tests', () => {
       findById: vi.fn().mockResolvedValue({
         id: 'emp-123',
         auth_user_id: 'auth-user-456',
+        email: 'emp123@jdconnect.com',
+        zulip_user_id: 88,
       }),
     } as unknown as EmployeeRepository;
 
-    const service = new EmployeeService(mockUserRepo, mockEmpRepo);
+    const mockZulipSvc = {
+      updateUserPassword: vi.fn().mockResolvedValue(true),
+    } as unknown as import('../src/services/zulip.service').ZulipService;
+
+    const service = new EmployeeService(mockUserRepo, mockEmpRepo, mockZulipSvc);
 
     await service.resetPassword('emp-123', 'NewPass123!');
 
@@ -42,6 +48,11 @@ describe('EmployeeService.resetPassword Unit Tests', () => {
     expect(mockUserRepo.updatePasswordHash).toHaveBeenCalledWith(
       'auth-user-456',
       expect.stringMatching(/^\$2[ayb]\$/)
+    );
+    expect(mockZulipSvc.updateUserPassword).toHaveBeenCalledWith(
+      'emp123@jdconnect.com',
+      'NewPass123!',
+      88
     );
   });
 });

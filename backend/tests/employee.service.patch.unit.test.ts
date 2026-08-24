@@ -34,24 +34,34 @@ describe('EmployeeService PATCH Unit Tests', () => {
     expect(result.alias).toBe('NewAlias');
   });
 
-  it('hashes new_password and updates user password_hash when new_password provided', async () => {
+  it('hashes new_password, updates user password_hash, and updates Zulip password when new_password provided', async () => {
     const mockUserRepo = {
       updatePasswordHash: vi.fn().mockResolvedValue(undefined),
     } as unknown as UserRepository;
 
     const mockEmpRepo = {
-      findById: vi.fn().mockResolvedValue({ id: 'emp-uuid-1', auth_user_id: 'user-uuid-1' }),
+      findById: vi.fn().mockResolvedValue({
+        id: 'emp-uuid-1',
+        auth_user_id: 'user-uuid-1',
+        email: 'target@jdconnect.com',
+        zulip_user_id: 101,
+      }),
       updateEmployee: vi.fn().mockResolvedValue({
         id: 'emp-uuid-1',
         full_name: 'Target Employee',
       }),
     } as unknown as EmployeeRepository;
 
-    const service = new EmployeeService(mockUserRepo, mockEmpRepo);
+    const mockZulipSvc = {
+      updateUserPassword: vi.fn().mockResolvedValue(true),
+    } as unknown as import('../src/services/zulip.service').ZulipService;
+
+    const service = new EmployeeService(mockUserRepo, mockEmpRepo, mockZulipSvc);
     await service.updateEmployee('emp-uuid-1', {
       new_password: 'UpdatedPassword123!',
     });
 
     expect(mockUserRepo.updatePasswordHash).toHaveBeenCalledWith('user-uuid-1', expect.stringMatching(/^\$2[ayb]\$/));
+    expect(mockZulipSvc.updateUserPassword).toHaveBeenCalledWith('target@jdconnect.com', 'UpdatedPassword123!', 101);
   });
 });

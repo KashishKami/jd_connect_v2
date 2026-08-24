@@ -48,4 +48,9 @@ describe('ZulipService', () => {
       })
     ).rejects.toThrow(ZulipProvisioningError);
   });
+
+  it('updateUserPassword returns true in test environment without throwing', async () => {
+    const res = await zulipService.updateUserPassword('test@company.com', 'NewPassword123!', 42);
+    expect(res).toBe(true);
+  });
 });

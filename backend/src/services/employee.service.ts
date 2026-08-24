@@ -99,6 +99,11 @@ export class EmployeeService {
         const passwordHash = await bcrypt.hash(updates.new_password, 12);
         await this.userRepo.updatePasswordHash(employee.auth_user_id, passwordHash);
       }
+      try {
+        await this.zulipSvc.updateUserPassword(employee.email, updates.new_password, employee.zulip_user_id);
+      } catch (zulipErr) {
+        console.error('[EmployeeService] Failed to update Zulip password during updateEmployee:', (zulipErr as Error).message);
+      }
       delete fieldUpdates.new_password;
     }
 
@@ -190,6 +195,12 @@ export class EmployeeService {
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await this.userRepo.updatePasswordHash(employee.auth_user_id, passwordHash);
+
+    try {
+      await this.zulipSvc.updateUserPassword(employee.email, newPassword, employee.zulip_user_id);
+    } catch (zulipErr) {
+      console.error('[EmployeeService] Failed to update Zulip password during resetPassword:', (zulipErr as Error).message);
+    }
   }
 }
 

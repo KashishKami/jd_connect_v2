@@ -183,6 +183,53 @@ export class ZulipService {
   }
 
 
+  async updateUserPasswordViaCli(email: string, newPassword: string, zulipUserId?: number | null): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') {
+      return true;
+    }
+    try {
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execAsync = util.promisify(exec);
+
+      const zulipDir = path.resolve(__dirname, '../../../docker/zulip');
+      const safeEmail = email.replace(/'/g, "\\'");
+      const safePass = newPassword.replace(/'/g, "\\'");
+      const idFilter = zulipUserId ? `u = UserProfile.objects.filter(id=${zulipUserId}).first()` : `u = None`;
+
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); ${idFilter}; u = u or UserProfile.objects.filter(realm=r, delivery_email='${safeEmail}').first(); (u.set_password('${safePass}'), u.save(), print('SUCCESS')) if u else print('USER_NOT_FOUND')"`;
+
+      const { stdout } = await execAsync(cmd, { cwd: zulipDir });
+      return stdout.includes('SUCCESS');
+    } catch (err) {
+      console.error(`[ZulipService] updateUserPasswordViaCli error:`, (err as Error).message);
+      return false;
+    }
+  }
+
+  async updateUserPassword(email: string, newPassword: string, zulipUserId?: number | null): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') {
+      return true;
+    }
+
+    try {
+      const resolvedZulipUserId = zulipUserId || (await this.fetchUserByEmail(email))?.zulipUserId;
+      if (resolvedZulipUserId) {
+        const cliSuccess = await this.updateUserPasswordViaCli(email, newPassword, resolvedZulipUserId);
+        if (cliSuccess) {
+          console.info(`[ZulipService] Successfully updated Zulip password for user ${email} (ID: ${resolvedZulipUserId})`);
+          return true;
+        }
+      }
+
+      const cliFallback = await this.updateUserPasswordViaCli(email, newPassword);
+      return cliFallback;
+    } catch (err) {
+      console.error(`[ZulipService] updateUserPassword failed:`, (err as Error).message);
+      return false;
+    }
+  }
+
   async createUserViaCli(email: string, fullName: string, password: string): Promise<{ zulipUserId: number } | null> {
     if (process.env.NODE_ENV === 'test') {
       return null;
