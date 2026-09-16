@@ -1,6 +1,6 @@
 import { guardRoute } from '../lib/auth';
 import { apiFetch } from '../lib/api';
-import { formatESTTime } from '../lib/format';
+import { formatISTTime, formatESTDate } from '../lib/format';
 
 interface BreakAuditRow {
   id: string;
@@ -31,11 +31,12 @@ export function renderBreaksAuditPage(container: HTMLElement): void {
     <div class="main-content">
       <div class="section-header">
         <h2>Breaks Audit & Overbreak Monitor</h2>
-        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">ℹ️ All dates and times are displayed in EST (Eastern Standard Time)</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">ℹ️ Dates are in EST (US Day), Times are in IST (India Time)</span>
       </div>
 
       <div class="filter-bar">
         <input type="text" id="breakSearch" class="input-search" placeholder="Filter by employee name..." />
+        <input type="date" id="breakDateFilter" class="select-filter" />
         <select id="breakTypeFilter" class="select-filter">
           <option value="">All Break Types</option>
         </select>
@@ -45,6 +46,7 @@ export function renderBreaksAuditPage(container: HTMLElement): void {
           <option value="completed">Completed</option>
           <option value="exceeded">Duration Exceeded</option>
         </select>
+        <button id="breakTodayBtn" class="btn btn-secondary">Today</button>
       </div>
 
       <div class="table-container">
@@ -53,14 +55,15 @@ export function renderBreaksAuditPage(container: HTMLElement): void {
             <tr>
               <th>Employee</th>
               <th>Break Type</th>
-              <th>Start Time</th>
-              <th>End Time</th>
+              <th>Date (EST)</th>
+              <th>Start Time (IST)</th>
+              <th>End Time (IST)</th>
               <th>Duration (mins)</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody id="breaksAuditTableBody">
-            <tr><td colspan="6" style="text-align:center;">Loading...</td></tr>
+            <tr><td colspan="7" style="text-align:center;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -79,8 +82,10 @@ export function renderBreaksAuditPage(container: HTMLElement): void {
 function initBreaksAuditLogic(container: HTMLElement): void {
   const tbody = container.querySelector('#breaksAuditTableBody') as HTMLTableSectionElement;
   const searchInput = container.querySelector('#breakSearch') as HTMLInputElement;
+  const dateInput = container.querySelector('#breakDateFilter') as HTMLInputElement;
   const typeSelect = container.querySelector('#breakTypeFilter') as HTMLSelectElement;
   const statusSelect = container.querySelector('#breakStatusFilter') as HTMLSelectElement;
+  const todayBtn = container.querySelector('#breakTodayBtn') as HTMLButtonElement;
 
   const prevBtn = container.querySelector('#breakAuditPrev') as HTMLButtonElement;
   const nextBtn = container.querySelector('#breakAuditNext') as HTMLButtonElement;
@@ -107,7 +112,7 @@ function initBreaksAuditLogic(container: HTMLElement): void {
 
   function renderPage() {
     if (allLogs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No break records found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No break records found.</td></tr>';
       if (pageInfo) pageInfo.textContent = 'Page 1 of 1';
       if (prevBtn) prevBtn.disabled = true;
       if (nextBtn) nextBtn.disabled = true;
@@ -130,8 +135,9 @@ function initBreaksAuditLogic(container: HTMLElement): void {
         <tr>
           <td><strong>${empName}</strong></td>
           <td>${breakName}</td>
-          <td>${formatESTTime(l.start_at)}</td>
-          <td>${formatESTTime(l.end_at)}</td>
+          <td>${formatESTDate(l.start_at)}</td>
+          <td>${formatISTTime(l.start_at)}</td>
+          <td>${formatISTTime(l.end_at)}</td>
           <td>${l.duration_minutes ?? '-'}</td>
           <td><span class="badge ${badgeClass}">${l.status}</span></td>
         </tr>
@@ -147,6 +153,10 @@ function initBreaksAuditLogic(container: HTMLElement): void {
     try {
       const params = new URLSearchParams();
       if (searchInput?.value.trim()) params.set('search', searchInput.value.trim());
+      if (dateInput?.value) {
+        params.set('from', dateInput.value);
+        params.set('to', dateInput.value);
+      }
       if (typeSelect?.value) params.set('break_type_key', typeSelect.value);
       if (statusSelect?.value) params.set('status', statusSelect.value);
 
@@ -155,7 +165,7 @@ function initBreaksAuditLogic(container: HTMLElement): void {
       currentPage = 1;
       renderPage();
     } catch {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--accent-red);">Failed to load break audit logs.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--accent-red);">Failed to load break audit logs.</td></tr>';
     }
   }
 
@@ -181,8 +191,19 @@ function initBreaksAuditLogic(container: HTMLElement): void {
   }
 
   if (searchInput) searchInput.oninput = () => loadBreakAuditLogs();
+  if (dateInput) dateInput.onchange = () => loadBreakAuditLogs();
   if (typeSelect) typeSelect.onchange = () => loadBreakAuditLogs();
   if (statusSelect) statusSelect.onchange = () => loadBreakAuditLogs();
+
+  if (todayBtn) {
+    todayBtn.onclick = () => {
+      if (dateInput) {
+        const estToday = formatESTDate(new Date().toISOString());
+        dateInput.value = estToday;
+        loadBreakAuditLogs();
+      }
+    };
+  }
 
   loadBreakTypes();
   loadBreakAuditLogs();

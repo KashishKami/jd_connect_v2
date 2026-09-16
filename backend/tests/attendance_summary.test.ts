@@ -38,12 +38,10 @@ describe('GET /api/attendance/summary/today - Dashboard Metrics', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('present');
     expect(res.body).toHaveProperty('on_break');
-    expect(res.body).toHaveProperty('absent');
+    expect(res.body).not.toHaveProperty('absent');
     expect(res.body).toHaveProperty('late');
     expect(res.body).toHaveProperty('half_day');
     expect(res.body).toHaveProperty('total_employees');
     expect(typeof res.body.present).toBe('number');
-    expect(typeof res.body.absent).toBe('number');
-    expect(res.body.absent).toBe(res.body.total_employees - res.body.present);
   });
 });

@@ -28,6 +28,7 @@ This file is the **source of truth** for what is done, what is in progress, and 
 | **Phase 7** | Data Migration (Old System → New) | **[x] COMPLETE** | `backend/scripts/migrate-employees.ts`, `backend/scripts/migrate-attendance.ts`, `backend/scripts/migrate-chat.ts` |
 | **Phase 8** | Production Deployment | **[ ] NOT STARTED** | `docker/docker-compose.prod.yml`, `docker/nginx.conf`, backup scripts |
 | **Phase 10** | Unified Portal + Granular Permissions System | **[x] COMPLETE** | `portal/`, `backend/src/routes/permissions.ts`, `backend/src/routes/roles.ts`, `backend/migrations/014_expand_permissions.sql`, `backend/src/services/permissions.service.ts` |
+| **Phase 11** | IST Work-Date Anchor, Duration-Only Attendance, Break Boundary Fix & Zulip OIDC SSO | **[ ] NOT STARTED** | `backend/src/services/attendance.service.ts`, `backend/src/services/break.service.ts`, `backend/src/services/zulip.service.ts`, `portal/src/pages/`, `docker/zulip-prod.override.yaml` |
 
 ---
 
@@ -3596,3 +3597,20 @@ Create `portal/package.json` with esbuild as a devDependency. Write a `build.ts`
 > - Added `console.error` logging to the `!response.ok` branch in `createUser()` so Zulip's rejection reason is always visible in container logs.
 > - Added `console.info` / `console.error` logging to `fetchUserByEmail()` to trace the list call status and whether a user was found.
 > - These logs are intentional and should be kept — they are `warn`/`error` level (not `info`) so `no-console` ESLint rule allows them.
+
+> **Session Note — 2026-08-22 (W-1013: IST Timings Display & Break Audit Date Filter/Column)**
+>
+> #### Breaks Audit Date Filter & Column
+> - Added Date Filter input (`#breakDateFilter`) and "Today" button to the Breaks Audit page (`portal/src/pages/breaks_audit.ts`).
+> - Added Date column (`Date (EST)`) to the Breaks Audit table header and data rows.
+> - Updated `loadBreakAuditLogs()` in `breaks_audit.ts` to pass `from` and `to` date parameters to `GET /api/breaks`.
+>
+> #### IST Timing Formatting & EST Date Preservation
+> - Implemented `formatISTTime` in `portal/src/lib/format.ts` using `Intl.DateTimeFormat` with `timeZone: 'Asia/Kolkata'` in 12-hour AM/PM format.
+> - Preserved EST Date extraction in `formatESTDate` using `timeZone: 'America/New_York'`.
+> - Updated `attendance.ts`, `attendance_audit.ts`, `breaks_audit.ts`, and `dashboard.ts` to display dates in EST (`America/New_York`) and timestamps in IST (`Asia/Kolkata`).
+> - Updated header notices to reflect: `Dates are in EST (US Day), Times are in IST (India Time)`.
+>
+> #### Strict TDD Verification
+> - Added unit tests in `portal/tests/format_and_pagination.unit.test.ts` testing `formatISTTime` conversion, `formatESTDate` 12 AM boundary cases, and Breaks Audit page date filter/column DOM rendering.
+> - Verified all 34 portal unit tests passing 100% **GREEN**.

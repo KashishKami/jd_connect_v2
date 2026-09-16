@@ -112,16 +112,17 @@ export class AttendanceService {
   async getTodaySummary(): Promise<{
     present: number;
     on_break: number;
-    absent: number;
     late: number;
     half_day: number;
     total_employees: number;
   }> {
     const summary = await this.attRepo.getTodaySummary();
-    const absent = Math.max(0, summary.total_employees - summary.present);
     return {
-      ...summary,
-      absent,
+      present: summary.present,
+      on_break: summary.on_break,
+      late: summary.late,
+      half_day: summary.half_day,
+      total_employees: summary.total_employees,
     };
   }
 

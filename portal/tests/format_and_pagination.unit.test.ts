@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { formatESTTime, formatESTDate } from '../src/lib/format';
+import { formatESTTime, formatISTTime, formatESTDate } from '../src/lib/format';
 import { setUserPermissions, setAuthToken } from '../src/lib/auth';
 import { renderAttendanceConsole } from '../src/pages/attendance';
 import { renderAttendanceAuditPage } from '../src/pages/attendance_audit';
@@ -7,7 +7,7 @@ import { renderBreaksAuditPage } from '../src/pages/breaks_audit';
 
 describe('EST Timezone & Pagination Tests', () => {
   describe('formatESTTime UTC Conversion & 12-Hour AM/PM Edge Cases', () => {
-    it('formats 04:00:00 UTC as 12:00:00 AM (Midnight EST/EDT)', () => {
+    it('formats 12:00:00 AM EST (04:00:00 UTC) as 09:30:00 AM IST', () => {
       const formatted = formatESTTime('2026-08-21T04:00:00Z');
       expect(formatted).toBe('12:00:00 AM');
     });
@@ -31,6 +31,29 @@ describe('EST Timezone & Pagination Tests', () => {
       expect(formatESTTime(null)).toBe('-');
       expect(formatESTTime(undefined)).toBe('-');
       expect(formatESTTime('invalid-date')).toBe('-');
+    });
+  });
+
+  describe('formatISTTime UTC Conversion & 12-Hour AM/PM Edge Cases', () => {
+    it('formats 11:45 PM EST (03:45:00 UTC) as 09:15:00 AM IST', () => {
+      const formatted = formatISTTime('2026-08-21T03:45:00Z');
+      expect(formatted).toBe('09:15:00 AM');
+    });
+
+    it('formats 12:05 AM EST (04:05:00 UTC) as 09:35:00 AM IST', () => {
+      const formatted = formatISTTime('2026-08-21T04:05:00Z');
+      expect(formatted).toBe('09:35:00 AM');
+    });
+
+    it('formats 07:30 PM EST (23:30:00 UTC, next day in IST 05:00 AM) as 05:00:00 AM IST', () => {
+      const formatted = formatISTTime('2026-08-21T23:30:00Z');
+      expect(formatted).toBe('05:00:00 AM');
+    });
+
+    it('handles null, undefined, and invalid date strings gracefully', () => {
+      expect(formatISTTime(null)).toBe('-');
+      expect(formatISTTime(undefined)).toBe('-');
+      expect(formatISTTime('invalid-date')).toBe('-');
     });
   });
 
@@ -133,6 +156,13 @@ describe('EST Timezone & Pagination Tests', () => {
 
       const pageInfo = container.querySelector('#breakAuditPageInfo');
       expect(pageInfo?.textContent).toBe('Page 1 of 2');
+
+      const dateFilterInput = container.querySelector('#breakDateFilter') as HTMLInputElement;
+      expect(dateFilterInput).not.toBeNull();
+
+      const tableHeaders = container.querySelectorAll('th');
+      const headerTexts = Array.from(tableHeaders).map((th) => th.textContent?.trim());
+      expect(headerTexts).toContain('Date (EST)');
     });
   });
 

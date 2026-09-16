@@ -56,6 +56,7 @@ services:
       # internal (container-to-container) — not exposed to the internet.
       - "traefik.http.services.zulip.loadbalancer.server.port=443"
       - "traefik.http.services.zulip.loadbalancer.server.scheme=https"
+      - "traefik.http.services.zulip.loadbalancer.serversTransport=zulip-internal@file"
 
       # ── HTTP → HTTPS redirect ──
       # !! Replace YOURDOMAIN.com

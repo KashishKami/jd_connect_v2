@@ -585,3 +585,117 @@ The existing `permissions` and `role_permissions` tables are retained. The permi
 - Backend API is the sole writer to JD Connect's Postgres. Decision 7 stands.
 - The Zulip Bot (`zulip-bot/`). Unchanged — still posts daily attendance prompt.
 - All Postgres table schemas for HR/attendance/break data. No structural changes except the new permission rows.
+
+---
+
+### Decision 15: IST Work-Date Anchor, Duration-Only Attendance Model, Break Boundary Fix & Zulip OIDC SSO
+
+**Date:** 2026-09-16
+**Status:** Accepted
+
+#### Context
+
+Post-Phase-10, the JD Connect attendance system was operating with several assumptions that no longer held:
+
+1. **Single-timezone shift assumption (broken):** The original system was built with the constraint "All timestamps in EST (UTC−5, America/New_York)" as stated in the project specification. This assumed a single US-Eastern-anchored shift (9 AM EST). The company now operates with two shift groups: Indian day-shift employees and Indian night-shift employees supporting US clients. The Indian employees are physically located in India (IST = UTC+5:30).
+
+2. **EST work-date anchor causing wrong day assignment:** `getESTWorkDate()` computes the calendar date for a work session using `America/New_York`. IST is 10.5 hours ahead of EST. Any employee clocking in before 10:30 AM IST is still "yesterday" in EST — their `work_date` lands on the previous EST calendar day. Day-shift employees arriving at 9 AM IST get `work_date = yesterday`, making their attendance invisible in today's audit until 10:30 AM IST.
+
+3. **Hardcoded 09:00:00 EST shift-start causing universal half-day flagging:** `computeAttendanceStatus()` computed `minutesLate = clockInTime - shiftStart` against a hardcoded `shiftStart = new Date(\`${todayEST}T09:00:00-05:00\`)`. Any employee not clocking in at exactly 9 AM EST was auto-flagged `half_day` or `late`. With no consistent shift start time and employees clocking in anywhere from 9 AM IST to 9 PM IST, this rule incorrectly marked all employees as `half_day` or `late`. Night-shift employees working full 9-hour shifts were marked `half_day` regardless of hours worked.
+
+4. **`findOpenRecord(id, todayDate)` causing midnight-boundary failures:** Three service call sites — `clockOut()`, `getStatus()`, and `startBreak()` — looked up the employee's open attendance record by both `employee_id` AND `work_date = todayDate`. When a night-shift employee crosses IST midnight, `todayDate` advances to the next IST day but the open `attendance_records` row still has `work_date = yesterday`. The query returns null and throws `NoOpenClockInError` or `NotClockedInError` falsely. The bug only affected day-shift employees for the break bug (after 10:30 AM IST when EST flips, their open record has yesterday's EST work_date while today's EST date is "today") and night-shift employees for clock-out (after IST midnight, their open record is from "yesterday IST").
+
+5. **Zulip password sync gap:** When HR updates an employee password in the portal (`PATCH /api/employees/:id` or `POST /api/employees/:id/reset-password`), the password updates in JD Connect Postgres but Zulip's password is unchanged. Zulip's REST API (`PATCH /api/v1/users/{user_id}`) does not support password changes. Zulip's Admin UI only offers "Send reset email" — not suitable for JD Connect's HR-managed password model. The Docker socket approach (Approach 1 in `CONTEXT/zulip_password_sync_analysis.md`) was considered but rejected in favour of a permanent OIDC SSO solution that eliminates dual password storage entirely.
+
+6. **Zulip accounts created in UTC timezone:** `ZulipService.createUser()` did not include a `timezone` field. New Zulip accounts defaulted to UTC, causing message timestamps to appear in UTC until employees manually changed their timezone setting. With Indian employees this means all timestamps appeared 5.5 hours behind their actual local time.
+
+#### Investigation: Why IST and Not UTC as the Neutral Anchor
+
+UTC was considered as a "neutral" timezone anchor. The problem with UTC:
+- UTC midnight is 5:30 AM IST. Employees working night shift (e.g. 9 PM to 6 AM IST) would cross UTC midnight during their shift — `work_date` would still split.
+- UTC has no special relationship to the company's operational concept of a "business day." IST (the server's local timezone and the employees' physical location) is the natural choice.
+
+Why IST (not EST) solves both shifts:
+- **Day shift:** Clocks in at 9 AM IST → `work_date = today IST`. ✅
+- **Night shift:** Clocks in at 9 PM IST → `work_date = today IST`. ✅
+- **Night shift crossing midnight:** Clocks out at 6 AM IST (next IST day) → `findAnyOpenRecord` finds the open record from yesterday IST — correct. ✅
+- The only edge case is an employee clocking in after IST midnight (e.g., 12:30 AM IST) — their `work_date = tomorrow IST`. This is correct: it is a new IST calendar day.
+
+Note: The `work_date` column semantics change in this decision. Previously `work_date` was the US Eastern business day. Going forward `work_date` is the IST calendar day on which the clock-in occurred. Historical records (before this phase) retain their EST `work_date` values — this is an accepted inconsistency documented here. The change is not retroactive.
+
+#### Investigation: Why Duration-Only (Not Shift-Config)
+
+An alternative was considered: add a `shift_start_time` and `shift_timezone` per employee or department, and compute `is_late` against that per-shift start time. This was rejected because:
+1. The company's shift times are "not even consistent" (per stakeholder input) — there is no reliable shift start time to compare against.
+2. HR already uses the attendance audit page to manually identify late-comers. The current auto-computation was producing incorrect results that HR then had to manually override anyway.
+3. The simpler model (≥9 hours = present, <9 hours = half_day) gives HR a clean, unambiguous starting point. HR can manually flag `is_late` via the existing `attendance_corrections` table.
+4. If consistent shift times are introduced in a future phase, a `shift_start_time` column can be added to `employees` or `departments` and the `computeAttendanceStatus` function can be extended at that time.
+
+#### Investigation: Why OIDC SSO (Not Docker Socket) for Password Sync
+
+Three approaches were evaluated (per `CONTEXT/zulip_password_sync_analysis.md`):
+
+**Approach 1 (Docker socket):** Mount `/var/run/docker.sock` into `jdconnect_api`. Backend calls Docker Engine REST API to `exec` into Zulip container and run Django's `set_password()`. Rejected because mounting the Docker socket grants the `jdconnect_api` container effective root access to the host VPS. Any RCE vulnerability in the backend = full server compromise. This is a permanent, ongoing security debt that is disproportionate to the problem being solved.
+
+**Approach 2 (Direct DB write):** Backend writes Django-format PBKDF2 hash directly to Zulip's Postgres. Rejected because it violates the database isolation invariant established in Decision 12: JD Connect Postgres and Zulip Postgres must remain completely isolated. Additionally, it creates a tight coupling to Django's internal password hash format, which could change on Zulip upgrades.
+
+**Approach 3 (OIDC SSO):** Configure Zulip to use JD Connect Backend API as its OpenID Connect identity provider. Zulip never stores employee passwords at all. All authentication defers to JD Connect Postgres. Password changes in the portal are automatically reflected in Zulip because Zulip never had the password in the first place. Accepted — this is the architecturally correct solution. The OAuth 2.0 server endpoints (`/oauth/authorize`, `/oauth/token`) already exist in `backend/src/routes/oauth.ts`. The additional OIDC endpoints (`/.well-known/openid-configuration`, `/oauth/userinfo`, `/oauth/jwks`) and the `id_token` extension are the remaining implementation work.
+
+#### Decision
+
+**Phase 11 implements the following changes:**
+
+1. **IST Work-Date Anchor:** Add `getISTWorkDate()` to `attendance.service.ts`. Replace `getESTWorkDate()` with `getISTWorkDate()` in `clockIn()` only. `getESTWorkDate()` is deprecated but kept for backward-compatible date-range query filtering.
+
+2. **`findAnyOpenRecord` for Open Session Lookup:** Replace `findOpenRecord(id, todayDate)` with `findAnyOpenRecord(id)` in `clockOut()`, `getStatus()`, and `startBreak()`. `findAnyOpenRecord` queries `WHERE employee_id = $1 AND clock_out_at IS NULL ORDER BY clock_in_at DESC LIMIT 1` — no date filter. `findOpenRecord(id, date)` is retained and used **only in `clockIn()`** to prevent double clock-ins on the same IST work date.
+
+3. **Duration-Only Status Computation:** `computeAttendanceStatus(hoursWorked: number)` replaces the 3-argument version. `hours_worked >= 9` → `present`. `hours_worked < 9` → `half_day`. `is_late` is always `false` from auto-computation. HR uses `attendance_corrections` to manually override. `LATE_CUTOFF_MINUTES` and `PRESENT_BUFFER_MINUTES` constants removed. `MIN_HOURS_FOR_FULL_DAY` renamed `FULL_DAY_MIN_HOURS` set to `9`.
+
+4. **IST Dashboard Anchor:** `getTodaySummary()` and `getLiveMonitorSummary()` in `attendance.repository.ts` replace `NOW() AT TIME ZONE 'America/New_York'` with `NOW() AT TIME ZONE 'Asia/Kolkata'`.
+
+5. **Zulip Provisioning Timezone:** `ZulipService.createUser()` adds `timezone: 'Asia/Kolkata'` to the `POST /api/v1/users` request body. New accounts show IST timestamps from day one.
+
+6. **OIDC Provider Completion:** Three new endpoints added — `GET /.well-known/openid-configuration`, `GET /oauth/userinfo`, `GET /oauth/jwks`. `POST /oauth/token` extended to issue `id_token` (RS256 JWT). `BACKEND_PUBLIC_URL` env var added.
+
+7. **Zulip Realm OIDC Configuration:** Zulip is configured via `SOCIAL_AUTH_OIDC_ENABLED`, `SOCIAL_AUTH_OIDC_OIDC_ENDPOINT`, `SOCIAL_AUTH_OIDC_KEY`, and `SOCIAL_AUTH_OIDC_SECRET` env vars. Native email/password login is disabled in Zulip Admin UI.
+
+8. **Portal Label Update:** All portal date column headers updated from "EST" to "IST". Notice text updated to "Dates and Times are in IST (India Time)".
+
+#### What Does NOT Change
+
+- The three-layer backend architecture (repositories → services → routes). Decision 7 stands.
+- Plain `pg` pool + raw SQL repositories. Decision 11 stands.
+- Custom JWT auth (RS256). Decision 2 stands. The same key pair is also used for OIDC `id_token`.
+- Attendance decoupled from Zulip presence. Decision 6 stands absolutely — no Zulip presence calls added anywhere.
+- The Backend API is the sole writer to JD Connect Postgres. Decision 7 stands.
+- Employee creation provisions both Postgres AND Zulip atomically. Decision 9 stands.
+- JD Connect Postgres and Zulip Postgres are completely isolated. Decision 12 stands. Approach 2 (direct DB write) was explicitly rejected to maintain this invariant.
+- HR-only password reset (no self-service email). Decision 2 consequence stands. OIDC eliminates the need for password sync entirely — HR resets portal password, Zulip picks it up on next login.
+- `zulip_user_id` (INTEGER) remains the immutable cross-system key. Decision 12 stands.
+- `attendance_records.work_date` column type (`DATE`) is unchanged. Semantics change: it now represents the IST calendar day of clock-in, not the EST calendar day. Historical records retain EST-anchored dates.
+
+#### Consequences
+
+1. `backend/src/services/attendance.service.ts` — `getISTWorkDate()` added, `getESTWorkDate()` deprecated, `computeAttendanceStatus()` rewritten, `clockIn()` and `clockOut()` call sites updated.
+2. `backend/src/services/break.service.ts` — `startBreak()` updated to use `findAnyOpenRecord`.
+3. `backend/src/repositories/attendance.repository.ts` — `getTodaySummary()` and `getLiveMonitorSummary()` SQL timezone strings updated to IST.
+4. `backend/src/services/zulip.service.ts` — `createUser()` adds `timezone` field.
+5. `backend/src/routes/oauth.ts` — three new OIDC routes added.
+6. `backend/src/services/oauth.service.ts` — `getJWKS()`, `getUserInfo()` added; `exchangeCode()` extended to issue `id_token`.
+7. `backend/src/app.ts` — `/.well-known/openid-configuration` route mounted.
+8. `docker/zulip-prod.override.yaml` — OIDC environment variables added.
+9. `portal/src/pages/attendance.ts`, `attendance_audit.ts`, `breaks_audit.ts` — label strings updated.
+10. New env vars: `BACKEND_PUBLIC_URL`, `OAUTH_CLIENT_SECRET_ZULIP`.
+11. Eight new test files covering all changed logic paths.
+
+#### Immutable Invariants After This Decision
+
+| Invariant | Enforced By |
+|---|---|
+| `clockIn()` uses `findOpenRecord(id, todayIST)` — prevents same-day double clock-in | attendance.service.ts |
+| `clockOut()`, `getStatus()`, `startBreak()` use `findAnyOpenRecord(id)` — no date filter | attendance.service.ts, break.service.ts |
+| `work_date` = IST calendar day of clock-in, set once, never recomputed | attendance.service.ts |
+| `is_late` always `false` from auto-computation | attendance.service.ts |
+| Zulip never stores employee passwords (after OIDC is live) | oauth.service.ts + Zulip realm config |
+| Attendance writes ONLY to Postgres, never touches Zulip presence | attendance.service.ts |
+| JD Connect Postgres and Zulip Postgres remain completely isolated | No cross-DB queries added |

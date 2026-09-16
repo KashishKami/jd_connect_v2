@@ -2,7 +2,7 @@ import { guardRoute } from '../lib/auth';
 import { apiFetch } from '../lib/api';
 import { showToast } from '../components/toast';
 import { createModal } from '../components/modal';
-import { formatESTTime } from '../lib/format';
+import { formatISTTime, formatESTDate } from '../lib/format';
 
 function generateDigitReelHtml(id: string, isBreak = false): string {
   const breakClass = isBreak ? ' break-number' : '';
@@ -39,7 +39,7 @@ export function renderAttendanceConsole(container: HTMLElement): void {
   const headerHtml = isEmbedded ? '' : `
     <div class="section-header">
       <h2>Attendance Console</h2>
-      <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">ℹ️ All dates and times are displayed in EST (Eastern Standard Time)</span>
+      <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">ℹ️ Dates are in EST (US Day), Times are in IST (India Time)</span>
     </div>
   `;
 
@@ -103,9 +103,9 @@ export function renderAttendanceConsole(container: HTMLElement): void {
             <table class="table">
               <thead>
                 <tr>
-                  <th>Work Date</th>
-                  <th>Clock In</th>
-                  <th>Clock Out</th>
+                  <th>Work Date (EST)</th>
+                  <th>Clock In (IST)</th>
+                  <th>Clock Out (IST)</th>
                   <th>Hours Worked</th>
                   <th>Status</th>
                 </tr>
@@ -128,14 +128,15 @@ export function renderAttendanceConsole(container: HTMLElement): void {
               <thead>
                 <tr>
                   <th>Break Type</th>
-                  <th>Start Time</th>
-                  <th>End Time</th>
+                  <th>Date (EST)</th>
+                  <th>Start Time (IST)</th>
+                  <th>End Time (IST)</th>
                   <th>Duration (mins)</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody id="breakTableBody">
-                <tr><td colspan="5" style="text-align:center;">Loading...</td></tr>
+                <tr><td colspan="6" style="text-align:center;">Loading...</td></tr>
               </tbody>
             </table>
           </div>
@@ -440,8 +441,8 @@ function initAttendanceLogic(container: HTMLElement): void {
       return `
         <tr>
           <td>${l.work_date}</td>
-          <td>${formatESTTime(l.clock_in_at)}</td>
-          <td>${formatESTTime(l.clock_out_at)}</td>
+          <td>${formatISTTime(l.clock_in_at)}</td>
+          <td>${formatISTTime(l.clock_out_at)}</td>
           <td>${l.hours_worked ?? '-'}</td>
           <td><span class="badge ${badgeClass}">${statusText}</span></td>
         </tr>
@@ -457,7 +458,7 @@ function initAttendanceLogic(container: HTMLElement): void {
     const tbody = container.querySelector('#breakTableBody') as HTMLTableSectionElement;
     if (!tbody) return;
     if (allBreakLogs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No records found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No records found.</td></tr>';
       if (breakPageInfo) breakPageInfo.textContent = 'Page 1 of 1';
       if (breakPrevBtn) breakPrevBtn.disabled = true;
       if (breakNextBtn) breakNextBtn.disabled = true;
@@ -474,8 +475,9 @@ function initAttendanceLogic(container: HTMLElement): void {
     tbody.innerHTML = pageSlice.map((l) => `
       <tr>
         <td>${l.break_type_name || l.break_name || 'Break'}</td>
-        <td>${formatESTTime(l.start_at)}</td>
-        <td>${formatESTTime(l.end_at)}</td>
+        <td>${formatESTDate(l.start_at)}</td>
+        <td>${formatISTTime(l.start_at)}</td>
+        <td>${formatISTTime(l.end_at)}</td>
         <td>${l.duration_minutes ?? '-'}</td>
         <td><span class="badge ${l.status === 'exceeded' ? 'badge-danger' : 'badge-success'}">${l.status}</span></td>
       </tr>

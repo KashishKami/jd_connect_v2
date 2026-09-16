@@ -364,8 +364,8 @@ Expected output (no `ports:` block):
 
 ```bash
 # Run one-time initialization (MUST complete with "=== End Initial Configuration Phase ===")
-# ⚠ DO NOT re-run this if it already completed successfully — it writes to the Zulip volume.
-# Re-running on an already-initialized volume can corrupt data.
+# ⚠ Note: If you ever need to reset Zulip and run a fresh app:init, wipe all volumes first:
+#   docker compose down -v
 docker compose run --rm zulip app:init
 
 # Start Zulip stack and wait until healthy
@@ -759,7 +759,7 @@ services:
       - "traefik.http.services.zulip.loadbalancer.server.scheme=https"
       # This references the named serversTransport defined in /root/traefik-tls.yml (Step 12).
       # It scopes insecureSkipVerify to ONLY the Traefik → Zulip backend connection.
-      - "traefik.http.services.zulip.loadbalancer.serversTransport=zulip-internal"
+      - "traefik.http.services.zulip.loadbalancer.serversTransport=zulip-internal@file"
       - "traefik.http.routers.zulip-http.rule=Host(`YOURDOMAIN.com`)"
       - "traefik.http.routers.zulip-http.entrypoints=web"
       - "traefik.http.routers.zulip-http.middlewares=redirect-to-https@docker"
@@ -830,6 +830,26 @@ Open the apps in your browser — you should see the green padlock 🔒 on all s
 
 Now that your production domain (`https://hrm.jdfusion.in` and `https://jdfusion.in`) is fully operational with HTTPS, perform the cutover migration from the old `jd-connect` Supabase stack.
 
+> [!NOTE]
+> **Optional — Resetting Production Database to a Clean Slate:**
+> If you ever need to wipe the Phase 3 Postgres volume and start fresh before data migration, run:
+> ```bash
+> cd /opt/jdconnect_v2
+> # 1. Stop the Phase 3 production stack
+> docker compose -f docker-compose.prod.yml down
+> 
+> # 2. Delete the Phase 3 production data volume
+> docker volume rm jdconnect_v2_pgdata
+> 
+> # 3. Restart (creates fresh, empty Postgres DB)
+> docker compose -f docker-compose.prod.yml up -d
+> 
+> # 4. Run schema migrations and initial seeding
+> sleep 15
+> docker exec jdconnect_api tsx scripts/migrate.ts
+> docker exec jdconnect_api tsx scripts/seed.ts
+> ```
+
 ---
 
 **1. Dump the live database from the old Supabase container**
@@ -873,7 +893,7 @@ docker exec jdconnect_api tsx scripts/migrate-chat.ts /app/jdconnect_public_data
 
 ```bash
 # On VPS — copy out of container
-docker cp jdconnect_api:/app/migration_passwords.csv /opt/jdconnect_v2/migration_passwords.csv
+docker cp jdconnect_api:/migration_passwords.csv /opt/jdconnect_v2/migration_passwords.csv
 ```
 
 ```powershell

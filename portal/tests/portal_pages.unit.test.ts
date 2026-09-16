@@ -223,11 +223,13 @@ describe('Portal Pages Unit Tests (W-1009, W-1010, W-1011, W-1012)', () => {
   });
 
   describe('W-1012 Dashboard Metrics & Embedded Shift Console', () => {
-    it('renders 5 metric cards and embedded shift console', () => {
+    it('renders 4 metric cards and embedded shift console (absent card removed)', () => {
       setUserPermissions(['portal.attendance_audit', 'portal.attendance']);
       renderDashboardPage(container);
 
       expect(container.querySelector('#dashboardMetrics')).not.toBeNull();
+      expect(container.querySelector('#cardAbsent')).toBeNull();
+      expect(container.querySelector('#cardPresent')).not.toBeNull();
       expect(container.querySelector('#yourShiftToday')).not.toBeNull();
       expect(container.querySelector('#clockBtn')).not.toBeNull();
     });

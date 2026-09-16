@@ -9,7 +9,7 @@ export function deriveTempPassword(_oldId?: string | null): string {
 }
 
 async function main() {
-  const dumpPath = 'C:\\Users\\Administrator\\Desktop\\jdconnect_public_data.sql';
+  const dumpPath = process.argv[2] || path.resolve(process.cwd(), 'jdconnect_public_data.sql');
   const data = await parseSqlDump(dumpPath);
   const legacyEmployees = data['employees'] || [];
 
@@ -22,7 +22,7 @@ async function main() {
     }
   }
 
-  const csvPath = path.resolve(__dirname, '../../migration_passwords.csv');
+  const csvPath = path.resolve(process.cwd(), 'migration_passwords.csv');
   fs.writeFileSync(csvPath, lines.join('\n'), 'utf-8');
   console.log(`Successfully exported ${lines.length - 1} employee credentials to ${csvPath}`);
 }

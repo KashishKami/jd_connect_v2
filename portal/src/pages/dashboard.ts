@@ -6,7 +6,6 @@ import { renderAttendanceConsole } from './attendance';
 interface TodaySummary {
   present: number;
   on_break: number;
-  absent: number;
   late: number;
   half_day: number;
   total_employees: number;
@@ -23,7 +22,7 @@ export function renderDashboardPage(container: HTMLElement): void {
         <h2>Dashboard Metrics</h2>
       </div>
 
-      <!-- 5 Metric Cards -->
+      <!-- 4 Metric Cards -->
       <div class="metrics-grid" id="dashboardMetrics">
         <div class="metric-card clickable-card" id="cardPresent">
           <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Present Today</div>
@@ -32,10 +31,6 @@ export function renderDashboardPage(container: HTMLElement): void {
         <div class="metric-card clickable-card" id="cardOnBreak">
           <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">On Break</div>
           <div id="metricOnBreak" style="font-size: 2rem; font-weight: 700; color: var(--accent-amber);">--</div>
-        </div>
-        <div class="metric-card clickable-card" id="cardAbsent">
-          <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Absent Today</div>
-          <div id="metricAbsent" style="font-size: 2rem; font-weight: 700; color: var(--accent-red);">--</div>
         </div>
         <div class="metric-card clickable-card" id="cardLate">
           <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Late Today</div>
@@ -69,19 +64,16 @@ async function loadMetrics(container: HTMLElement): Promise<void> {
 
     const presentEl = container.querySelector('#metricPresent');
     const breakEl = container.querySelector('#metricOnBreak');
-    const absentEl = container.querySelector('#metricAbsent');
     const lateEl = container.querySelector('#metricLate');
     const halfDayEl = container.querySelector('#metricHalfDay');
 
     if (presentEl) presentEl.textContent = String(summary.present ?? 0);
     if (breakEl) breakEl.textContent = String(summary.on_break ?? 0);
-    if (absentEl) absentEl.textContent = String(summary.absent ?? 0);
     if (lateEl) lateEl.textContent = String(summary.late ?? 0);
     if (halfDayEl) halfDayEl.textContent = String(summary.half_day ?? 0);
 
     container.querySelector('#cardPresent')?.addEventListener('click', () => navigate('/attendance-audit'));
     container.querySelector('#cardOnBreak')?.addEventListener('click', () => navigate('/breaks-audit'));
-    container.querySelector('#cardAbsent')?.addEventListener('click', () => navigate('/attendance-audit'));
     container.querySelector('#cardLate')?.addEventListener('click', () => navigate('/attendance-audit'));
     container.querySelector('#cardHalfDay')?.addEventListener('click', () => navigate('/attendance-audit'));
   } catch {

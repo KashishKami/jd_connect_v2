@@ -1,6 +1,6 @@
 import { guardRoute } from '../lib/auth';
 import { apiFetch } from '../lib/api';
-import { formatESTTime } from '../lib/format';
+import { formatISTTime } from '../lib/format';
 
 interface AttendanceAuditRow {
   id: string;
@@ -26,7 +26,7 @@ export function renderAttendanceAuditPage(container: HTMLElement): void {
     <div class="main-content">
       <div class="section-header">
         <h2>Attendance Audit & History</h2>
-        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">ℹ️ All dates and times are displayed in EST (Eastern Standard Time)</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">ℹ️ Dates are in EST (US Day), Times are in IST (India Time)</span>
       </div>
 
       <div class="filter-bar">
@@ -49,9 +49,9 @@ export function renderAttendanceAuditPage(container: HTMLElement): void {
           <thead>
             <tr>
               <th>Employee</th>
-              <th>Work Date</th>
-              <th>Clock In</th>
-              <th>Clock Out</th>
+              <th>Work Date (EST)</th>
+              <th>Clock In (IST)</th>
+              <th>Clock Out (IST)</th>
               <th>Hours Worked</th>
               <th>Status</th>
             </tr>
@@ -125,8 +125,8 @@ function initAttendanceAuditLogic(container: HTMLElement): void {
         <tr>
           <td><strong>${empName}</strong></td>
           <td>${l.work_date}</td>
-          <td>${formatESTTime(l.clock_in_at)}</td>
-          <td>${formatESTTime(l.clock_out_at)}</td>
+          <td>${formatISTTime(l.clock_in_at)}</td>
+          <td>${formatISTTime(l.clock_out_at)}</td>
           <td>${l.hours_worked ?? '-'}</td>
           <td><span class="badge ${badgeClass}">${statusText}</span></td>
         </tr>

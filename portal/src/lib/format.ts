@@ -20,6 +20,23 @@ export function formatESTTime(isoString?: string | null): string {
   }
 }
 
+export function formatISTTime(isoString?: string | null): string {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '-';
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour12: true,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).format(d);
+  } catch {
+    return '-';
+  }
+}
+
 export function formatESTDate(dateOrIsoString?: string | null): string {
   if (!dateOrIsoString) return '-';
   try {
