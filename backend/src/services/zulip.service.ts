@@ -248,7 +248,7 @@ export class ZulipService {
       const safeNewEmail = newEmail.replace(/'/g, "\\'");
       const idFilter = zulipUserId ? `u = UserProfile.objects.filter(id=${zulipUserId}).first()` : `u = None`;
 
-      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.user_settings import do_change_user_delivery_email; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); ${idFilter}; u = u or UserProfile.objects.filter(realm=r, delivery_email='${safeOldEmail}').first(); (do_change_user_delivery_email(u, '${safeNewEmail}'), print('SUCCESS')) if u else print('USER_NOT_FOUND')"`;
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.users import do_change_user_delivery_email; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); ${idFilter}; u = u or UserProfile.objects.filter(realm=r, delivery_email='${safeOldEmail}').first() or UserProfile.objects.filter(realm=r, email='${safeOldEmail}').first(); (do_change_user_delivery_email(u, '${safeNewEmail}'), print('SUCCESS')) if u else print('USER_NOT_FOUND')"`;
 
       const { stdout } = await execAsync(cmd, { cwd: zulipDir });
       return stdout.includes('SUCCESS');
@@ -306,7 +306,7 @@ export class ZulipService {
       const safeEmail = email.replace(/'/g, "\\'");
       const idFilter = zulipUserId ? `u = UserProfile.objects.filter(id=${zulipUserId}).first()` : `u = None`;
 
-      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.users import do_deactivate_user; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); ${idFilter}; u = u or UserProfile.objects.filter(realm=r, delivery_email='${safeEmail}').first(); (do_deactivate_user(u, acting_user=None), print('SUCCESS')) if u else print('USER_NOT_FOUND')"`;
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.users import do_deactivate_user; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); ${idFilter}; u = u or UserProfile.objects.filter(realm=r, delivery_email='${safeEmail}').first() or UserProfile.objects.filter(realm=r, email='${safeEmail}').first(); (do_deactivate_user(u, acting_user=None), print('SUCCESS')) if u else print('USER_NOT_FOUND')"`;
 
       const { stdout } = await execAsync(cmd, { cwd: zulipDir });
       return stdout.includes('SUCCESS');
