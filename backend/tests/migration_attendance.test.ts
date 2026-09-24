@@ -46,8 +46,12 @@ COPY public.break_records (id, employee_id, break_type_id, department_id, centre
   });
 
   afterAll(async () => {
-    if (fs.existsSync(tempDumpPath)) {
-      fs.unlinkSync(tempDumpPath);
+    try {
+      if (fs.existsSync(tempDumpPath)) {
+        fs.unlinkSync(tempDumpPath);
+      }
+    } catch {
+      // Ignore Windows transient file lock during test cleanup
     }
   });
 

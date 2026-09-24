@@ -209,9 +209,9 @@ export async function runSeed() {
     `);
 
     await client.query(
-      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned)
-       VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', true)
-       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3`,
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned, zulip_user_id)
+       VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', true, 14)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 14`,
       [adminUserId, adminEmail, superAdminRoleId, deptId, centreId, shiftId]
     );
 
@@ -231,9 +231,9 @@ export async function runSeed() {
     const empRoleIdRes = await client.query(`SELECT id FROM roles WHERE key = 'employee'`);
 
     await client.query(
-      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned)
-       VALUES ($1, 'John Doe', $2, $3, $4, $5, $6, 'Backend Engineer', false)
-       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3`,
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned, zulip_user_id)
+       VALUES ($1, 'John Doe', $2, $3, $4, $5, $6, 'Backend Engineer', true, 8)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 8`,
       [empUserRes.rows[0].id, empEmail, empRoleIdRes.rows[0]?.id, deptId, centreId, shiftId]
     );
 
@@ -253,9 +253,9 @@ export async function runSeed() {
     const mgrRoleIdRes = await client.query(`SELECT id FROM roles WHERE key = 'manager'`);
 
     await client.query(
-      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned)
-       VALUES ($1, 'Jane Manager', $2, $3, $4, $5, $6, 'Engineering Manager', false)
-       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3`,
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned, zulip_user_id)
+       VALUES ($1, 'Jane Manager', $2, $3, $4, $5, $6, 'Engineering Manager', true, 15)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 15`,
       [mgrUserRes.rows[0].id, mgrEmail, mgrRoleIdRes.rows[0]?.id, deptId, centreId, shiftId]
     );
 
