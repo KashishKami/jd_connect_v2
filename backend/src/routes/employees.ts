@@ -33,6 +33,7 @@ const resetPasswordSchema = z.object({
 const updateEmployeeSchema = z.object({
   full_name: z.string().min(1).optional(),
   alias: z.string().optional(),
+  email: z.string().email('Invalid email address').optional(),
   employee_code: z.string().optional(),
   joining_date: z.string().nullable().optional(),
   designation: z.string().optional(),
@@ -106,6 +107,9 @@ router.patch(
       if (err instanceof z.ZodError) {
         return res.status(400).json({ error: 'Validation failed', details: err.errors });
       }
+      if (err instanceof DuplicateEmailError) {
+        return res.status(409).json({ error: 'Email already exists' });
+      }
       if (err instanceof InsufficientPermissionsError) {
         return res.status(403).json({ error: err.message });
       }
@@ -151,6 +155,23 @@ router.post(
         return res.status(404).json({ error: 'Employee not found' });
       }
       return res.status(500).json({ error: 'Failed to reset password', details: (err as Error).message });
+    }
+  }
+);
+
+router.delete(
+  '/:id',
+  authenticateJwt,
+  requirePermission('employees.delete'),
+  async (req: Request, res: Response) => {
+    try {
+      const result = await employeeService.deleteEmployee(req.params.id);
+      return res.status(200).json(result);
+    } catch (err) {
+      if (err instanceof EmployeeNotFoundError) {
+        return res.status(404).json({ error: 'Employee not found' });
+      }
+      return res.status(500).json({ error: 'Failed to delete employee', details: (err as Error).message });
     }
   }
 );

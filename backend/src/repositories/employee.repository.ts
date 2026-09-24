@@ -146,6 +146,7 @@ export class EmployeeRepository {
     const allowedColumns = [
       'full_name',
       'alias',
+      'email',
       'employee_code',
       'joining_date',
       'designation',
@@ -192,6 +193,34 @@ export class EmployeeRepository {
 
     const res = await this.dbPool.query<EmployeeResponse>(sql, params);
     return res.rows[0];
+  }
+
+  async deleteEmployee(id: string): Promise<boolean> {
+    const client = await this.dbPool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Nullify relations where this employee is referenced as manager or team leader
+      await client.query('UPDATE employees SET manager_id = NULL WHERE manager_id = $1', [id]);
+      await client.query('UPDATE employees SET team_leader_id = NULL WHERE team_leader_id = $1', [id]);
+
+      // Clean up corrections & break requests where this employee was reviewer or requester
+      await client.query('UPDATE attendance_corrections SET reviewed_by = NULL WHERE reviewed_by = $1', [id]);
+      await client.query('DELETE FROM attendance_corrections WHERE requested_by = $1', [id]);
+      await client.query('UPDATE break_requests SET reviewer_id = NULL WHERE reviewer_id = $1', [id]);
+      await client.query('DELETE FROM break_audit_logs WHERE employee_id = $1', [id]);
+
+      // Delete employee row (cascades attendance_records, break_records, attendance_corrections)
+      const res = await client.query('DELETE FROM employees WHERE id = $1', [id]);
+
+      await client.query('COMMIT');
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }
 

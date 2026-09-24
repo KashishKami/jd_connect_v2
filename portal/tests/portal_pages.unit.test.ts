@@ -10,6 +10,7 @@ describe('Portal Pages Unit Tests (W-1009, W-1010, W-1011, W-1012)', () => {
   let container: HTMLElement;
 
   beforeEach(() => {
+    document.body.innerHTML = '';
     container = document.createElement('div');
     document.body.appendChild(container);
     localStorage.clear();
@@ -89,6 +90,90 @@ describe('Portal Pages Unit Tests (W-1009, W-1010, W-1011, W-1012)', () => {
       expect(container.textContent).toContain('active');
       expect(container.querySelector('.btn-retry-zulip')).not.toBeNull();
       expect(container.querySelector('.btn-edit-emp')).not.toBeNull();
+    });
+
+    it('renders Delete button when employees.delete permission is present and opens confirmation modal on click', async () => {
+      setUserPermissions(['portal.employees', 'employees.view', 'employees.delete']);
+
+      const mockFetch = vi.fn((url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.includes('/departments') || urlStr.includes('/centres') || urlStr.includes('/shifts')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+        }
+        if (urlStr.includes('/employees')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([
+              {
+                id: 'e1',
+                employee_code: 'JD0001',
+                full_name: 'Adam Smith',
+                email: 'adam@company.com',
+                employment_status: 'active',
+                zulip_provisioned: true,
+              }
+            ])
+          } as Response);
+        }
+        return Promise.resolve({ ok: false, status: 404 } as Response);
+      });
+
+      vi.stubGlobal('fetch', mockFetch);
+
+      renderEmployeesPage(container);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const deleteBtn = container.querySelector('.btn-delete-emp') as HTMLButtonElement;
+      expect(deleteBtn).not.toBeNull();
+
+      deleteBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const modalTitle = document.querySelector('.modal-header h3');
+      expect(modalTitle?.textContent).toContain('Confirm Employee Deletion');
+      expect(document.querySelector('#confirmDeleteBtn')).not.toBeNull();
+    });
+
+    it('opens Edit Employee modal with #editEmail field populated with employee email', async () => {
+      setUserPermissions(['portal.employees', 'employees.view', 'employees.edit']);
+
+      const mockFetch = vi.fn((url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.includes('/departments') || urlStr.includes('/centres') || urlStr.includes('/shifts')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+        }
+        if (urlStr.includes('/employees')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([
+              {
+                id: 'e1',
+                employee_code: 'JD0001',
+                full_name: 'Adam Smith',
+                email: 'adam@company.com',
+                employment_status: 'active',
+                zulip_provisioned: true,
+              }
+            ])
+          } as Response);
+        }
+        return Promise.resolve({ ok: false, status: 404 } as Response);
+      });
+
+      vi.stubGlobal('fetch', mockFetch);
+
+      renderEmployeesPage(container);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const editBtn = container.querySelector('.btn-edit-emp') as HTMLButtonElement;
+      expect(editBtn).not.toBeNull();
+
+      editBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const emailInput = document.querySelector('#editEmail') as HTMLInputElement;
+      expect(emailInput).not.toBeNull();
+      expect(emailInput.value).toBe('adam@company.com');
     });
   });
 

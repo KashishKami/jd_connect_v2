@@ -51,6 +51,7 @@ export interface EmployeeFilters {
 export interface UpdateEmployeeInput {
   full_name?: string | undefined;
   alias?: string | undefined;
+  email?: string | undefined;
   employee_code?: string | undefined;
   joining_date?: string | null | undefined;
   designation?: string | undefined;

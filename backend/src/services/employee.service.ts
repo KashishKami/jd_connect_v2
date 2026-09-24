@@ -107,6 +107,24 @@ export class EmployeeService {
       delete fieldUpdates.new_password;
     }
 
+    if (updates.email) {
+      const normalizedEmail = updates.email.toLowerCase().trim();
+      const existingUser = await this.userRepo.findByEmail(normalizedEmail);
+      if (existingUser && existingUser.id !== employee.auth_user_id) {
+        throw new DuplicateEmailError(normalizedEmail);
+      }
+      fieldUpdates.email = normalizedEmail;
+
+      if (employee.auth_user_id) {
+        await this.userRepo.updateEmail(employee.auth_user_id, normalizedEmail);
+      }
+      try {
+        await this.zulipSvc.updateUserEmail(employee.email, normalizedEmail, employee.zulip_user_id);
+      } catch (zulipErr) {
+        console.error('[EmployeeService] Failed to update Zulip email during updateEmployee:', (zulipErr as Error).message);
+      }
+    }
+
     return await this.empRepo.updateEmployee(id, fieldUpdates);
   }
 
@@ -201,6 +219,27 @@ export class EmployeeService {
     } catch (zulipErr) {
       console.error('[EmployeeService] Failed to update Zulip password during resetPassword:', (zulipErr as Error).message);
     }
+  }
+
+  async deleteEmployee(employeeId: string): Promise<{ success: boolean; message: string }> {
+    const employee = await this.empRepo.findById(employeeId);
+    if (!employee) {
+      throw new EmployeeNotFoundError(employeeId);
+    }
+
+    try {
+      await this.zulipSvc.deactivateUser(employee.email, employee.zulip_user_id);
+    } catch (zulipErr) {
+      console.error('[EmployeeService] Failed to deactivate Zulip user during deleteEmployee:', (zulipErr as Error).message);
+    }
+
+    await this.empRepo.deleteEmployee(employeeId);
+
+    if (employee.auth_user_id) {
+      await this.userRepo.deleteUser(employee.auth_user_id);
+    }
+
+    return { success: true, message: 'Employee deleted successfully' };
   }
 }
 

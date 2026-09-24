@@ -50,6 +50,7 @@ export function renderEmployeesPage(container: HTMLElement): void {
 
   const canCreate = hasPermission('employees.create');
   const canEdit = hasPermission('employees.edit');
+  const canDelete = hasPermission('employees.delete');
   const canFilterRole = true;
   const canFilterDept = true;
   const canFilterStatus = true;
@@ -102,7 +103,7 @@ export function renderEmployeesPage(container: HTMLElement): void {
               <th>Role</th>
               <th>Status</th>
               <th>Zulip Provisioned</th>
-              ${canEdit ? '<th>Actions</th>' : ''}
+              ${(canEdit || canDelete) ? '<th>Actions</th>' : ''}
             </tr>
           </thead>
           <tbody id="employeesTableBody">
@@ -119,12 +120,12 @@ export function renderEmployeesPage(container: HTMLElement): void {
     </div>
   `;
 
-  initEmployeesLogic(container, { canCreate, canEdit });
+  initEmployeesLogic(container, { canCreate, canEdit, canDelete });
 }
 
 function initEmployeesLogic(
   container: HTMLElement,
-  flags: { canCreate: boolean; canEdit: boolean }
+  flags: { canCreate: boolean; canEdit: boolean; canDelete: boolean }
 ): void {
   const tbody = container.querySelector('#employeesTableBody') as HTMLTableSectionElement;
   const searchInput = container.querySelector('#inputSearch') as HTMLInputElement;
@@ -186,6 +187,18 @@ function initEmployeesLogic(
         `;
       }
 
+      let actionsCell = '';
+      if (flags.canEdit || flags.canDelete) {
+        actionsCell = `
+          <td>
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+              ${flags.canEdit ? `<button class="btn btn-secondary btn-edit-emp" data-id="${e.id}">Edit</button>` : ''}
+              ${flags.canDelete ? `<button class="btn btn-danger btn-delete-emp" data-id="${e.id}" data-name="${e.full_name}" style="background-color: var(--accent-red, #e53e3e); color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Delete</button>` : ''}
+            </div>
+          </td>
+        `;
+      }
+
       return `
         <tr>
           <td><code>${code}</code></td>
@@ -201,7 +214,7 @@ function initEmployeesLogic(
           <td><span class="badge badge-purple">${e.role || 'employee'}</span></td>
           <td><span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">${e.employment_status}</span></td>
           <td>${zulipCell}</td>
-          ${flags.canEdit ? `<td><button class="btn btn-secondary btn-edit-emp" data-id="${e.id}">Edit</button></td>` : ''}
+          ${actionsCell}
         </tr>
       `;
     }).join('');
@@ -215,6 +228,55 @@ function initEmployeesLogic(
         if (emp) {
           openEditEmployeeModal(emp, loadEmployees);
         }
+      });
+    });
+
+    // Attach delete button listeners
+    tbody.querySelectorAll('.btn-delete-emp').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        const target = ev.target as HTMLButtonElement;
+        const empId = target.dataset.id;
+        const empName = target.dataset.name || 'this employee';
+        if (!empId) return;
+
+        const confirmContainer = document.createElement('div');
+        confirmContainer.innerHTML = `
+          <p style="margin-bottom: 1rem; line-height: 1.5;">
+            Are you sure you want to delete employee <strong>${empName}</strong>?
+          </p>
+          <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.5rem;">
+            This will permanently remove the employee from the portal and deactivate their Zulip chat account.
+          </p>
+          <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+            <button id="cancelDeleteBtn" class="btn btn-secondary">Cancel</button>
+            <button id="confirmDeleteBtn" class="btn btn-danger" style="background-color: var(--accent-red, #e53e3e); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">Delete Employee</button>
+          </div>
+        `;
+
+        const modal = createModal({
+          title: 'Confirm Employee Deletion',
+          content: confirmContainer,
+        });
+
+        const cancelBtn = confirmContainer.querySelector('#cancelDeleteBtn') as HTMLButtonElement;
+        const confirmBtn = confirmContainer.querySelector('#confirmDeleteBtn') as HTMLButtonElement;
+
+        cancelBtn.onclick = () => modal.remove();
+
+        confirmBtn.onclick = async () => {
+          confirmBtn.disabled = true;
+          confirmBtn.textContent = 'Deleting...';
+          try {
+            await apiFetch(`/employees/${empId}`, { method: 'DELETE' });
+            showToast('Employee deleted successfully', 'success');
+            modal.remove();
+            await loadEmployees();
+          } catch (err) {
+            showToast((err as Error).message, 'danger');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Delete Employee';
+          }
+        };
       });
     });
 
@@ -441,6 +503,10 @@ async function openEditEmployeeModal(emp: EmployeeRow, onSuccess: () => void): P
         <input type="text" id="editAlias" class="form-input" value="${emp.alias || ''}" />
       </div>
       <div class="form-group">
+        <label>Email Address *</label>
+        <input type="email" id="editEmail" class="form-input" value="${emp.email || ''}" required />
+      </div>
+      <div class="form-group">
         <label>Mobile Phone Number</label>
         <input type="text" id="editMobile" class="form-input" value="${emp.mobile || ''}" />
       </div>
@@ -500,6 +566,7 @@ async function openEditEmployeeModal(emp: EmployeeRow, onSuccess: () => void): P
         employee_code: (form.querySelector('#editEmployeeCode') as HTMLInputElement).value.trim() || undefined,
         joining_date: (form.querySelector('#editJoiningDate') as HTMLInputElement).value || null,
         alias: (form.querySelector('#editAlias') as HTMLInputElement).value.trim() || undefined,
+        email: (form.querySelector('#editEmail') as HTMLInputElement).value.trim(),
         mobile: (form.querySelector('#editMobile') as HTMLInputElement).value.trim() || undefined,
         designation: (form.querySelector('#editDesignation') as HTMLInputElement).value.trim() || undefined,
         department_id: (form.querySelector('#editDeptId') as HTMLSelectElement).value || null,

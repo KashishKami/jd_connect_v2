@@ -119,6 +119,7 @@ export class ZulipService {
           method,
           headers,
           rejectUnauthorized: false, // Zulip uses self-signed cert in dev
+          timeout: 2000,
         },
         (res) => {
           let text = '';
@@ -126,6 +127,9 @@ export class ZulipService {
           res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
         }
       );
+      req.on('timeout', () => {
+        req.destroy(new Error('Zulip request timed out after 2000ms'));
+      });
       req.on('error', reject);
       if (body) req.write(body);
       req.end();
@@ -226,6 +230,116 @@ export class ZulipService {
       return cliFallback;
     } catch (err) {
       console.error(`[ZulipService] updateUserPassword failed:`, (err as Error).message);
+      return false;
+    }
+  }
+
+  async updateUserEmailViaCli(oldEmail: string, newEmail: string, zulipUserId?: number | null): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') {
+      return true;
+    }
+    try {
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execAsync = util.promisify(exec);
+
+      const zulipDir = path.resolve(__dirname, '../../../docker/zulip');
+      const safeOldEmail = oldEmail.replace(/'/g, "\\'");
+      const safeNewEmail = newEmail.replace(/'/g, "\\'");
+      const idFilter = zulipUserId ? `u = UserProfile.objects.filter(id=${zulipUserId}).first()` : `u = None`;
+
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.user_settings import do_change_user_delivery_email; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); ${idFilter}; u = u or UserProfile.objects.filter(realm=r, delivery_email='${safeOldEmail}').first(); (do_change_user_delivery_email(u, '${safeNewEmail}'), print('SUCCESS')) if u else print('USER_NOT_FOUND')"`;
+
+      const { stdout } = await execAsync(cmd, { cwd: zulipDir });
+      return stdout.includes('SUCCESS');
+    } catch (err) {
+      console.error(`[ZulipService] updateUserEmailViaCli error:`, (err as Error).message);
+      return false;
+    }
+  }
+
+  async updateUserEmail(oldEmail: string, newEmail: string, zulipUserId?: number | null): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') {
+      return true;
+    }
+
+    try {
+      const resolvedZulipUserId = zulipUserId || (await this.fetchUserByEmail(oldEmail))?.zulipUserId;
+      if (resolvedZulipUserId) {
+        const params = new URLSearchParams();
+        params.append('delivery_email', newEmail);
+        const { status } = await this.zulipRequest(
+          'PATCH',
+          `/api/v1/users/${resolvedZulipUserId}`,
+          { 'Content-Type': 'application/x-www-form-urlencoded' },
+          params.toString()
+        );
+        if (status >= 200 && status < 300) {
+          console.info(`[ZulipService] Successfully updated Zulip email for user ${oldEmail} -> ${newEmail} via API`);
+          return true;
+        }
+        const cliSuccess = await this.updateUserEmailViaCli(oldEmail, newEmail, resolvedZulipUserId);
+        if (cliSuccess) {
+          console.info(`[ZulipService] Successfully updated Zulip email for user ${oldEmail} -> ${newEmail} (ID: ${resolvedZulipUserId}) via CLI`);
+          return true;
+        }
+      }
+
+      const cliFallback = await this.updateUserEmailViaCli(oldEmail, newEmail);
+      return cliFallback;
+    } catch (err) {
+      console.error(`[ZulipService] updateUserEmail failed:`, (err as Error).message);
+      return false;
+    }
+  }
+
+  async deactivateUserViaCli(email: string, zulipUserId?: number | null): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') {
+      return true;
+    }
+    try {
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execAsync = util.promisify(exec);
+
+      const zulipDir = path.resolve(__dirname, '../../../docker/zulip');
+      const safeEmail = email.replace(/'/g, "\\'");
+      const idFilter = zulipUserId ? `u = UserProfile.objects.filter(id=${zulipUserId}).first()` : `u = None`;
+
+      const cmd = `docker compose exec -T -u zulip zulip /home/zulip/deployments/current/manage.py shell -c "from zerver.models import Realm, UserProfile; from zerver.actions.users import do_deactivate_user; r = Realm.objects.filter(deactivated=False).exclude(string_id='zulipinternal').first(); ${idFilter}; u = u or UserProfile.objects.filter(realm=r, delivery_email='${safeEmail}').first(); (do_deactivate_user(u, acting_user=None), print('SUCCESS')) if u else print('USER_NOT_FOUND')"`;
+
+      const { stdout } = await execAsync(cmd, { cwd: zulipDir });
+      return stdout.includes('SUCCESS');
+    } catch (err) {
+      console.error(`[ZulipService] deactivateUserViaCli error:`, (err as Error).message);
+      return false;
+    }
+  }
+
+  async deactivateUser(email: string, zulipUserId?: number | null): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') {
+      return true;
+    }
+
+    try {
+      const resolvedZulipUserId = zulipUserId || (await this.fetchUserByEmail(email))?.zulipUserId;
+      if (resolvedZulipUserId) {
+        const { status } = await this.zulipRequest('DELETE', `/api/v1/users/${resolvedZulipUserId}`);
+        if (status >= 200 && status < 300) {
+          console.info(`[ZulipService] Successfully deactivated Zulip user ${email} (ID: ${resolvedZulipUserId}) via API`);
+          return true;
+        }
+        const cliSuccess = await this.deactivateUserViaCli(email, resolvedZulipUserId);
+        if (cliSuccess) {
+          console.info(`[ZulipService] Successfully deactivated Zulip user ${email} (ID: ${resolvedZulipUserId}) via CLI`);
+          return true;
+        }
+      }
+
+      const cliFallback = await this.deactivateUserViaCli(email);
+      return cliFallback;
+    } catch (err) {
+      console.error(`[ZulipService] deactivateUser failed:`, (err as Error).message);
       return false;
     }
   }

@@ -200,10 +200,18 @@ export async function runSeed() {
     const shiftRes = await client.query(`SELECT id FROM shifts WHERE name = 'Night Shift'`);
     const shiftId = shiftRes.rows[0]?.id;
 
+    // Sync employee_code_seq to avoid collisions with existing records
+    await client.query(`
+      SELECT setval(
+        'employee_code_seq',
+        COALESCE((SELECT MAX(SUBSTRING(employee_code FROM 3)::INTEGER) FROM employees WHERE employee_code ~ '^JD[0-9]+$'), 1)
+      );
+    `);
+
     await client.query(
-      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_user_id, zulip_provisioned)
-       VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', 8, true)
-       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 8`,
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned)
+       VALUES ($1, 'Super Admin', $2, $3, $4, $5, $6, 'System Administrator', true)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3`,
       [adminUserId, adminEmail, superAdminRoleId, deptId, centreId, shiftId]
     );
 
@@ -223,9 +231,9 @@ export async function runSeed() {
     const empRoleIdRes = await client.query(`SELECT id FROM roles WHERE key = 'employee'`);
 
     await client.query(
-      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_user_id, zulip_provisioned)
-       VALUES ($1, 'John Doe', $2, $3, $4, $5, $6, 'Backend Engineer', 14, true)
-       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 14`,
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned)
+       VALUES ($1, 'John Doe', $2, $3, $4, $5, $6, 'Backend Engineer', false)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3`,
       [empUserRes.rows[0].id, empEmail, empRoleIdRes.rows[0]?.id, deptId, centreId, shiftId]
     );
 
@@ -245,9 +253,9 @@ export async function runSeed() {
     const mgrRoleIdRes = await client.query(`SELECT id FROM roles WHERE key = 'manager'`);
 
     await client.query(
-      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_user_id, zulip_provisioned)
-       VALUES ($1, 'Jane Manager', $2, $3, $4, $5, $6, 'Engineering Manager', 15, true)
-       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3, zulip_user_id = 15`,
+      `INSERT INTO employees (auth_user_id, full_name, email, role_id, department_id, centre_id, shift_id, designation, zulip_provisioned)
+       VALUES ($1, 'Jane Manager', $2, $3, $4, $5, $6, 'Engineering Manager', false)
+       ON CONFLICT (email) DO UPDATE SET auth_user_id = $1, role_id = $3`,
       [mgrUserRes.rows[0].id, mgrEmail, mgrRoleIdRes.rows[0]?.id, deptId, centreId, shiftId]
     );
 

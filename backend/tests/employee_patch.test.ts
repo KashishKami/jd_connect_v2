@@ -108,4 +108,51 @@ describe('PATCH /api/employees/:id - Edit Employee & Password Reset', () => {
 
     expect(loginRes.status).toBe(200);
   });
+
+  it('updates email and synchronizes both employees and users tables', async () => {
+    const res = await supertest(app)
+      .patch(`/api/employees/${targetEmployeeId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'updated.target@jdconnect.com' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.email).toBe('updated.target@jdconnect.com');
+
+    const empDb = await pool.query('SELECT email, auth_user_id FROM employees WHERE id = $1', [targetEmployeeId]);
+    expect(empDb.rows[0].email).toBe('updated.target@jdconnect.com');
+
+    const userDb = await pool.query('SELECT email FROM users WHERE id = $1', [empDb.rows[0].auth_user_id]);
+    expect(userDb.rows[0].email).toBe('updated.target@jdconnect.com');
+  });
+
+  it('returns 409 when trying to update to an email already in use', async () => {
+    // Create another employee first
+    await supertest(app)
+      .post('/api/employees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        full_name: 'Existing Other Employee',
+        email: 'already.used@jdconnect.com',
+        password: 'Password123!',
+        role_key: 'employee',
+      });
+
+    const res = await supertest(app)
+      .patch(`/api/employees/${targetEmployeeId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'already.used@jdconnect.com' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/email already exists/i);
+  });
+
+  it('returns 400 when updating with an invalid email format', async () => {
+    const res = await supertest(app)
+      .patch(`/api/employees/${targetEmployeeId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'invalid-email-format' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Validation failed');
+  });
 });

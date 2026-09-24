@@ -76,6 +76,34 @@ export class UserRepository {
     );
     return (res.rowCount ?? 0) > 0;
   }
+
+  async updateEmail(userId: string, email: string): Promise<boolean> {
+    const res = await pool.query(
+      `UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2`,
+      [email.toLowerCase().trim(), userId]
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async deleteUser(userId: string): Promise<boolean> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM employee_sessions WHERE user_id = $1', [userId]);
+      await client.query('UPDATE audit_logs SET actor_user_id = NULL WHERE actor_user_id = $1', [userId]);
+      await client.query('UPDATE attendance_audit_logs SET actor_user_id = NULL WHERE actor_user_id = $1', [userId]);
+      await client.query('UPDATE break_audit_logs SET actor_user_id = NULL WHERE actor_user_id = $1', [userId]);
+      await client.query('UPDATE break_policies SET created_by = NULL WHERE created_by = $1', [userId]);
+      const res = await client.query('DELETE FROM users WHERE id = $1', [userId]);
+      await client.query('COMMIT');
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 export const userRepository = new UserRepository();

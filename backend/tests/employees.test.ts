@@ -354,6 +354,59 @@ describe('POST /api/employees - Employee Creation', () => {
       expect(targetEmpAdminView).toHaveProperty('mobile');
     });
   });
+
+  describe('DELETE /api/employees/:id', () => {
+    let targetEmpId: string;
+
+    beforeEach(async () => {
+      const createRes = await supertest(app)
+        .post('/api/employees')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          full_name: 'Employee To Delete',
+          email: 'to.delete@jdconnect.com',
+          password: 'Password123!',
+          role_key: 'employee',
+        });
+      targetEmpId = createRes.body.id;
+    });
+
+    it('returns 401 when request lacks Authorization header', async () => {
+      const res = await supertest(app).delete(`/api/employees/${targetEmpId}`);
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 when caller lacks employees.delete permission', async () => {
+      const res = await supertest(app)
+        .delete(`/api/employees/${targetEmpId}`)
+        .set('Authorization', `Bearer ${employeeToken}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 404 when employee ID is not found', async () => {
+      const res = await supertest(app)
+        .delete('/api/employees/00000000-0000-0000-0000-000000000999')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('deletes employee and linked user record successfully', async () => {
+      const res = await supertest(app)
+        .delete(`/api/employees/${targetEmpId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.message).toMatch(/deleted successfully/i);
+
+      // Verify employee record is gone
+      const empDb = await pool.query('SELECT * FROM employees WHERE id = $1', [targetEmpId]);
+      expect(empDb.rows.length).toBe(0);
+
+      // Verify user auth record is gone
+      const userDb = await pool.query('SELECT * FROM users WHERE email = $1', ['to.delete@jdconnect.com']);
+      expect(userDb.rows.length).toBe(0);
+    });
+  });
 });
 
 

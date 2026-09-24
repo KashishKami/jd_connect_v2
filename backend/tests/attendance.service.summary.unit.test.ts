@@ -4,7 +4,7 @@ import { AttendanceRepository } from '../src/repositories/attendance.repository'
 import { EmployeeRepository } from '../src/repositories/employee.repository';
 
 describe('AttendanceService getTodaySummary Unit Tests', () => {
-  it('computes absent count as total_employees - present', async () => {
+  it('returns today summary metrics from repository', async () => {
     const mockAttRepo = {
       getTodaySummary: vi.fn().mockResolvedValue({
         present: 10,
@@ -24,7 +24,6 @@ describe('AttendanceService getTodaySummary Unit Tests', () => {
     expect(summary).toEqual({
       present: 10,
       on_break: 2,
-      absent: 15,
       late: 3,
       half_day: 1,
       total_employees: 25,

@@ -188,4 +188,49 @@ describe('EmployeeService Unit Tests', () => {
       expect(mockEmpRepo.updateEmployee).not.toHaveBeenCalled();
     });
   });
+
+  describe('deleteEmployee', () => {
+    it('deletes employee, linked auth user, and deactivates Zulip account', async () => {
+      const mockEmp = {
+        id: 'emp-uuid-1',
+        auth_user_id: 'user-uuid-1',
+        email: 'agent@jdconnect.com',
+        zulip_user_id: 105,
+      };
+
+      const mockEmpRepo = {
+        findById: vi.fn().mockResolvedValue(mockEmp),
+        deleteEmployee: vi.fn().mockResolvedValue(true),
+      } as unknown as EmployeeRepository;
+
+      const mockUserRepo = {
+        deleteUser: vi.fn().mockResolvedValue(true),
+      } as unknown as UserRepository;
+
+      const mockZulipSvc = {
+        deactivateUser: vi.fn().mockResolvedValue(true),
+      } as unknown as import('../src/services/zulip.service').ZulipService;
+
+      const service = new EmployeeService(mockUserRepo, mockEmpRepo, mockZulipSvc);
+      const result = await service.deleteEmployee('emp-uuid-1');
+
+      expect(mockEmpRepo.findById).toHaveBeenCalledWith('emp-uuid-1');
+      expect(mockZulipSvc.deactivateUser).toHaveBeenCalledWith('agent@jdconnect.com', 105);
+      expect(mockEmpRepo.deleteEmployee).toHaveBeenCalledWith('emp-uuid-1');
+      expect(mockUserRepo.deleteUser).toHaveBeenCalledWith('user-uuid-1');
+      expect(result).toEqual({ success: true, message: 'Employee deleted successfully' });
+    });
+
+    it('throws EmployeeNotFoundError when deleting non-existent employee', async () => {
+      const mockEmpRepo = {
+        findById: vi.fn().mockResolvedValue(null),
+        deleteEmployee: vi.fn(),
+      } as unknown as EmployeeRepository;
+
+      const service = new EmployeeService(undefined, mockEmpRepo);
+
+      await expect(service.deleteEmployee('non-existent-id')).rejects.toThrow('Employee not found');
+      expect(mockEmpRepo.deleteEmployee).not.toHaveBeenCalled();
+    });
+  });
 });
